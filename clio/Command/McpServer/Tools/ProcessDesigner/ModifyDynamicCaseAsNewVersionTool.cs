@@ -69,7 +69,7 @@ public class ModifyDynamicCaseAsNewVersionTool(
 		 + "Removing a stage that records hold needs confirm-stage-records. Never activates: after the user has "
 		 + "checked the version and said yes, activate it with set-active-dynamic-case-version. Not idempotent: each "
 		 + "write makes one more version, and a saved version is never removed. After failed-leftover or unknown, run "
-		 + "describe-dynamic-case before any retry. No compile, no restart. Requires CrtProcessBuilder 1.6.6.195 or "
+		 + "describe-dynamic-case before any retry. No compile, no restart. Requires CrtProcessBuilder 1.6.6.196 or "
 		 + "later (install-process-builder, after user approval).")]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,

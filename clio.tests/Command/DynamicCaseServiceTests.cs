@@ -6,6 +6,7 @@ using Clio.Common;
 using Clio.Package;
 using Clio.UserEnvironment;
 using FluentAssertions;
+using FluentAssertions.Execution;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
@@ -1306,11 +1307,6 @@ public sealed class DynamicCaseServiceTests {
 			.Where(property => !property.PropertyType.IsValueType && property.GetValue(value) is null)
 			.Select(property => property.Name);
 
-	private static IEnumerable<string> WireNames(Type type) =>
-		type.GetProperties()
-			.Select(property => property.GetCustomAttributes(typeof(System.Text.Json.Serialization.JsonPropertyNameAttribute),
-				false).Cast<System.Text.Json.Serialization.JsonPropertyNameAttribute>().Single().Name);
-
 	[Test]
 	[Description("A new-version call maps the call onto the request: the identity trimmed, the package, every stage member, the caption, the user's yes as true and dry-run as validateOnly, through one session.")]
 	public void ModifyAsNewVersion_ShouldMapTheCallOntoTheRequest() {
@@ -1424,22 +1420,68 @@ public sealed class DynamicCaseServiceTests {
 	}
 
 	[Test]
-	[Description("The version blocks of the results are CLOSED: they carry exactly the server's fields plus the designer link, so a field the server adds is not passed on until it is mapped.")]
-	public void VersionBlocks_ShouldCarryExactlyTheServerFieldsAndTheDesignerLink() {
+	[Description("The result's version blocks inherit the server's fields, so every server field must be MAPPED: each one is set to a value that is not its default, and the result must carry it, or a field added to the wire type for reading would reach the agent at its default (false, 0) as a fact.")]
+	public void VersionBlocks_ShouldMapEveryServerField() {
 		// Arrange
-		string[] serverVersion = [.. WireNames(typeof(CaseVersionInfo))];
-		string[] serverMember = [.. WireNames(typeof(CaseVersionMemberInfo))];
+		ModifyCaseAsNewVersionResponse created = NewVersionResponse("version-created", true);
+		CaseVersionInfo version = Filled<CaseVersionInfo>("version");
+		CaseVersionMemberInfo member = Filled<CaseVersionMemberInfo>("member");
+		CaseVersionInfo previous = Filled<CaseVersionInfo>("previous");
+		AnswerNewVersion(Rebuilt(created, version, member));
+		AnswerActivation(new SetActiveCaseVersionResponse {
+			Success = true, Outcome = "activated", ActiveVersion = version, PreviousActiveVersion = previous
+		});
 
 		// Act
-		string[] resultVersion = [.. WireNames(typeof(DynamicCaseVersion))];
-		string[] resultMember = [.. WireNames(typeof(DynamicCaseVersionMember))];
+		ModifyDynamicCaseAsNewVersionResult saved = _service.ModifyAsNewVersion(NewVersionOptions());
+		SetActiveDynamicCaseVersionResult switched = _service.SetActiveVersion(ActivationOptions());
 
 		// Assert
-		resultVersion.Should().BeEquivalentTo([.. serverVersion, "designerUrl"],
-			because: "the version block is the server's block plus the designer link");
-		resultMember.Should().BeEquivalentTo([.. serverMember, "designerUrl"],
-			because: "a describe member is the server's member plus the designer link");
+		using (new AssertionScope()) {
+			foreach (System.Reflection.PropertyInfo property in typeof(CaseVersionInfo).GetProperties()) {
+				property.GetValue(saved.Version).Should().Be(property.GetValue(version),
+					because: $"the new version's '{property.Name}' is a server field the mapping must carry");
+				property.GetValue(switched.ActiveVersion).Should().Be(property.GetValue(version),
+					because: $"the active version's '{property.Name}' is a server field the mapping must carry");
+				property.GetValue(switched.PreviousActiveVersion).Should().Be(property.GetValue(previous),
+					because: $"the previous version's '{property.Name}' is a server field the mapping must carry");
+			}
+			foreach (System.Reflection.PropertyInfo property in typeof(CaseVersionMemberInfo).GetProperties()) {
+				property.GetValue(saved.Case.Versions.Single()).Should().Be(property.GetValue(member),
+					because: $"a family member's '{property.Name}' is a server field the mapping must carry");
+			}
+		}
 	}
+
+	// Every property set to a value that differs from its default and from the same property of another instance.
+	private static T Filled<T>(string tag) where T : new() {
+		T value = new();
+		int index = 0;
+		foreach (System.Reflection.PropertyInfo property in typeof(T).GetProperties()) {
+			index++;
+			object filled = property.PropertyType == typeof(string) ? $"{tag}-{property.Name}"
+				: property.PropertyType == typeof(int) ? index + 40
+				: property.PropertyType == typeof(bool) ? true
+				: throw new InvalidOperationException($"No filler for {property.PropertyType} '{property.Name}'.");
+			property.SetValue(value, filled);
+		}
+		return value;
+	}
+
+	private static ModifyCaseAsNewVersionResponse Rebuilt(ModifyCaseAsNewVersionResponse response,
+		CaseVersionInfo version, CaseVersionMemberInfo member) => new() {
+		Success = response.Success, Outcome = response.Outcome, ErrorCode = response.ErrorCode,
+		ErrorMessage = response.ErrorMessage, Version = version,
+		Case = new BuildCaseCaseInfo {
+			Status = response.Case.Status, SchemaName = response.Case.SchemaName, SchemaUId = response.Case.SchemaUId,
+			PackageName = response.Case.PackageName, EntitySchemaName = response.Case.EntitySchemaName,
+			StageColumnName = response.Case.StageColumnName, Caption = response.Case.Caption,
+			Stages = response.Case.Stages, Filter = response.Case.Filter, Versions = [member]
+		},
+		SourceName = response.SourceName, Diff = response.Diff, Settings = response.Settings,
+		Obligations = response.Obligations, Leftovers = response.Leftovers, Notes = response.Notes,
+		Warnings = response.Warnings
+	};
 
 	[TestCase("version-created", true, true)]
 	[TestCase("failed-leftover", false, true)]

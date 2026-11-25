@@ -123,7 +123,7 @@ public sealed record ModifyCaseAsNewVersionRequest {
 }
 
 /// <summary>A member of a case's version family, as the version operations answer it.</summary>
-public sealed class CaseVersionInfo {
+public class CaseVersionInfo {
 	/// <summary>The member's schema name.</summary>
 	[JsonPropertyName("name")]
 	public string Name { get; init; }
@@ -150,7 +150,7 @@ public sealed class CaseVersionInfo {
 }
 
 /// <summary>A member of a case's version family, as <c>DescribeCase</c> lists it under <c>versions</c>.</summary>
-public sealed class CaseVersionMemberInfo {
+public class CaseVersionMemberInfo {
 	/// <summary>The member's schema name.</summary>
 	[JsonPropertyName("name")]
 	public string Name { get; init; }
@@ -188,31 +188,55 @@ public sealed class CaseVersionMemberInfo {
 	public bool IsDelivered { get; init; }
 }
 
-/// <summary>The server's <c>ModifyCaseAsNewVersionResult</c>.</summary>
-public sealed class ModifyCaseAsNewVersionResponse {
-	/// <summary>True for <c>planned</c> and <c>version-created</c>.</summary>
-	[JsonPropertyName("success")]
+/// <summary>
+/// The fields every case version call answers. The server's envelope and the tool's result document share them,
+/// so a field both carry is declared once.
+/// </summary>
+public abstract class CaseVersionCallResult {
+	/// <summary>Whether the call succeeded; see <see cref="DynamicCaseVersionOutcomes.IsSuccess"/> and <see cref="DynamicCaseActivationOutcomes.IsSuccess"/>.</summary>
+	[JsonPropertyName("success"), JsonPropertyOrder(-4)]
 	public bool Success { get; init; }
 
-	/// <summary>The server outcome; see <see cref="DynamicCaseVersionOutcomes"/>.</summary>
-	[JsonPropertyName("outcome")]
+	/// <summary>One of <see cref="DynamicCaseVersionOutcomes"/> or <see cref="DynamicCaseActivationOutcomes"/>.</summary>
+	[JsonPropertyName("outcome"), JsonPropertyOrder(-3)]
 	public string Outcome { get; init; }
 
 	/// <summary>A stable code for a refusal or a failure.</summary>
-	[JsonPropertyName("errorCode")]
+	[JsonPropertyName("errorCode"), JsonPropertyOrder(-2)]
 	public string ErrorCode { get; init; }
 
 	/// <summary>The refusal or failure text.</summary>
-	[JsonPropertyName("errorMessage")]
+	[JsonPropertyName("errorMessage"), JsonPropertyOrder(-1)]
 	public string ErrorMessage { get; init; }
 
+	/// <summary>What the caller owes after the call.</summary>
+	[JsonPropertyName("obligations"), JsonPropertyOrder(1)]
+	public DynamicCaseObligations Obligations { get; init; }
+
+	/// <summary>What stays after a failure (a version, a link row or a renamed value), to remove or review by hand.</summary>
+	[JsonPropertyName("leftovers"), JsonPropertyOrder(2)]
+	public List<string> Leftovers { get; init; }
+
+	/// <summary>What the caller should relay to the user.</summary>
+	[JsonPropertyName("notes"), JsonPropertyOrder(3)]
+	public List<string> Notes { get; init; }
+
+	/// <summary>Caveats of the call.</summary>
+	[JsonPropertyName("warnings"), JsonPropertyOrder(4)]
+	public List<string> Warnings { get; init; }
+}
+
+/// <summary>A case saved as a new version; the server's answer and the tool's result differ only in the version and case shapes.</summary>
+/// <typeparam name="TVersion">The version block: the server's, or the tool's with the designer link.</typeparam>
+/// <typeparam name="TCase">The case block: the server's, or the tool's.</typeparam>
+public abstract class CaseVersionCreation<TVersion, TCase> : CaseVersionCallResult {
 	/// <summary>The new version, or the planned one on a dry run; always inactive.</summary>
 	[JsonPropertyName("version")]
-	public CaseVersionInfo Version { get; init; }
+	public TVersion Version { get; init; }
 
 	/// <summary>The version as a case: its stages, caption and filter.</summary>
 	[JsonPropertyName("case")]
-	public BuildCaseCaseInfo Case { get; init; }
+	public TCase Case { get; init; }
 
 	/// <summary>The member the version was copied from: the family's active one.</summary>
 	[JsonPropertyName("sourceName")]
@@ -225,23 +249,34 @@ public sealed class ModifyCaseAsNewVersionResponse {
 	/// <summary>The version's link row and its binding into the version's package.</summary>
 	[JsonPropertyName("settings")]
 	public DynamicCaseSettings Settings { get; init; }
-
-	/// <summary>What the caller owes after the call.</summary>
-	[JsonPropertyName("obligations")]
-	public DynamicCaseObligations Obligations { get; init; }
-
-	/// <summary>What stays after a failure, to remove or review by hand.</summary>
-	[JsonPropertyName("leftovers")]
-	public List<string> Leftovers { get; init; }
-
-	/// <summary>What the caller should relay to the user.</summary>
-	[JsonPropertyName("notes")]
-	public List<string> Notes { get; init; }
-
-	/// <summary>Caveats of the call.</summary>
-	[JsonPropertyName("warnings")]
-	public List<string> Warnings { get; init; }
 }
+
+/// <summary>A switch of a family's active version; the server's answer and the tool's result differ only in the version shape.</summary>
+/// <typeparam name="TVersion">The version block: the server's, or the tool's with the designer link.</typeparam>
+public abstract class CaseVersionActivation<TVersion> : CaseVersionCallResult {
+	/// <summary>The member the bar and new records use after the call, as read back.</summary>
+	[JsonPropertyName("activeVersion")]
+	public TVersion ActiveVersion { get; init; }
+
+	/// <summary>The member that was active before the call.</summary>
+	[JsonPropertyName("previousActiveVersion")]
+	public TVersion PreviousActiveVersion { get; init; }
+
+	/// <summary>Members in editable packages, other than the target, whose stored flag still reads active.</summary>
+	[JsonPropertyName("siblingsStillFlagged")]
+	public List<string> SiblingsStillFlagged { get; init; }
+
+	/// <summary>Members in packages that do not accept changes, still flagged active: package position decides.</summary>
+	[JsonPropertyName("decidedByPackagePosition")]
+	public List<string> DecidedByPackagePosition { get; init; }
+
+	/// <summary>The link row added for a member that had none; absent when it had one.</summary>
+	[JsonPropertyName("linkRow")]
+	public DynamicCaseSettings LinkRow { get; init; }
+}
+
+/// <summary>The server's <c>ModifyCaseAsNewVersionResult</c>.</summary>
+public sealed class ModifyCaseAsNewVersionResponse : CaseVersionCreation<CaseVersionInfo, BuildCaseCaseInfo>;
 
 /// <summary>The body of a <c>SetActiveCaseVersion</c> call, sent wrapped under <c>request</c>; one identity is named.</summary>
 public sealed record SetActiveCaseVersionRequest {
@@ -259,246 +294,30 @@ public sealed record SetActiveCaseVersionRequest {
 }
 
 /// <summary>The server's <c>SetActiveCaseVersionResult</c>.</summary>
-public sealed class SetActiveCaseVersionResponse {
-	/// <summary>True for <c>planned</c>, <c>activated</c> and <c>unchanged</c>.</summary>
-	[JsonPropertyName("success")]
-	public bool Success { get; init; }
-
-	/// <summary>The server outcome; see <see cref="DynamicCaseActivationOutcomes"/>.</summary>
-	[JsonPropertyName("outcome")]
-	public string Outcome { get; init; }
-
-	/// <summary>A stable code for a refusal or a failure.</summary>
-	[JsonPropertyName("errorCode")]
-	public string ErrorCode { get; init; }
-
-	/// <summary>The refusal or failure text.</summary>
-	[JsonPropertyName("errorMessage")]
-	public string ErrorMessage { get; init; }
-
-	/// <summary>The member the bar and new records use after the call, as read back.</summary>
-	[JsonPropertyName("activeVersion")]
-	public CaseVersionInfo ActiveVersion { get; init; }
-
-	/// <summary>The member that was active before the call.</summary>
-	[JsonPropertyName("previousActiveVersion")]
-	public CaseVersionInfo PreviousActiveVersion { get; init; }
-
-	/// <summary>Members in editable packages, other than the target, whose stored flag still reads active.</summary>
-	[JsonPropertyName("siblingsStillFlagged")]
-	public List<string> SiblingsStillFlagged { get; init; }
-
-	/// <summary>Members in packages that do not accept changes, still flagged active: package position decides.</summary>
-	[JsonPropertyName("decidedByPackagePosition")]
-	public List<string> DecidedByPackagePosition { get; init; }
-
-	/// <summary>The link row added for a member that had none; absent when it had one.</summary>
-	[JsonPropertyName("linkRow")]
-	public DynamicCaseSettings LinkRow { get; init; }
-
-	/// <summary>What the caller owes after the call.</summary>
-	[JsonPropertyName("obligations")]
-	public DynamicCaseObligations Obligations { get; init; }
-
-	/// <summary>A link row this call added and could not remove again.</summary>
-	[JsonPropertyName("leftovers")]
-	public List<string> Leftovers { get; init; }
-
-	/// <summary>What the caller should relay to the user.</summary>
-	[JsonPropertyName("notes")]
-	public List<string> Notes { get; init; }
-
-	/// <summary>Caveats of the call.</summary>
-	[JsonPropertyName("warnings")]
-	public List<string> Warnings { get; init; }
-}
+public sealed class SetActiveCaseVersionResponse : CaseVersionActivation<CaseVersionInfo>;
 
 #endregion
 
 #region Result shape (modify-dynamic-case-as-new-version, set-active-dynamic-case-version, describe versions)
 
 /// <summary>A member of a case's version family in a tool's result: the server's block plus the designer link.</summary>
-public sealed class DynamicCaseVersion {
-	/// <summary>The member's schema name.</summary>
-	[JsonPropertyName("name")]
-	public string Name { get; init; }
-
-	/// <summary>The member's schema UId.</summary>
-	[JsonPropertyName("uId")]
-	public string UId { get; init; }
-
-	/// <summary>The stored version number; unique per package within the family, not across packages.</summary>
-	[JsonPropertyName("version")]
-	public int Version { get; init; }
-
-	/// <summary>The member's package.</summary>
-	[JsonPropertyName("packageName")]
-	public string PackageName { get; init; }
-
-	/// <summary>The family root's schema name.</summary>
-	[JsonPropertyName("rootName")]
-	public string RootName { get; init; }
-
-	/// <summary>Whether the bar and new records use this member.</summary>
-	[JsonPropertyName("active")]
-	public bool Active { get; init; }
-
+public sealed class DynamicCaseVersion : CaseVersionInfo {
 	/// <summary>The case designer link; only for a member that exists.</summary>
-	[JsonPropertyName("designerUrl")]
+	[JsonPropertyName("designerUrl"), JsonPropertyOrder(1)]
 	public string DesignerUrl { get; init; }
 }
 
 /// <summary>A member of a case's version family in <c>describe-dynamic-case</c>'s <c>versions</c>.</summary>
-public sealed class DynamicCaseVersionMember {
-	/// <summary>The member's schema name.</summary>
-	[JsonPropertyName("name")]
-	public string Name { get; init; }
-
-	/// <summary>The member's schema UId.</summary>
-	[JsonPropertyName("uId")]
-	public string UId { get; init; }
-
-	/// <summary>The stored version number; unique per package within the family, not across packages.</summary>
-	[JsonPropertyName("version")]
-	public int Version { get; init; }
-
-	/// <summary>The member's package.</summary>
-	[JsonPropertyName("packageName")]
-	public string PackageName { get; init; }
-
-	/// <summary>The member's package does not accept changes.</summary>
-	[JsonPropertyName("packageReadOnly")]
-	public bool PackageReadOnly { get; init; }
-
-	/// <summary>Whether the platform's pick names this member: the one the bar and new records use.</summary>
-	[JsonPropertyName("active")]
-	public bool Active { get; init; }
-
-	/// <summary>Case instances that follow this member.</summary>
-	[JsonPropertyName("runningInstances")]
-	public int RunningInstances { get; init; }
-
-	/// <summary>Whether the member has its own link row; the case designer opens only a member that has one.</summary>
-	[JsonPropertyName("hasLinkRow")]
-	public bool HasLinkRow { get; init; }
-
-	/// <summary>The stored <c>IsDelivered</c>.</summary>
-	[JsonPropertyName("isDelivered")]
-	public bool IsDelivered { get; init; }
-
+public sealed class DynamicCaseVersionMember : CaseVersionMemberInfo {
 	/// <summary>The case designer link of this member; absent when it has no link row, which the designer needs.</summary>
-	[JsonPropertyName("designerUrl")]
+	[JsonPropertyName("designerUrl"), JsonPropertyOrder(1)]
 	public string DesignerUrl { get; init; }
 }
 
 /// <summary>The result document of <c>modify-dynamic-case-as-new-version</c>.</summary>
-public sealed class ModifyDynamicCaseAsNewVersionResult {
-	/// <summary>Whether the call succeeded; see <see cref="DynamicCaseVersionOutcomes.IsSuccess"/>.</summary>
-	[JsonPropertyName("success")]
-	public bool Success { get; init; }
-
-	/// <summary>One of <see cref="DynamicCaseVersionOutcomes"/>.</summary>
-	[JsonPropertyName("outcome")]
-	public string Outcome { get; init; }
-
-	/// <summary>A stable code for a refusal or a failure.</summary>
-	[JsonPropertyName("errorCode")]
-	public string ErrorCode { get; init; }
-
-	/// <summary>The refusal or failure text.</summary>
-	[JsonPropertyName("errorMessage")]
-	public string ErrorMessage { get; init; }
-
-	/// <summary>The new version, or the planned one on a dry run, with its designer link once it exists.</summary>
-	[JsonPropertyName("version")]
-	public DynamicCaseVersion Version { get; init; }
-
-	/// <summary>The version as a case: its stages, caption and filter.</summary>
-	[JsonPropertyName("case")]
-	public DynamicCaseInfo Case { get; init; }
-
-	/// <summary>The member the version was copied from: the family's active one.</summary>
-	[JsonPropertyName("sourceName")]
-	public string SourceName { get; init; }
-
-	/// <summary>The change against the source.</summary>
-	[JsonPropertyName("diff")]
-	public DynamicCaseDiff Diff { get; init; }
-
-	/// <summary>The version's link row and its binding into the version's package.</summary>
-	[JsonPropertyName("settings")]
-	public DynamicCaseSettings Settings { get; init; }
-
-	/// <summary>What the caller owes after the call.</summary>
-	[JsonPropertyName("obligations")]
-	public DynamicCaseObligations Obligations { get; init; }
-
-	/// <summary>What stays after a failure.</summary>
-	[JsonPropertyName("leftovers")]
-	public List<string> Leftovers { get; init; }
-
-	/// <summary>What the caller should relay to the user.</summary>
-	[JsonPropertyName("notes")]
-	public List<string> Notes { get; init; }
-
-	/// <summary>Caveats of the call.</summary>
-	[JsonPropertyName("warnings")]
-	public List<string> Warnings { get; init; }
-}
+public sealed class ModifyDynamicCaseAsNewVersionResult : CaseVersionCreation<DynamicCaseVersion, DynamicCaseInfo>;
 
 /// <summary>The result document of <c>set-active-dynamic-case-version</c>.</summary>
-public sealed class SetActiveDynamicCaseVersionResult {
-	/// <summary>Whether the call succeeded; see <see cref="DynamicCaseActivationOutcomes.IsSuccess"/>.</summary>
-	[JsonPropertyName("success")]
-	public bool Success { get; init; }
-
-	/// <summary>One of <see cref="DynamicCaseActivationOutcomes"/>.</summary>
-	[JsonPropertyName("outcome")]
-	public string Outcome { get; init; }
-
-	/// <summary>A stable code for a refusal or a failure.</summary>
-	[JsonPropertyName("errorCode")]
-	public string ErrorCode { get; init; }
-
-	/// <summary>The refusal or failure text.</summary>
-	[JsonPropertyName("errorMessage")]
-	public string ErrorMessage { get; init; }
-
-	/// <summary>The member the bar and new records use after the call, as read back, with its designer link.</summary>
-	[JsonPropertyName("activeVersion")]
-	public DynamicCaseVersion ActiveVersion { get; init; }
-
-	/// <summary>The member that was active before the call, with its designer link.</summary>
-	[JsonPropertyName("previousActiveVersion")]
-	public DynamicCaseVersion PreviousActiveVersion { get; init; }
-
-	/// <summary>Members in editable packages, other than the target, whose stored flag still reads active.</summary>
-	[JsonPropertyName("siblingsStillFlagged")]
-	public List<string> SiblingsStillFlagged { get; init; }
-
-	/// <summary>Members in packages that do not accept changes, still flagged active: package position decides.</summary>
-	[JsonPropertyName("decidedByPackagePosition")]
-	public List<string> DecidedByPackagePosition { get; init; }
-
-	/// <summary>The link row added for a member that had none; absent when it had one.</summary>
-	[JsonPropertyName("linkRow")]
-	public DynamicCaseSettings LinkRow { get; init; }
-
-	/// <summary>What the caller owes after the call.</summary>
-	[JsonPropertyName("obligations")]
-	public DynamicCaseObligations Obligations { get; init; }
-
-	/// <summary>A link row this call added and could not remove again.</summary>
-	[JsonPropertyName("leftovers")]
-	public List<string> Leftovers { get; init; }
-
-	/// <summary>What the caller should relay to the user.</summary>
-	[JsonPropertyName("notes")]
-	public List<string> Notes { get; init; }
-
-	/// <summary>Caveats of the call.</summary>
-	[JsonPropertyName("warnings")]
-	public List<string> Warnings { get; init; }
-}
+public sealed class SetActiveDynamicCaseVersionResult : CaseVersionActivation<DynamicCaseVersion>;
 
 #endregion

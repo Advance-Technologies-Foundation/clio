@@ -24,9 +24,10 @@ public static class DynamicCaseChangeRequirement {
 	/// 1.6.6.185 was the floor before (stage value rename, records per stage); 1.6.6.194 was the first cut with the
 	/// versions (not 1.6.6.193: that number reached a shared test stand as a dev build of the same branch). 1.6.6.195
 	/// resolves an object named by a unique caption and lists <c>Name (caption)</c> candidates when it is not unique,
-	/// which the <c>entity-schema-name</c> descriptions of describe, modify and new-version promise.
+	/// which the <c>entity-schema-name</c> descriptions of describe, modify and new-version promise. 1.6.6.196
+	/// stops promising that a disabled family's new records start a version, which the tool descriptions rely on.
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.195";
+	public const string MinimumProcessBuilderVersion = "1.6.6.196";
 }
 
 /// <summary>

@@ -891,7 +891,8 @@ public sealed class DynamicCaseService(
 
 	// Every member a family lists exists, but the case designer opens only a member with its own link row, so only
 	// such a member gets a link; the others get theirs once a write (an activation, an in-place change) adds the row.
-	// The mapping names every field, so a field the server adds is not passed on until it is mapped here.
+	// The result types inherit the server's fields, so a field added to the wire type for reading reaches the result
+	// at its default unless it is mapped here: VersionBlocks_ShouldMapEveryServerField fails until it is.
 	private List<DynamicCaseVersionMember> Versions(string environmentName, List<CaseVersionMemberInfo> members) =>
 		members?.Select(member => new DynamicCaseVersionMember {
 			Name = member.Name,
