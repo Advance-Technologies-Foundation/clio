@@ -103,6 +103,75 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.NoEnvironment")]
 	[Test]
+	[Description("Binds an entity-only apply-static-filter action sent to create-page-business-rules through the real MCP server, so the page validator (not the JSON reader) rejects it with the entity-rule redirect; the missing environment stops it in command execution.")]
+	[AllureTag(ToolName)]
+	[AllureName("Page business-rule MCP tool binds an entity-only apply-static-filter for a redirect")]
+	[AllureDescription("Starts the real clio MCP server, calls create-page-business-rules with an apply-static-filter action and an intentionally missing environment, then verifies the payload binds and the request reaches command execution instead of failing with the generic MCP shape error that would hide the redirect to create-entity-business-rules.")]
+	public async Task BusinessRuleCreate_Should_Bind_Entity_Only_Apply_Static_Filter_And_Report_Invalid_Environment() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-page-static-filter-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["page-schema-name"] = "UsrCase_FormPage",
+					["rules"] = new object[] { CreateApplyStaticFilterRule() }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "the entity-only action must bind so the page validator can redirect it to create-entity-business-rules");
+		execution.ExitCode.Should().NotBe(0,
+			because: "the intentionally missing environment should fail during command execution");
+		execution.Output.Should().Contain(message =>
+				ContainsText(message.Value, invalidEnvironmentName),
+			because: "the failure should come from resolving the requested environment, not from deserializing the page action payload");
+	}
+
+	[Category("McpE2E.NoEnvironment")]
+	[Test]
+	[Description("States through the full get-tool-contract payload which condition attributes create-page-business-rules accepts and which it rejects, matching the page validator.")]
+	[AllureTag(ToolName)]
+	[AllureName("Page business-rule MCP contract states accepted and rejected condition attributes")]
+	[AllureDescription("Starts the real clio MCP server, expands the full create-page-business-rules contract via get-tool-contract, and verifies the rules field lists the accepted and rejected condition attributes and no longer forbids '<data source>.<column>' paths.")]
+	public async Task BusinessRuleCreate_Contract_Should_State_Accepted_And_Rejected_Condition_Attributes() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult contractResult = await arrangeContext.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { ToolName },
+					["detail"] = "full"
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
+
+		// Assert
+		ToolContractDefinition contract = contracts.Tools.Should().ContainSingle(tool => tool.Name == ToolName,
+			because: "get-tool-contract must expand the create-page-business-rules contract").Which;
+		string rulesDescription = contract.InputSchema.Properties.Single(field => field.Name == "rules").Description;
+		rulesDescription.Should().Contain("virtual view-model attributes").And.Contain("lookup paths or forward references")
+			.And.Contain("'PageParameters.<Name>'").And.Contain("_ActiveStep",
+				because: "the contract must state what the page validator accepts and rejects");
+		rulesDescription.Should().NotContain("not datasource paths like PDS.Priority",
+			because: "the page validator accepts '<data source>.<column>' paths");
+	}
+
+	[Category("McpE2E.NoEnvironment")]
+	[Test]
 	[Description("Binds a system-variable page condition payload through the real MCP server and reports an invalid environment failure from command execution.")]
 	[AllureTag(ToolName)]
 	[AllureName("Page business-rule MCP tool binds system-variable conditions")]
@@ -913,6 +982,26 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 			rule => string.Equals(rule.Name, ruleName, StringComparison.OrdinalIgnoreCase),
 			because: "the deleted page rule should no longer be returned by read");
 	}
+
+	// An entity-only lookup filter sent to the page tool: it must bind so the page validator can redirect it.
+	private static Dictionary<string, object?> CreateApplyStaticFilterRule() =>
+		new() {
+			["caption"] = "Filter owners",
+			["condition"] = new Dictionary<string, object?> {
+				["logicalOperation"] = "AND",
+				["conditions"] = Array.Empty<object>()
+			},
+			["actions"] = new object[] {
+				new Dictionary<string, object?> {
+					["type"] = "apply-static-filter",
+					["targetAttribute"] = "UsrOwner",
+					["filter"] = new Dictionary<string, object?> {
+						["logicalOperation"] = "AND",
+						["items"] = Array.Empty<object>()
+					}
+				}
+			}
+		};
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
