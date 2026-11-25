@@ -72,15 +72,15 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>a9afdfae</c>, the
-	/// compile-marker restamp on top of <c>main</c> <c>8a4a02c9</c>, tagged <c>crtprocessbuilder-1.6.6.192</c>;
-	/// the stamp is its child <c>e8f23840</c>). <c>main</c> there carries the 1.6.6.191 cut master bundles before this one
-	/// and the ProcessBuildHandler refactor of ENG-106980, so the cut carries everything 1.6.6.191 carries and that refactor.
-	/// This cut is a SCRIPT cut (<c>rebundle-process-builder.ps1</c>): the producing commit carries the restamped compile
-	/// marker, the script stamped the package descriptor to 1.6.6.192 and packed that commit with it overlaid (453
-	/// entries), and the stamp was committed after it as the child commit <c>e8f23840</c>.
-	/// 1.6.6.192 is the first number above every cut in both histories, and whichever package branch lands after this
-	/// one restamps above it.
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>ab2d3072</c>, the
+	/// compile-marker restamp on the ENG-107646 branch, which contains <c>main</c> <c>33ba3211</c>, tagged
+	/// <c>crtprocessbuilder-1.6.6.200</c>; the stamp is its child <c>da3a5608</c>). <c>main</c> there carries the
+	/// 1.6.6.192 cut master bundles before this one, so the cut carries everything 1.6.6.192 carries plus the steps
+	/// inside a case's stages (ENG-107646). This cut is a SCRIPT cut (<c>rebundle-process-builder.ps1</c>): the producing
+	/// commit carries the restamped compile marker, the script stamped the package descriptor to 1.6.6.200 and packed
+	/// that commit with it overlaid (464 entries), and the stamp was committed after it as the child commit
+	/// <c>da3a5608</c>. 1.6.6.200 is above every cut in both histories (another case branch had reached 1.6.6.196), and
+	/// whichever package branch lands after this one restamps above it.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
 	/// and abandoned rather than re-pointed. Two branches collide unless the number is claimed BEFORE it is cut,
@@ -188,7 +188,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"03617C50B17B82CC9E4A10C89585B3476ECFDDE9B1373C1D2D49F729EC684D44";
+		"DEEDC68591A884A8849CD5E667DFA1E24744D190010C9CDF7AEABF876F46EC2E";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -216,7 +216,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.192";
+	private const string ExpectedArchiveVersion = "1.6.6.200";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
@@ -229,7 +229,7 @@ public class BundledProcessBuilderPackageTests {
 	/// commit, and the version and stamp come from the descriptor restamp the script wrote, committed right after.
 	/// 1.6.6.171 is a hand cut from the stamp commit again, and 1.6.6.172, 1.6.6.173, 1.6.6.179, 1.6.6.180, 1.6.6.184,
 	/// 1.6.6.185 and 1.6.6.186 are script cuts. 1.6.6.188 (<c>7510a0dd</c>), 1.6.6.189 (<c>ddba99a8</c>) and 1.6.6.190 (<c>1f5cc5a4</c>),
-	/// which reached only a test stand, 1.6.6.191 and 1.6.6.192 are script cuts naming the marker restamp. 1.6.6.187 is a hand cut from the stamp commit, re-cut at the same
+	/// which reached only a test stand, 1.6.6.191, 1.6.6.192 and 1.6.6.200 are script cuts naming the marker restamp. 1.6.6.187 is a hand cut from the stamp commit, re-cut at the same
 	/// number from the package's restamp <c>632e1f22</c> (after the gate-1 fixes, the noJob and misfire follow-ups,
 	/// the check of kept timers before a modify save or an activation, the gate-3 fixes and the core-reuse changes, stored dates read as the scheduler reads them and the fixes of their review, the leading-zero nW / L-nW refusal, and the second review round (the held-trigger kept-timer check, an echoed once start, the shifted year step); both <c>ModifiedOnUtc</c> values moved). The earlier cuts,
 	/// <c>50784731</c>, <c>b282c77d</c>, <c>a1b02353</c>, <c>7c14a526</c>, <c>24e2dfbb</c>, <c>4f338365</c>, <c>1313a72c</c>, <c>6ed95468</c>, <c>41aa113f</c>, <c>13ab3dc4</c> and <c>e0e6d48c</c>, reached only the author's own test stands.
@@ -240,7 +240,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "a9afdfaec03bd8a35ac1557a069a3f08bef2474c";
+	private const string ExpectedProducingCommit = "ab2d307250f769ec82f60e229bee5f8f4c3cc87e";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -266,7 +266,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1795436028000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1795613408000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -281,7 +281,7 @@ public class BundledProcessBuilderPackageTests {
 	/// fixed, but nothing re-stamps a descriptor written before the fix — so the field with the worst record
 	/// was the only one with no guard.
 	/// </remarks>
-	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1795435838000)/";
+	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1795613223000)/";
 
 	/// <summary>
 	/// The authorization gate inside the shipped package. See
