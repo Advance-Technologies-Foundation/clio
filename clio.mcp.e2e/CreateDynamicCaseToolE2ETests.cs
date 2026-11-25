@@ -457,7 +457,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 	}
 
 	[Test]
-	[Description("Steps inside a stage (ENG-107646): a dry run with a stage's steps and transitionType answers planned and writes nothing; the write stores two Perform task steps, the second after the first, and the stage's transitionType, read back by describe-dynamic-case; the same call again answers unchanged.")]
+	[Description("Steps inside a stage (ENG-107646): a dry run with a stage's steps and transitionType answers planned and writes nothing; the write stores two Perform task steps, the second after the first and with a hint, and the stage's transitionType, read back by describe-dynamic-case; the same call again, hint included, answers unchanged.")]
 	[AllureName("modify-dynamic-case plans, writes and describes the steps of a stage")]
 	public async Task ModifyDynamicCase_ShouldPlanThenWriteTheStepsOfAStage() {
 		// Arrange
@@ -470,7 +470,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			ShouldHaveLanded(createCall, "the seeded object takes a case");
 			List<string> stored = StageValues(created["case"]!.AsObject());
 			object[] withSteps = WithSteps(stored, stored[1], "afterRequired",
-				Step("Check the order", required: true), Step("Send contract", after: "Check the order"));
+				Step("Check the order", required: true), Step("Send contract", after: "Check the order", hint: "Attach the price list"));
 
 			// Act
 			CallToolResult dryRun = await ModifyAsync(context, created,
@@ -496,8 +496,10 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			steps[0]["required"]!.GetValue<bool>().Should().BeTrue();
 			steps[1]["required"]!.GetValue<bool>().Should().BeFalse(because: "a Perform task is optional by default");
 			Text(steps[1], "after").Should().Be("Check the order", because: "the second step waits for the first");
+			Text(steps[1], "hint").Should().Be("Attach the price list", because: "a Perform task's block is written");
 			ShouldHaveLanded(again, "the same call again is a success");
-			Text(ResultOf(again), "outcome").Should().Be("unchanged", because: "the steps are stored as sent");
+			Text(ResultOf(again), "outcome").Should().Be("unchanged",
+				because: "the steps are stored as sent, and a block equal to the stored one changes nothing");
 		} finally {
 			await CleanUpAsync(context, created, null, null, string.Empty);
 		}
@@ -789,8 +791,12 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			: stored)];
 
 	/// <summary>A Perform task step item as the package takes it.</summary>
-	private static Dictionary<string, object?> Step(string caption, bool? required = null, string? after = null) {
+	private static Dictionary<string, object?> Step(string caption, bool? required = null, string? after = null,
+		string? hint = null) {
 		Dictionary<string, object?> step = new() { ["type"] = "performTask", ["caption"] = caption };
+		if (hint is not null) {
+			step["hint"] = hint;
+		}
 		if (required.HasValue) {
 			step["required"] = required.Value;
 		}
