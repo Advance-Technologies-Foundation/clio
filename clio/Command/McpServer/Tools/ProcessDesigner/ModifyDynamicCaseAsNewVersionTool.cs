@@ -39,7 +39,7 @@ public class ModifyDynamicCaseAsNewVersionTool(
 	/// <summary>
 	/// The stage item shape named back when an item carries an undeclared key: modify-dynamic-case's without
 	/// <c>steps</c> and <c>transitionType</c>, which the package refuses on a version (the version copies the active
-	/// case's steps). They stay in the shared key list, so the agent meets that refusal and not unknown-keys.
+	/// case's steps with their conditions). They stay in the shared key list, so the agent meets that refusal and not unknown-keys.
 	/// </summary>
 	internal const string StageShape =
 		"{\"value\": \"<lookup value Id or exact display value>\", \"caption\"?: \"...\", \"color\"?: \"#RRGGBB\", "
@@ -70,7 +70,7 @@ public class ModifyDynamicCaseAsNewVersionTool(
 		 + "left out, the active case's package, refused package-name-required when that package does not accept "
 		 + "changes. stages, caption, filter and remove-filter work as on modify-dynamic-case, for the version only; "
 		 + "setting the object's first filter column is refused (not-in-version). The version copies the active "
-		 + "case's steps as they are; steps-not-supported means steps or transitionType were sent with a stage (change "
+		 + "case's steps as they are, with their conditions; steps-not-supported means steps or transitionType were sent with a stage (change "
 		 + "them on the version afterwards with modify-dynamic-case), or the active case has steps and package-name "
 		 + "names another package (save the version in the case's own package). A stage caption renames the stage's "
 		 + "lookup value AT ONCE, for the active case and every record too, not at activation (confirm-value-rename). "
@@ -226,7 +226,7 @@ public sealed record ModifyDynamicCaseAsNewVersionArgs(
 	[property: Description("Optional WHOLE desired stage list of the version in order, as on modify-dynamic-case: "
 		+ "an array of {\"value\": \"<lookup value Id or exact display value>\", \"caption\"?, \"color\"?: "
 		+ "\"#RRGGBB\", \"group\"?, \"successful\"?} (a bare string is {\"value\"}). steps and transitionType "
-		+ "are refused steps-not-supported: the version copies the active case's steps. A stage left out is not in the "
+		+ "are refused steps-not-supported: the version copies the active case's steps with their conditions. A stage left out is not in the "
 		+ "version; a member left out keeps the active case's value. caption renames the stage's lookup value AT "
 		+ "ONCE for every record, only with confirm-value-rename. Omit to keep the stages.")]
 	JsonElement? Stages = null,

@@ -261,8 +261,8 @@ public sealed class DynamicCaseStage {
 	[JsonPropertyName("isFinal")]
 	public bool? IsFinal { get; init; }
 
-	/// <summary>The stage holds steps. A removed stage takes its steps with it (diff.steps names them); the removal is
-	/// refused only when a step of it has conditions (step-has-conditions) or a step condition moves records to it
+	/// <summary>The stage holds steps. A removed stage takes its steps and their conditions with it (diff.steps names the
+	/// steps); the removal is refused when a step condition still moves records to it after the change
 	/// (stage-is-condition-target, <see cref="IsConditionTarget"/>).</summary>
 	[JsonPropertyName("hasSteps")]
 	public bool? HasSteps { get; init; }
