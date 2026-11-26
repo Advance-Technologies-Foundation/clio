@@ -21,9 +21,12 @@ public static class DynamicCaseChangeRequirement {
 	/// whose stage item takes <c>steps</c> and <c>transitionType</c>, whose describe reports them, and whose modify
 	/// takes a step sent back as describe returns it (ENG-107646): an older package refuses a stage's steps, or such a
 	/// step as unknown keys, and its describe would show a stage with steps as one without them. 1.6.6.200 to
-	/// 1.6.6.202 were cuts of the same branch that reached only test stands; 1.6.6.203 is another branch's.
+	/// 1.6.6.202 were cuts of the same branch that reached only test stands. 1.6.6.205 is the first cut whose step item
+	/// takes <c>conditions</c> and whose describe reports them (ENG-107647): an older package refuses a step's
+	/// conditions, and its describe would show a step with conditions as one without them. 1.6.6.203 was the same
+	/// branch's cut before its review fixes and reached no release.
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.204";
+	public const string MinimumProcessBuilderVersion = "1.6.6.205";
 }
 
 /// <summary>
