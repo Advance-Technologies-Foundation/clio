@@ -290,6 +290,52 @@ public sealed class ModifyDynamicCaseAsNewVersionToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("An unknown stage key on a version names the version's own stage shape, which offers no steps or transitionType, and gives no add-steps hint: steps is a declared key there, even when the item carries it.")]
+	public void ModifyDynamicCaseAsNewVersion_ShouldNameTheVersionStageShape_WhenAStageKeyIsUnknown() {
+		// Arrange
+		ModifyDynamicCaseAsNewVersionArgs args = Args("{" + Identity + ",\"stages\":[{\"value\":\"New\","
+			+ "\"steps\":[{\"type\":\"performTask\",\"caption\":\"Call\"}],\"next\":\"Done\"}]}");
+
+		// Act
+		CommandExecutionResult result = _tool.ModifyDynamicCaseAsNewVersion(args);
+		string text = TextOf(result);
+
+		// Assert
+		result.ExitCode.Should().Be(1, because: "an undeclared key would make a version other than described");
+		text.Should().Contain("[unknown-keys]").And.Contain("next", because: "the unknown key is named");
+		text.Should().Contain(ModifyDynamicCaseAsNewVersionTool.StageShape,
+			because: "the refusal echoes the shape a version stage takes");
+		ModifyDynamicCaseAsNewVersionTool.StageShape.Should().NotContain("steps").And.NotContain("transitionType",
+			because: "the package refuses both on a version, so the shape must not offer them");
+		text.Should().NotContain("Add steps with modify-dynamic-case once the case exists",
+			because: "the hint is for a tool that does not declare steps, and steps is not an unknown key here");
+		ShouldNotHaveRun();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The description names both causes of steps-not-supported: steps or transitionType sent with a stage, and an active case with steps whose version package-name puts in another package; package-name says the same.")]
+	public void Description_ShouldNameBothCausesOfStepsNotSupported() {
+		// Arrange
+		string description = Description();
+		string packageName = ParameterDescription("package-name");
+
+		// Act
+		string normalized = string.Join(" ", description.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+		// Assert
+		normalized.Should().Contain("steps-not-supported means steps or transitionType were sent with a stage",
+			because: "the first cause is the stage keys a version copies instead of taking");
+		normalized.Should().Contain("or the active case has steps and package-name names another package",
+			because: "the second cause is a version of a case with steps saved outside the case's own package");
+		normalized.Should().Contain("save the version in the case's own package",
+			because: "the description says how to avoid the second cause");
+		packageName.Should().Contain("When the active case has steps, only its own package")
+			.And.Contain("steps-not-supported", because: "the argument itself warns where it is used");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The description and the stages argument say that a version copies the active case's steps and that steps or transitionType sent with it are refused steps-not-supported.")]
 	public void Description_ShouldSayAVersionCopiesTheSteps() {
 		// Arrange

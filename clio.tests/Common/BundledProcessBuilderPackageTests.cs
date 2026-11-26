@@ -77,7 +77,11 @@ public class BundledProcessBuilderPackageTests {
 	/// <c>main</c> <c>8fa1e6a3</c> merged in as <c>1590a5b0</c>, tagged <c>crtprocessbuilder-1.6.6.209</c>; the stamp is its child <c>3b63658b</c>).
 	/// <c>main</c> there carries the 1.6.6.204 cut master bundles before this one, so the cut carries everything 1.6.6.204
 	/// carries and the case versions of ENG-106400, with the fixes of its isolated agent runs (an object found by its
-	/// caption, the draft's uncovered-values note, the notes of a disabled family, an outranked activation refused without the user's yes, a pinned member judged by its rank, the records in a removed stage split by running case, disabling gated on the family's running cases, every text inaccuracy of the fourth run, a new-version dry run without uIds).
+	/// caption, the draft's uncovered-values note, the notes of a disabled family, an outranked activation refused without the user's yes, a pinned member judged by its rank, the records in a removed stage split by running case, disabling gated on the family's running cases, every text inaccuracy of the fourth run, a new-version dry run without uIds), main's steps inside stages merged into
+	/// the shared change planner (<c>1590a5b0</c>, the reason for 1.6.6.208: a stage that holds steps is removed with them, named in
+	/// <c>diff.steps</c>, and a new version refuses steps sent with it), and <c>f692d28a</c>, the reason for 1.6.6.209: a new
+	/// version that removes a stage with steps drops what those steps leave (their <c>after</c> transitions and element
+	/// mappings), as the in-place change does, and names the steps in <c>diff.steps</c>.
 	/// This cut is a SCRIPT cut (<c>rebundle-process-builder.ps1</c>): the producing commit carries the restamped compile
 	/// marker, the script stamped the package descriptor to 1.6.6.209 and packed that commit with it overlaid (478
 	/// entries), and the stamp was committed after it as the child commit <c>3b63658b</c>.
@@ -101,7 +105,11 @@ public class BundledProcessBuilderPackageTests {
 	/// operations, <c>ModifyCaseAsNewVersion</c> (a change of the family's active case saved as a new, inactive version)
 	/// and <c>SetActiveCaseVersion</c> (the platform's switch, read back), each behind the case gate in its own handler;
 	/// <c>DescribeCase</c> lists a case's <c>versions</c> and reads any family member by name, and <c>ModifyCase</c>
-	/// changes an inactive member in place and refuses <c>enabled</c> on it. The service surface is 13 operations, 6
+	/// changes an inactive member in place and refuses <c>enabled</c> on it. Merged with main's steps inside stages, a
+	/// change removes a stage that holds steps together with them (named in <c>diff.steps</c>; refused only
+	/// <c>step-has-conditions</c> or <c>stage-is-condition-target</c>), a new version drops what the removed steps
+	/// leave (transitions, mappings) and refuses <c>steps</c> / <c>transitionType</c> sent with it, or a version in
+	/// another package of a case that has steps, as <c>steps-not-supported</c>. The service surface is 13 operations, 6
 	/// design-gate call sites and five case-gate call sites, counted in the shipped archive by the guards below. The
 	/// shared floor of the four case-change tools moves to this cut. What earlier cuts carried is in this file's git
 	/// history.
@@ -960,7 +968,7 @@ public class BundledProcessBuilderPackageTests {
 	}
 
 	[Test]
-	[Description("An archive that meets the case-change floor must read the two confirmations and report records: a cut at or above the floor from a base without them (another branch's re-cut) would pass every pin while describe lost records and modify refused the confirmations as unknown keys.")]
+	[Description("An archive that meets the case-change floor must read the two confirmations, report records, take a stage's steps and transitionType, and take a step copied from describe: a cut at or above the floor from a base without them (another branch's re-cut) would pass every pin while describe lost records and modify refused them as unknown keys.")]
 	public void BundledArchive_ShouldAcceptTheCaseChangeConfirmations_WhenItMeetsTheirFloor() {
 		// Arrange
 		PackageVersion bundledVersion = ReadBundledVersionThroughTheCatalog();
@@ -971,12 +979,20 @@ public class BundledProcessBuilderPackageTests {
 		bool readsStageRecords = archive.Contains("[DataMember(Name = \"confirmStageRecords\")]", StringComparison.Ordinal);
 		bool readsValueRename = archive.Contains("[DataMember(Name = \"confirmValueRename\")]", StringComparison.Ordinal);
 		bool reportsRecords = archive.Contains("[DataMember(Name = \"records\"", StringComparison.Ordinal);
+		bool takesSteps = archive.Contains("[DataMember(Name = \"steps\")]", StringComparison.Ordinal);
+		bool takesTransitionType = archive.Contains("[DataMember(Name = \"transitionType\")]", StringComparison.Ordinal);
+		bool takesDescribedStep = archive.Contains("typeof(CaseStepRequest), typeof(CaseStepInfo)", StringComparison.Ordinal);
 
 		// Assert
 		if (bundledVersion >= floor) {
 			readsStageRecords.Should().BeTrue(because: $"the bundled {bundledVersion} meets the floor {floor}");
 			readsValueRename.Should().BeTrue(because: $"the bundled {bundledVersion} meets the floor {floor}");
 			reportsRecords.Should().BeTrue(because: $"the bundled {bundledVersion} meets the floor {floor}");
+			takesSteps.Should().BeTrue(because: $"the bundled {bundledVersion} meets the floor {floor}, raised for steps");
+			takesTransitionType.Should().BeTrue(
+				because: $"the bundled {bundledVersion} meets the floor {floor}, raised for a stage's transitionType");
+			takesDescribedStep.Should().BeTrue(
+				because: $"the bundled {bundledVersion} meets the floor {floor}, raised for a step sent back as described");
 		}
 	}
 

@@ -37,6 +37,15 @@ public class ModifyDynamicCaseAsNewVersionTool(
 		+ "\"dry-run\":true}";
 
 	/// <summary>
+	/// The stage item shape named back when an item carries an undeclared key: modify-dynamic-case's without
+	/// <c>steps</c> and <c>transitionType</c>, which the package refuses on a version (the version copies the active
+	/// case's steps). They stay in the shared key list, so the agent meets that refusal and not unknown-keys.
+	/// </summary>
+	internal const string StageShape =
+		"{\"value\": \"<lookup value Id or exact display value>\", \"caption\"?: \"...\", \"color\"?: \"#RRGGBB\", "
+		+ "\"group\"?: \"<parent stage value>\" | null, \"successful\"?: false}";
+
+	/// <summary>
 	/// Saves the change as a new version of the case, or plans it on a dry run, on the specified environment.
 	/// </summary>
 	/// <param name="args">The tool arguments; see <see cref="ModifyDynamicCaseAsNewVersionArgs"/>.</param>
@@ -61,8 +70,9 @@ public class ModifyDynamicCaseAsNewVersionTool(
 		 + "left out, the active case's package, refused package-name-required when that package does not accept "
 		 + "changes. stages, caption, filter and remove-filter work as on modify-dynamic-case, for the version only; "
 		 + "setting the object's first filter column is refused (not-in-version). The version copies the active "
-		 + "case's steps as they are: steps or transitionType sent with a stage are refused steps-not-supported; change "
-		 + "them on the version afterwards with modify-dynamic-case. A stage caption renames the stage's "
+		 + "case's steps as they are; steps-not-supported means steps or transitionType were sent with a stage (change "
+		 + "them on the version afterwards with modify-dynamic-case), or the active case has steps and package-name "
+		 + "names another package (save the version in the case's own package). A stage caption renames the stage's "
 		 + "lookup value AT ONCE, for the active case and every record too, not at activation (confirm-value-rename). "
 		 + "Removing a stage that records hold needs confirm-stage-records. Never activates: after the user has "
 		 + "checked the version and said yes, activate it with set-active-dynamic-case-version. Not idempotent: each "
@@ -122,7 +132,7 @@ public class ModifyDynamicCaseAsNewVersionTool(
 		// The stage keys of modify-dynamic-case: steps and transitionType travel to the package, whose own
 		// steps-not-supported refusal says what a version does with them, rather than being answered unknown-keys here.
 		if (!DynamicCaseStageArguments.TryRead(args.Stages ?? default, ModifyDynamicCaseTool.StageKeys,
-				ModifyDynamicCaseTool.StageShape,
+				StageShape,
 				out List<DynamicCaseStageItem> stages, out CommandExecutionResult stagesRefusal)) {
 			return stagesRefusal;
 		}
@@ -206,7 +216,8 @@ public sealed record ModifyDynamicCaseAsNewVersionArgs(
 
 	[property: JsonPropertyName("package-name")]
 	[property: Description("Optional package to save the version in; it must accept changes. Left out: the active "
-		+ "case's package, refused package-name-required when that package does not accept changes.")]
+		+ "case's package, refused package-name-required when that package does not accept changes. When the active "
+		+ "case has steps, only its own package (another one is refused steps-not-supported).")]
 	string PackageName = null,
 
 	// JsonElement for the reasons ModifyDynamicCaseArgs.Stages gives: several accepted shapes, undeclared item keys

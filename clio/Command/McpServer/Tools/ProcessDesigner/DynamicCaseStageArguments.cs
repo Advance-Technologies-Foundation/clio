@@ -97,7 +97,11 @@ internal static class DynamicCaseStageArguments {
 			.ToArray();
 		if (unknown.Length > 0) {
 			// A case is built with empty stages (D1 of ENG-107646): its steps are added by a change once it exists.
-			string stepsHint = entry.ContainsKey(StepsKey) ? " Add steps with modify-dynamic-case once the case exists." : "";
+			// Only when steps is among the UNKNOWN keys: a tool that declares steps never needs the hint.
+			string stepsHint = entry.Select(property => property.Key)
+				.Any(key => key == StepsKey && !allowedKeys.Contains(key, StringComparer.Ordinal))
+				? " Add steps with modify-dynamic-case once the case exists."
+				: "";
 			refusal = Refuse($"stages[{index}] carries unknown keys: {McpToolArgumentSupport.JoinCallerKeys(unknown)}. "
 				+ $"A stage is {itemShape}.{stepsHint}", UnknownKeysCode);
 			return false;
