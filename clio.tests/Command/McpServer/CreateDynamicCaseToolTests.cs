@@ -191,7 +191,7 @@ public sealed class CreateDynamicCaseToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("A stage carrying steps is refused as steps-not-supported and the command is never resolved.")]
+	[Description("A case is built with empty stages: a stage carrying steps is refused as unknown-keys, the refusal sends the agent to modify-dynamic-case, and the command is never resolved.")]
 	public void CreateDynamicCase_ShouldRefuseSteps() {
 		// Arrange
 		CreateDynamicCaseArgs args = Args("{" + Required + ",\"stages\":[{\"value\":\"New\",\"steps\":[]}]}");
@@ -200,8 +200,9 @@ public sealed class CreateDynamicCaseToolTests {
 		CommandExecutionResult result = _tool.CreateDynamicCase(args);
 
 		// Assert
-		result.ExitCode.Should().Be(1, because: "a stage with steps cannot be built yet");
-		TextOf(result).Should().Contain("[steps-not-supported]", because: "the stable code is named");
+		result.ExitCode.Should().Be(1, because: "steps are added to a case that exists");
+		TextOf(result).Should().Contain("[unknown-keys]", because: "the stable code is named")
+			.And.Contain("modify-dynamic-case", because: "the refusal names the tool that adds steps");
 		_resolver.DidNotReceiveWithAnyArgs().Resolve<CreateDynamicCaseCommand>(default!);
 	}
 
@@ -342,7 +343,8 @@ public sealed class CreateDynamicCaseToolTests {
 			because: "the article owns the workflow, and clio-knowledge 1.15.210 and every later pinned generation publish it");
 		firstSentence.Length.Should().BeLessThanOrEqualTo(120, because: "the compact index cuts the purpose at 120");
 		firstSentence.Should().StartWith("Create a minimal dynamic case (DCM)", because: "the index line says what it does");
-		description.Should().Contain("not supported", because: "what the tool cannot do yet is stated");
+		description.Should().Contain("Steps: add them with modify-dynamic-case.",
+			because: "steps are added by the change tool once the case exists");
 		description.Should().Contain("(case-exists): change it with modify-dynamic-case",
 			because: "an existing case is changed by its own tool, which the refusal points at");
 		description.Length.Should().BeLessThanOrEqualTo(1975,

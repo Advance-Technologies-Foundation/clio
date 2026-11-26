@@ -263,7 +263,9 @@ public sealed class DynamicCaseService(
 			Color = stage.Color,
 			GroupSent = stage.GroupSent,
 			Group = stage.Group,
-			Successful = stage.Successful
+			Successful = stage.Successful,
+			Steps = stage.Steps,
+			TransitionType = stage.TransitionType
 		};
 
 	private static string NullIfBlank(string value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
