@@ -1369,6 +1369,138 @@ public sealed class ODataReadToolTests {
 		urlBuilder.Received(1).Build("odata/Contact?$expand=Account%2COwner&$top=25");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("A nested $select inside an expand entry is accepted again and travels, escaped, into $expand (ENG-107610).")]
+	public void Read_Should_Send_A_Nested_Select_In_Expand() {
+		// Arrange
+		ODataReadTool tool = BuildToolReturning(
+			"{\"@odata.context\":\"http://creatio/odata/$metadata#Contact\",\"value\":[]}",
+			out IApplicationClient _,
+			out IServiceUrlBuilder urlBuilder);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Expand = Columns("Account($select=Name)")
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "Creatio applies a nested $select in expand, so the tool must not refuse it");
+		urlBuilder.Received(1).Build("odata/Contact?$expand=Account%28%24select%3DName%29&$top=25");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The string form of expand splits only on top-level commas, so a nested select list stays with its entry.")]
+	public void Read_Should_Split_A_String_Expand_On_Top_Level_Commas_Only() {
+		// Arrange
+		ODataReadTool tool = BuildToolReturning(
+			"{\"@odata.context\":\"http://creatio/odata/$metadata#Contact\",\"value\":[]}",
+			out IApplicationClient _,
+			out IServiceUrlBuilder urlBuilder);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Expand = JsonValue("\"Account($select=Id,Name),Owner\"")
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the comma inside the parentheses belongs to the nested select, not to the expand list");
+		urlBuilder.Received(1).Build("odata/Contact?$expand=Account%28%24select%3DId%2CName%29%2COwner&$top=25");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The $expand clause is rebuilt from the parsed names, so the spaces the caller put inside the nested select never reach the URL.")]
+	public void Read_Should_Rebuild_A_Nested_Select_In_Canonical_Form() {
+		// Arrange
+		ODataReadTool tool = BuildToolReturning(
+			"{\"@odata.context\":\"http://creatio/odata/$metadata#Contact\",\"value\":[]}",
+			out IApplicationClient _,
+			out IServiceUrlBuilder urlBuilder);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Expand = Columns(" Account/Owner($select= Id , Name ) ")
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "whitespace around the nested names is not a different request");
+		urlBuilder.Received(1).Build("odata/Contact?$expand=Account%2FOwner%28%24select%3DId%2CName%29&$top=25");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase("Account($Select=Name)")]
+	[TestCase("Account($SELECT=Name)")]
+	[Description("The nested $select option is matched in any case, as Creatio itself accepts it, and is sent in its canonical lower-case form (ENG-107610 review).")]
+	public void Read_Should_Accept_A_Nested_Select_Option_In_Any_Case(string expand) {
+		// Arrange
+		ODataReadTool tool = BuildToolReturning(
+			"{\"@odata.context\":\"http://creatio/odata/$metadata#Contact\",\"value\":[]}",
+			out IApplicationClient _,
+			out IServiceUrlBuilder urlBuilder);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Expand = Columns(expand)
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "Creatio applies $Select and $SELECT inside $expand the same as $select");
+		urlBuilder.Received(1).Build("odata/Contact?$expand=Account%28%24select%3DName%29&$top=25");
+	}
+
+	[TestCase("Account($filter=Name eq 'x')", 0, TestName = "Read_Should_Refuse_A_Nested_Filter_In_Expand")]
+	[TestCase("Account($select=Id;$expand=Owner)", 0, TestName = "Read_Should_Refuse_A_Nested_Option_List_In_Expand")]
+	[TestCase("Account($expand=Owner)", 0, TestName = "Read_Should_Refuse_A_Nested_Expand_In_Expand")]
+	[TestCase("Account($top=1)", 0, TestName = "Read_Should_Refuse_A_Nested_Top_In_Expand")]
+	[TestCase("Account($select=)", 0, TestName = "Read_Should_Refuse_An_Empty_Nested_Select")]
+	[TestCase("Account($select=Id,)", 0, TestName = "Read_Should_Refuse_A_Blank_Name_In_A_Nested_Select")]
+	[TestCase("Account($select=*)", 0, TestName = "Read_Should_Refuse_A_Wildcard_Nested_Select")]
+	[TestCase("Account($select=Owner/Name)", 0, TestName = "Read_Should_Refuse_A_Path_In_A_Nested_Select")]
+	[TestCase("Account($select=Id)x", 0, TestName = "Read_Should_Refuse_Text_After_A_Nested_Select")]
+	[TestCase("Account(($select=Id))", 0, TestName = "Read_Should_Refuse_Nested_Parentheses_In_Expand")]
+	[TestCase("Account ($select=Id)", 0, TestName = "Read_Should_Refuse_A_Space_Before_The_Nested_Options")]
+	[TestCase("Owner,Account($select=Id", 1, TestName = "Read_Should_Refuse_An_Unclosed_Nested_Select_And_Name_Its_Index")]
+	[Category("Unit")]
+	[Description("Every nested option other than a $select of plain names is refused locally with error-code argument, and the message names the accepted form.")]
+	public void Read_Should_Refuse_Unsupported_Nested_Expand_Options(string expand, int index) {
+		// Arrange
+		ODataReadTool tool = BuildToolReturning("{}", out IApplicationClient applicationClient);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Expand = JsonValue(JsonSerializer.Serialize(expand))
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: $"'{expand}' is not a navigation path with an optional nested $select of plain names");
+		response.ErrorCode.Should().Be("argument",
+			because: "the request was refused locally, which a caller must be able to tell apart from a server-side refusal");
+		response.Error.Should().StartWith($"expand[{index}]",
+			because: "the message must point at the entry the caller has to correct");
+		response.Error.Should().Contain("Nav($select=A,B)",
+			because: "the caller needs the accepted form to correct the entry");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "an unsupported nested option must never be pasted into a URL for the server to reject");
+	}
+
 	[TestCase("5", "select", TestName = "select as a number")]
 	[TestCase("{\"a\":1}", "select", TestName = "select as an object")]
 	[TestCase("[1,2]", "select", TestName = "select as an array of numbers")]
@@ -1984,7 +2116,7 @@ public sealed class ODataReadToolTests {
 		ODataReadTool tool = BuildToolReturning("{}", out IApplicationClient applicationClient);
 		ODataReadArgs args = argument switch {
 			"select" => new ODataReadArgs { EnvironmentName = "dev", Entity = "Contact", Select = Columns("Id", "Name eq 'x'") },
-			"expand" => new ODataReadArgs { EnvironmentName = "dev", Entity = "Contact", Expand = Columns("Account($select=Id)") },
+			"expand" => new ODataReadArgs { EnvironmentName = "dev", Entity = "Contact", Expand = Columns("Account eq 'x'") },
 			_ => new ODataReadArgs { EnvironmentName = "dev", Entity = "Contact", OrderBy = "Name sideways" }
 		};
 

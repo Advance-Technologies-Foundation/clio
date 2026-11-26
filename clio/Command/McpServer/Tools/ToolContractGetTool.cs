@@ -737,6 +737,10 @@ internal static class ToolContractCatalog {
 	private const string QueryFieldName = "query";
 	private const string ReferenceSchemaNameFieldName = "reference-schema-name";
 	private const string RegisteredEnvironmentNameDescription = "Registered clio environment name.";
+
+	/// <summary>The expand field of both OData read contracts, which share one validator (ENG-107610).</summary>
+	private const string ODataExpandFieldDescription =
+		"Array of navigation properties to expand, for example [\"Account\", \"Owner\"]. An entry may limit the expanded fields with one nested select of plain field names: Account($select=Id,Name). No other nested option is accepted; rejected with error-code argument before any Creatio request: " + ODataExpandEntry.RejectedNestedOptions + ". A comma-separated string (\"Account($select=Id,Name),Owner\") is tolerated as input and splits only on commas outside parentheses; an array element is always one entry and is never split. On error-code invalid-query a nested name the navigation's target does not have is reported in unknown-members under expand as Nav/Name; like every other path, this check reaches one navigation level deep, so the nested names of a multi-segment navigation (Account/Owner($select=...)) are not checked.";
 	private const string RejectedStatus = "rejected";
 
 	// An alias the server actually honors, as opposed to RejectedStatus, which documents a spelling that is
@@ -2741,7 +2745,7 @@ internal static class ToolContractCatalog {
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(FiltersFieldName, ObjectType, "Structured filter {all?: [c], any?: [c]}, c = {field, op?: eq|ne|gt|ge|lt|le|contains|startswith|endswith (default eq), value | in: [...]}; all joins with AND, any with OR, groups with AND. So A AND (B OR C) is one filter object. GUID values in Id-suffixed fields and navigation paths ending in Id are automatically unquoted. Use lookup traversal paths such as Account/Id when filtering records by lookup primary value. Example: { \"all\": [{ \"field\": \"Account/Id\", \"op\": \"eq\", \"value\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }] }."),
 					Field(SelectFieldName, ArrayType, "Array of field names to return. Use [\"Id\", \"Name\"] when resolving lookup records by display value. A comma-separated string (\"Id,Name\") is tolerated as input; an array element is always one column name and is never split on commas."),
-					Field("expand", ArrayType, "Array of navigation properties to expand. A comma-separated string (\"Account,Owner\") is tolerated as input; an array element is always one navigation name and is never split on commas."),
+					Field("expand", ArrayType, ODataExpandFieldDescription),
 					Field(OrderByFieldName, StringType, "OData $orderby clause, for example CreatedOn desc or Name asc."),
 					Field("top", NumberType, "Maximum number of records to return, 1-100. Default: 25. An out-of-range top (including 0 or negative) is rejected with success:false, never silently changed."),
 					Field("skip", NumberType, "Number of matching records to skip. Must be zero or greater. Use order-by for stable paging."),
@@ -2753,7 +2757,7 @@ internal static class ToolContractCatalog {
 					new ToolContractValidator("skip-range", "invalid-skip", "skip",
 						Context: "skip must be zero or greater; use order-by with skip for stable paging."),
 					new ToolContractValidator("member-path", "argument", "select",
-						Context: "select, expand and order-by are held to the same rule as a filter field: every name must be a plain OData member path (letters, digits, underscore and '/'), and order-by additionally accepts a trailing asc or desc. Nested query options such as Account($select=Id) are rejected before any Creatio request."),
+						Context: "select, expand and order-by are held to the same rule as a filter field: every name must be a plain OData member path (letters, digits, underscore and '/'), and order-by additionally accepts a trailing asc or desc. An expand entry may additionally carry one nested select of plain field names, Nav($select=A,B), which is rebuilt from the parsed names; every other nested shape (" + ODataExpandEntry.RejectedNestedOptions + ") is rejected before any Creatio request."),
 					new ToolContractValidator("structured-filter", "invalid-filter", "filters",
 						Context: "When filters is present it must be a non-null object containing at least one condition in all or any. Every condition requires a simple field or navigation path and exactly one of value or in; unknown group/condition members, embedded OData grammar, and unsupported op values are rejected before any Creatio request.")
 				]),
@@ -2877,7 +2881,7 @@ internal static class ToolContractCatalog {
 					Field(OutputFileFieldName, StringType, "Required path for the raw OData JSON response, confined to the workspace or the OS temp directory. The file must not already exist, so a retry must use a different path."),
 					Field(FiltersFieldName, ObjectType, "Structured filter {all?: [c], any?: [c]}, c = {field, op?: eq|ne|gt|ge|lt|le|contains|startswith|endswith (default eq), value | in: [...]}; all joins with AND, any with OR, groups with AND. Identical to odata-read; A AND (B OR C) is one filter object. Example: { \"all\": [{ \"field\": \"Account/Id\", \"op\": \"eq\", \"value\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }] }."),
 					Field(SelectFieldName, ArrayType, "Fields to return. Narrowing the projection is the cheapest way to stay under the response limit."),
-					Field("expand", ArrayType, "Navigation properties to expand."),
+					Field("expand", ArrayType, ODataExpandFieldDescription),
 					Field(OrderByFieldName, StringType, "OData $orderby clause, for example CreatedOn desc or Name asc."),
 					Field("top", NumberType, "Maximum number of records to return, 1-100. Default: 25. An out-of-range top (including 0 or negative) is rejected with success:false, never silently changed."),
 					Field("skip", NumberType, "Number of matching records to skip. Must be zero or greater. Use order-by for stable paging."),
