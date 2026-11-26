@@ -11,9 +11,11 @@ namespace Clio.Command;
 /// </summary>
 public static class DynamicCaseChangeRequirement {
 	/// <summary>
-	/// The first CrtProcessBuilder archive that carries <c>ModifyCaseAsNewVersion</c> and <c>SetActiveCaseVersion</c>,
-	/// whose <c>DescribeCase</c> lists a case's <c>versions</c> and reads any family member by name, and whose
-	/// <c>ModifyCase</c> changes an inactive member in place.
+	/// The lowest CrtProcessBuilder version this clio accepts for the four tools: one that carries
+	/// <c>ModifyCaseAsNewVersion</c> and <c>SetActiveCaseVersion</c>, whose <c>DescribeCase</c> lists a case's
+	/// <c>versions</c> and reads any family member by name, whose <c>ModifyCase</c> changes an inactive member in place,
+	/// and that behaves as every tool description of the four says. The first cut with the version operations was
+	/// 1.6.6.194; the remarks say why the floor is higher.
 	/// </summary>
 	/// <remarks>
 	/// The one place the floor of the four tools is written. A version literal rather than presence: the version

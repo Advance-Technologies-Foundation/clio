@@ -1342,6 +1342,35 @@ public sealed class DynamicCaseServiceTests {
 		_session.Received(1).Dispose();
 	}
 
+	[TestCase(true)]
+	[TestCase(false)]
+	[Description("A new version that leaves out a stage a kept step's condition still targets is refused by the package as stage-is-condition-target, as on modify-dynamic-case: the removal reaches the package as the shorter stage list, and the refusal comes back with its code and text, no designer link, and not as a success.")]
+	public void ModifyAsNewVersion_ShouldPassStageIsConditionTargetThrough(bool dryRun) {
+		// Arrange
+		AnswerNewVersion(new ModifyCaseAsNewVersionResponse {
+			Success = false, Outcome = "refused", ErrorCode = "stage-is-condition-target",
+			ErrorMessage = "Stage Done is the next stage of a condition of step UsrApprove.", Version = NewVersion()
+		});
+		ModifyDynamicCaseAsNewVersionOptions options = NewVersionOptions(dryRun);
+		options.Stages = [new DynamicCaseStageItem("New"), new DynamicCaseStageItem("In progress")];
+
+		// Act
+		ModifyDynamicCaseAsNewVersionResult result = _service.ModifyAsNewVersion(options);
+
+		// Assert
+		_session.Received(1).ModifyAsNewVersion(Arg.Is<ModifyCaseAsNewVersionRequest>(request =>
+			request.ValidateOnly == dryRun && request.Stages.Count == 2
+			&& request.Stages[0].Value == "New" && request.Stages[1].Value == "In progress"));
+		result.Outcome.Should().Be(DynamicCaseVersionOutcomes.Refused,
+			because: "the package refused the removal before anything was written");
+		result.Success.Should().BeFalse(because: "a refusal is never a success");
+		result.ErrorCode.Should().Be("stage-is-condition-target",
+			because: "the package's code is the one the descriptions name, so the agent can act on it");
+		result.ErrorMessage.Should().Be("Stage Done is the next stage of a condition of step UsrApprove.",
+			because: "the package's text names the stage and the step whose condition targets it");
+		result.Version.DesignerUrl.Should().BeNull(because: "a refused version was not saved");
+	}
+
 	[Test]
 	[Description("A new-version call that names only the case sends no package, stages, caption or filter, leaves a yes not given out of the request rather than false, and writes.")]
 	public void ModifyAsNewVersion_ShouldLeaveOutWhatTheCallDoesNotName() {

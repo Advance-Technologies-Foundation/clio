@@ -227,7 +227,8 @@ public sealed record ModifyDynamicCaseAsNewVersionArgs(
 		+ "an array of {\"value\": \"<lookup value Id or exact display value>\", \"caption\"?, \"color\"?: "
 		+ "\"#RRGGBB\", \"group\"?, \"successful\"?} (a bare string is {\"value\"}). steps and transitionType "
 		+ "are refused steps-not-supported: the version copies the active case's steps with their conditions. A stage left out is not in the "
-		+ "version; a member left out keeps the active case's value. caption renames the stage's lookup value AT "
+		+ "version, its steps and their conditions with it; one a kept step's condition still moves records to is "
+		+ "refused stage-is-condition-target, as on modify-dynamic-case. A member left out keeps the active case's value. caption renames the stage's lookup value AT "
 		+ "ONCE for every record, only with confirm-value-rename. Omit to keep the stages.")]
 	JsonElement? Stages = null,
 

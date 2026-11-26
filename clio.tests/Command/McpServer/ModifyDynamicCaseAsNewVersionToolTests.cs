@@ -356,6 +356,42 @@ public sealed class ModifyDynamicCaseAsNewVersionToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The description and the stages argument say that a version copies the active case's steps together with their conditions, so an agent does not resend conditions it believes a version loses.")]
+	public void Description_ShouldSayAVersionCopiesTheStepsWithTheirConditions() {
+		// Arrange
+		string description = Description();
+		string stages = ParameterDescription("stages");
+
+		// Act
+		string normalized = string.Join(' ', description.Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
+
+		// Assert
+		normalized.Should().Contain("The version copies the active case's steps as they are, with their conditions",
+			because: "a version copies the steps with the conditions that move a case to another stage");
+		stages.Should().Contain("the version copies the active case's steps with their conditions",
+			because: "the stages argument is where an agent decides what to send with a stage");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The stages argument says that a stage left out of a version goes with its steps and their conditions, and that one a kept step's condition still moves records to is refused stage-is-condition-target, as on modify-dynamic-case.")]
+	public void Stages_ShouldSayARemovedConditionTargetIsRefused_AsOnModify() {
+		// Arrange
+		string stages = ParameterDescription("stages");
+
+		// Act
+		string normalized = string.Join(' ', stages.Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
+
+		// Assert
+		normalized.Should().Contain("A stage left out is not in the version, its steps and their conditions with it",
+			because: "a removed stage takes its steps and their conditions out of the version");
+		normalized.Should().Contain("one a kept step's condition still moves records to is refused "
+			+ "stage-is-condition-target, as on modify-dynamic-case",
+			because: "the package's shared change planner refuses removing a stage a kept condition targets");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("An undeclared top-level key is refused through the overflow bag, naming the key and the valid keys.")]
 	public void ModifyDynamicCaseAsNewVersion_ShouldRefuseAnUnknownArgument() {
 		// Arrange

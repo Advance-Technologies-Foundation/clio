@@ -209,7 +209,9 @@ public sealed record ModifyDynamicCaseArgs(
 	[property: JsonPropertyName("stages")]
 	[property: Description("Optional WHOLE desired stage list in order: an array of {\"value\": \"<lookup value Id or "
 		+ "exact display value>\", \"caption\"?, \"color\"?: \"#RRGGBB\", \"group\"?, \"successful\"?} (a bare string "
-		+ "is {\"value\"}). A stored stage left out is removed; a member left out keeps its stored value. group: the "
+		+ "is {\"value\"}). A stored stage left out is removed with its steps and their conditions (refused "
+		+ "stage-is-condition-target while a kept step's condition still moves records to it); a member left out "
+		+ "keeps its stored value. group: the "
 		+ "parent stage's value, a stage of the list in no group itself (one level); \"group\": null takes the stage out "
 		+ "of its group. successful: false for a stage of the final group (the last top-level stage and its members) "
 		+ "that ends the case unsuccessfully. caption renames the stage's lookup value for every record "

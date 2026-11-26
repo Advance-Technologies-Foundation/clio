@@ -392,6 +392,23 @@ public sealed class ModifyDynamicCaseToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The stages argument says a stored stage left out is removed with its steps and their conditions, and that the removal is refused stage-is-condition-target while a kept step's condition still moves records to it.")]
+	public void Stages_ShouldSayARemovedConditionTargetIsRefused() {
+		// Arrange
+		string stages = ParameterDescription("stages");
+
+		// Act
+		string normalized = string.Join(' ', stages.Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
+
+		// Assert
+		normalized.Should().Contain("A stored stage left out is removed with its steps and their conditions",
+			because: "a step's conditions go with the step when its stage is removed");
+		normalized.Should().Contain("refused stage-is-condition-target while a kept step's condition still moves "
+			+ "records to it", because: "the package refuses removing a stage a kept condition targets");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("confirm-running-instances tells the agent to leave it out unless the user said yes, so it is never set on the agent's own.")]
 	public void ConfirmRunningInstances_ShouldBeDescribedAsTheUsersYesOnly() {
 		// Arrange & Act
