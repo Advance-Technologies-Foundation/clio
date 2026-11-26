@@ -31,7 +31,8 @@ call may already have run every `return` gives the result. A `return` (or `throw
 runs is a deliberate stop (`if (child) { return openChild(request, child); } return next?.handle(request);`),
 whichever branch it is written in; a path that runs off the end is not (a forgotten `else`). A switch case
 starts from the switch's entry and from the case that falls into it; `break` leaves the switch or loop;
-inside a loop the call counts as run for the whole body. Both sides word the findings the same: no
+a loop body is judged from the loop's entry and again from "the call has run" when a pass can call next
+and go round, and an endless `while (true)` / `for (;;)` goes on past itself only through `break`. Both sides word the findings the same: no
 `return` gives the result, a `return` reached after the call does not give it, and the body can reach its
 end without a `return` (before or after the call).
 Nothing shares code between the two: the toolkit engine parses the built page itself with its own

@@ -434,9 +434,7 @@ internal static partial class PageBodyAstLinter {
 				case SwitchStatement choice:
 					return WalkSwitch(choice, called, depth);
 				case ForStatement or ForInStatement or ForOfStatement or WhileStatement or DoWhileStatement:
-					bool inLoop = called || CallsNext(statement);
-					Walk(LoopBody(statement), inLoop, depth + 1);
-					return new PathState(true, inLoop, null);
+					return WalkLoop(statement, called, depth);
 				default:
 					return new PathState(true, called || CallsNext(statement), null);
 			}
@@ -458,6 +456,47 @@ internal static partial class PageBodyAstLinter {
 			}
 			return Join(inner with {Break = null}, new PathState(true, broke, null));
 		}
+
+		// The body is walked from the loop's entry, and once more from "the call has run" when a pass through it can
+		// call next and go round again, so a `return` a later pass reaches after the call is judged as such. The loop
+		// goes on past itself when its test can fail (an endless `while (true)` / `for (;;)` only through `break`; a
+		// `do` loop only after a pass that completes), with the call run on any path that completed a pass.
+		private PathState WalkLoop(Statement loop, bool called, int depth) {
+			bool entry = called || HeadCallsNext(loop);
+			PathState pass = Walk(LoopBody(loop), entry, depth + 1);
+			bool calledInPass = (pass.Normal && pass.Called) || pass.Break == true;
+			if (calledInPass && !entry) {
+				pass = Walk(LoopBody(loop), called: true, depth + 1);
+			}
+			bool passCompletes = pass.Normal || pass.Break is not null;
+			bool calledOnward = (pass.Normal && pass.Called) || pass.Break == true;
+			if (IsEndless(loop)) {
+				return pass.Break is { } broke ? new PathState(true, broke, null) : new PathState(false, entry, null);
+			}
+			if (loop is DoWhileStatement) {
+				return passCompletes ? new PathState(true, calledOnward, null) : new PathState(false, entry, null);
+			}
+			return new PathState(true, entry || calledOnward, null);
+		}
+
+		private static bool IsEndless(Statement loop) =>
+			loop switch {
+				WhileStatement w => w.Test is Literal {Value: true},
+				DoWhileStatement d => d.Test is Literal {Value: true},
+				ForStatement f => f.Test is null or Literal {Value: true},
+				_ => false
+			};
+
+		// What a loop runs before its first pass calls next: a `for` initializer or test, a `for-in/of` source, a
+		// `while` test.
+		private bool HeadCallsNext(Statement loop) =>
+			loop switch {
+				ForStatement f => CallsNext(f.Init) || CallsNext(f.Test),
+				ForInStatement f => CallsNext(f.Right),
+				ForOfStatement f => CallsNext(f.Right),
+				WhileStatement w => CallsNext(w.Test),
+				_ => false
+			};
 
 		private PathState WalkAll(IEnumerable<Statement> statements, bool called, int depth) {
 			bool? leaving = null;
