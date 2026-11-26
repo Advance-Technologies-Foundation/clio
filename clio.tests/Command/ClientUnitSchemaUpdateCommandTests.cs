@@ -139,8 +139,7 @@ internal class ClientUnitSchemaUpdateCommandTests : BaseCommandTests<ClientUnitS
 	[Description("A client-module body is linted on save, and its code-quality findings come back as warnings that do not block the save.")]
 	public void TryUpdateSchema_ShouldReturnModuleLintWarnings_WhenBodyIsAClientModule(bool dryRun) {
 		// Arrange
-		string body = File.ReadAllText(Path.Combine(TestContext.CurrentContext.TestDirectory, "Examples", "PageLintV3",
-			"UsrDemoV3App_ReturnNoteFormPageModule.js"));
+		string body = McpServer.PageBodyAstLinterQualityTests.Fixture("UsrDemoV3App_ReturnNoteFormPageModule.js", "PageLintV3");
 		var options = new ClientUnitSchemaUpdateOptions { SchemaName = "UsrHelper", Body = body, DryRun = dryRun };
 
 		// Act

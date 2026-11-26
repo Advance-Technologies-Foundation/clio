@@ -25,12 +25,13 @@ rules driven by a page's `handlers` section (`handler-too-many-nested-functions`
 A `define` is a page, not a module, when the object its factory returns (directly or through a `const`)
 has a view/model config section, or two or more of `handlers` / `converters` / `validators`; a module that
 exports one of those three alone is a shared client module.
-`handler-without-next` accepts a block handler that returns the result of `next.handle(request)`, gives
-it from every `return` written after the first `next.handle` call, and never runs off its end. A `return`
-written before that call is a deliberate stop, taken before the request is handed on
-(`if (child) { return openChild(request, child); } return next?.handle(request);`). Both sides report the
-same three cases: no `return` gives the result, a `return` after the call does not give it, and the body
-can reach its end without a `return`.
+`handler-without-next` follows a block handler path by path. It accepts the handler when some `return`
+gives the result of `next.handle(request)` and, on every path where that call may already have run, every
+`return` gives the result and the body does not run off its end. A path that ends before the call runs is
+a deliberate stop (`if (child) { return openChild(request, child); } return next?.handle(request);`),
+whichever branch it is written in; inside a loop the call counts as run for the whole body. Both sides
+report the same three cases: no `return` gives the result, a `return` reached after the call does not
+give it, and the body can reach its end after the call without a `return`.
 Nothing shares code between the two: the toolkit engine parses the built page itself with its own
 vendored acorn.
 

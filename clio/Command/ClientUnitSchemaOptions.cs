@@ -3,7 +3,6 @@ namespace Clio.Command;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Acornima.Ast;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using CommandLine;
@@ -82,9 +81,8 @@ public class ClientUnitSchemaUpdateCommand : Command<ClientUnitSchemaUpdateOptio
 			if (!TryResolveSchemaUId(options.SchemaName, out string schemaUId, out response)) {
 				return false;
 			}
-			List<string> warnings = ClientModuleLintWarnings(options.Body);
 			if (options.DryRun) {
-				response = CreateSuccessResponse(options, dryRun: true, warnings);
+				response = CreateSuccessResponse(options, dryRun: true);
 				return true;
 			}
 			if (!TryLoadSchemaForSave(options.SchemaName, schemaUId, out JObject schemaToSave, out response)) {
@@ -94,7 +92,7 @@ public class ClientUnitSchemaUpdateCommand : Command<ClientUnitSchemaUpdateOptio
 			if (!TrySaveSchema(schemaToSave, out response)) {
 				return false;
 			}
-			response = CreateSuccessResponse(options, dryRun: false, warnings);
+			response = CreateSuccessResponse(options, dryRun: false);
 			return true;
 		}
 		catch (Exception ex) {
@@ -197,25 +195,21 @@ public class ClientUnitSchemaUpdateCommand : Command<ClientUnitSchemaUpdateOptio
 	/// it. Null when the body is not a client module (or does not parse) or breaks no rule; the lint never blocks the
 	/// save.
 	/// </summary>
-	internal static List<string> ClientModuleLintWarnings(string body) {
-		if (!PageBodySyntaxValidator.ValidateAndParse(body, out Script ast).IsValid
-			|| !PageBodyAstLinter.TryLintClientModule(ast, out IReadOnlyList<PageBodyLintFinding> findings)
-			|| findings.Count == 0) {
-			return null;
-		}
-		return findings.Select(PageBodyAstLinter.FormatFinding).ToList();
-	}
+	internal static List<string> ClientModuleLintWarnings(string body) =>
+		PageBodyAstLinter.TryLintClientModuleBody(body, out IReadOnlyList<PageBodyLintFinding> findings) && findings.Count > 0
+			? findings.Select(PageBodyAstLinter.FormatFinding).ToList()
+			: null;
 
+	// The body is linted only for a response that reports success: a save that fails returns before any lint work.
 	private static ClientUnitSchemaUpdateResponse CreateSuccessResponse(
 		ClientUnitSchemaUpdateOptions options,
-		bool dryRun,
-		List<string> warnings) {
+		bool dryRun) {
 		return new ClientUnitSchemaUpdateResponse {
 			Success = true,
 			SchemaName = options.SchemaName,
 			BodyLength = options.Body.Length,
 			DryRun = dryRun,
-			Warnings = warnings
+			Warnings = ClientModuleLintWarnings(options.Body)
 		};
 	}
 }
