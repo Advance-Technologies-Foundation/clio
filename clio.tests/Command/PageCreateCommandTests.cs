@@ -777,8 +777,11 @@ public sealed class PageCreateCommandTests
 	[TestCase(SchemaTemplateCatalog.HomePageTemplateName, "UsrItRequestsOverviewHomePage")]
 	[TestCase(SchemaTemplateCatalog.HomePageTemplateName, " usritrequestsoverviewhomepage ")]
 	[TestCase(SchemaTemplateCatalog.DashboardTemplateName, null)]
+	[TestCase(SchemaTemplateCatalog.DashboardTemplateName, "   ")]
 	[TestCase(SchemaTemplateCatalog.DashboardTemplateName, "UsrItRequestsOverviewHomePage")]
+	[TestCase(SchemaTemplateCatalog.DashboardTemplateName, " USRITREQUESTSOVERVIEWHOMEPAGE ")]
 	[TestCase(HomePageTemplateUId, null)]
+	[TestCase(HomePageTemplateUId, "UsrItRequestsOverviewHomePage")]
 	[Description("ENG-107757: with RequireHeaderCaption (the MCP path) a home page or dashboard without a caption, or with a caption equal to schema-name, is refused before any request, also when the template is given by UId.")]
 	public void TryCreatePage_RefusesHeaderTemplateWithoutHumanCaption_WhenRequired(string template, string caption) {
 		// Arrange
@@ -801,15 +804,16 @@ public sealed class PageCreateCommandTests
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default);
 	}
 
-	[Test]
-	[Description("ENG-107757: with RequireHeaderCaption a home page with a human-readable caption is saved with that caption.")]
-	public void TryCreatePage_SavesHeaderTemplateWithHumanCaption_WhenRequired() {
+	[TestCase(SchemaTemplateCatalog.HomePageTemplateName)]
+	[TestCase(SchemaTemplateCatalog.DashboardTemplateName)]
+	[Description("ENG-107757: with RequireHeaderCaption a home page or dashboard with a human-readable caption is saved with that caption.")]
+	public void TryCreatePage_SavesHeaderTemplateWithHumanCaption_WhenRequired(string template) {
 		// Arrange
 		StubHeaderCaptionTemplates();
 		StubHappyPathSelectAndSave();
 		PageCreateOptions options = new() {
 			SchemaName = "UsrItRequestsOverviewHomePage",
-			Template = SchemaTemplateCatalog.HomePageTemplateName,
+			Template = template,
 			PackageName = "Custom",
 			Caption = "IT Requests overview",
 			RequireHeaderCaption = true

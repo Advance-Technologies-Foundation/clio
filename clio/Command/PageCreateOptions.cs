@@ -103,26 +103,8 @@ namespace Clio.Command {
 					return false;
 				}
 				LogStep(ref stepNumber, totalSteps, $"Resolving template '{options.Template}'");
-				PageTemplateInfo template;
-				try {
-					template = _templateCatalog.FindTemplate(options.Template);
-				} catch (Exception ex) {
-					response = new PageCreateResponse { Success = false, Error = $"Failed to resolve template catalog: {ex.Message}" };
-					LogFailure(response.Error);
-					return false;
-				}
-				if (template is null) {
-					response = new PageCreateResponse {
-						Success = false,
-						Error = $"Template '{options.Template}' is not supported. Use list-page-templates to discover valid values."
-					};
-					LogFailure(response.Error);
-					return false;
-				}
-				_logger.WriteInfo($"         template: {template.Name} (uId={template.UId}, group={template.GroupName}, type={DescribeSchemaType(template.SchemaType)})");
-				string headerCaptionError = ValidateHeaderCaption(options, template);
-				if (headerCaptionError != null) {
-					response = new PageCreateResponse { Success = false, Error = headerCaptionError };
+				if (!TryResolveTemplate(options, out PageTemplateInfo template, out string templateError)) {
+					response = new PageCreateResponse { Success = false, Error = templateError };
 					LogFailure(response.Error);
 					return false;
 				}
@@ -186,6 +168,28 @@ namespace Clio.Command {
 				LogFailure(response.Error);
 				return false;
 			}
+		}
+
+		/// <summary>
+		/// Resolves the requested template from the live catalog and applies the header-caption rule to it.
+		/// Returns <c>false</c> with the user-facing error when the catalog fails, the template is unknown,
+		/// or the caption does not satisfy <see cref="ValidateHeaderCaption"/>.
+		/// </summary>
+		private bool TryResolveTemplate(PageCreateOptions options, out PageTemplateInfo template, out string error) {
+			try {
+				template = _templateCatalog.FindTemplate(options.Template);
+			} catch (Exception ex) {
+				template = null;
+				error = $"Failed to resolve template catalog: {ex.Message}";
+				return false;
+			}
+			if (template is null) {
+				error = $"Template '{options.Template}' is not supported. Use list-page-templates to discover valid values.";
+				return false;
+			}
+			_logger.WriteInfo($"         template: {template.Name} (uId={template.UId}, group={template.GroupName}, type={DescribeSchemaType(template.SchemaType)})");
+			error = ValidateHeaderCaption(options, template);
+			return error is null;
 		}
 
 		private static readonly HashSet<string> HeaderCaptionTemplateNames = new(StringComparer.OrdinalIgnoreCase) {
