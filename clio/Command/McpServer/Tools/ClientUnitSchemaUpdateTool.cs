@@ -35,6 +35,7 @@ public sealed class ClientUnitSchemaUpdateTool(
 		"A schema name that exists in several packages resolves deterministically to the top (most-derived) layer — " +
 		"the same layer get-client-unit-schema reads. " +
 		"Provide the body inline via `body` or, for large bodies, as an absolute file path via `body-file`. " +
+		"A client-module body is linted like validate-page lints one; findings come back in `warnings` and never block the save. " +
 		"Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public ClientUnitSchemaUpdateResponse UpdateSchema(
 		[Description("Parameters: schema-name (required); one of body or body-file (required); dry-run (optional); environment-name preferred; uri/login/password emergency fallback only.")]
