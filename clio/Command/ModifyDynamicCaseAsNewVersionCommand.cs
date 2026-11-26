@@ -67,6 +67,15 @@ public class ModifyDynamicCaseAsNewVersionCommand(IDynamicCaseService dynamicCas
 
 	private const string NothingWrittenPhrase = "nothing was written";
 
+	// The server's failure messages (CrtProcessBuilder's ModifyCaseAsNewVersion) say these in their own words.
+	private const string NoVersionSavedPhrase = "no version was saved";
+
+	private const string CouldNotBeUndonePhrase = "could not be undone";
+
+	private const string SavedAndKeptPhrase = "was saved and is kept";
+
+	private const string BeforeAnyRetryPhrase = "before any retry";
+
 	private static readonly JsonSerializerOptions ResultJsonOptions = new() {
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
 		Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
@@ -101,14 +110,23 @@ public class ModifyDynamicCaseAsNewVersionCommand(IDynamicCaseService dynamicCas
 				+ $": '{source}' stays active; the notes say what happens to running cases. "
 				+ "Activate the version with set-active-dynamic-case-version only after the user has checked it and "
 				+ "said yes.",
-			DynamicCaseVersionOutcomes.FailedRolledBack => $"The version was not created [{result.ErrorCode}]; nothing of "
-				+ $"it stays: {result.ErrorMessage}",
-			DynamicCaseVersionOutcomes.FailedLeftover when result.Version is null => $"No version was saved, but the call "
-				+ $"could not undo everything it wrote [{result.ErrorCode}]: {result.ErrorMessage} Left behind: "
-				+ $"{string.Join("; ", result.Leftovers ?? [])}. Run describe-dynamic-case before any retry.",
-			DynamicCaseVersionOutcomes.FailedLeftover => $"Version '{name}' was saved but the call failed "
-				+ $"[{result.ErrorCode}]: {result.ErrorMessage} It stays: {string.Join("; ", result.Leftovers ?? [])}. Do "
-				+ "not activate it; run describe-dynamic-case before any retry.",
+			// The server's own message may already say what happened to the version and list what is left; a clause it
+			// carries is not said twice, as SaysNothingWasWritten does for refusals.
+			DynamicCaseVersionOutcomes.FailedRolledBack => Says(result, NoVersionSavedPhrase)
+				? $"The save failed [{result.ErrorCode}]: {result.ErrorMessage}"
+				: $"The version was not created [{result.ErrorCode}]; nothing of it stays: {result.ErrorMessage}",
+			DynamicCaseVersionOutcomes.FailedLeftover when result.Version is null => (Says(result, NoVersionSavedPhrase)
+					? $"The save failed [{result.ErrorCode}]: {result.ErrorMessage}"
+					: $"No version was saved, but the call could not undo everything it wrote [{result.ErrorCode}]: "
+					+ result.ErrorMessage)
+				+ (Says(result, CouldNotBeUndonePhrase) ? string.Empty : $" Left behind: {Leftovers(result)}.")
+				+ " Run describe-dynamic-case before any retry.",
+			DynamicCaseVersionOutcomes.FailedLeftover => (Says(result, SavedAndKeptPhrase)
+					? $"The call failed after the save [{result.ErrorCode}]: {result.ErrorMessage} Left behind: "
+					: $"Version '{name}' was saved but the call failed [{result.ErrorCode}]: {result.ErrorMessage} It "
+					+ "stays: ")
+				+ $"{Leftovers(result)}. Do not activate it"
+				+ (Says(result, BeforeAnyRetryPhrase) ? "." : "; run describe-dynamic-case before any retry."),
 			DynamicCaseVersionOutcomes.Unknown => result.ErrorMessage,
 			_ => $"Refused [{result.ErrorCode}]: {result.ErrorMessage}"
 				+ (SaysNothingWasWritten(result) ? string.Empty : NothingWritten)
@@ -117,7 +135,13 @@ public class ModifyDynamicCaseAsNewVersionCommand(IDynamicCaseService dynamicCas
 
 	// Some refusals already say it in their own words; repeating it would read as two separate claims.
 	private static bool SaysNothingWasWritten(ModifyDynamicCaseAsNewVersionResult result) =>
-		result.ErrorMessage?.Contains(NothingWrittenPhrase, StringComparison.OrdinalIgnoreCase) == true;
+		Says(result, NothingWrittenPhrase);
+
+	private static bool Says(ModifyDynamicCaseAsNewVersionResult result, string phrase) =>
+		result.ErrorMessage?.Contains(phrase, StringComparison.OrdinalIgnoreCase) == true;
+
+	private static string Leftovers(ModifyDynamicCaseAsNewVersionResult result) =>
+		string.Join("; ", result.Leftovers ?? []);
 
 	private void Report(ModifyDynamicCaseAsNewVersionResult result) {
 		string verdict = Verdict(result) + DynamicCaseWarningsHint.For(result.Warnings, beforeAnyWrite: true);

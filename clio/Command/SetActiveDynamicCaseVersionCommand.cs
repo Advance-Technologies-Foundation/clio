@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -68,9 +69,21 @@ public class SetActiveDynamicCaseVersionCommand(IDynamicCaseService dynamicCaseS
 	internal static string Verdict(SetActiveDynamicCaseVersionResult result) {
 		string active = result.ActiveVersion?.Name ?? "the version";
 		string previous = result.PreviousActiveVersion?.Name;
+		// The documented repeat after failed-not-restored: the target is already the platform's pick and the call only
+		// clears the flags other members still carry, so "instead of" / "was" would name the target as its own
+		// predecessor.
+		bool staysActive = previous is not null && IsSameMember(result.ActiveVersion, result.PreviousActiveVersion);
+		bool warned = result.Warnings?.Any(warning => !string.IsNullOrWhiteSpace(warning)) == true;
 		return result.Outcome switch {
+			DynamicCaseActivationOutcomes.Planned when staysActive => $"Dry run: '{active}' would stay the active "
+				+ "version, and the switch would clear the active flag the other editable members still carry"
+				+ (warned ? ", unless a warning below stands in the way." : ".") + NothingWritten,
 			DynamicCaseActivationOutcomes.Planned => $"Dry run: '{active}' would become the active version"
-				+ (previous is null ? "." : $" instead of '{previous}'.") + NothingWritten,
+				+ (previous is null ? string.Empty : $" instead of '{previous}'")
+				+ (warned ? " unless a warning below stands in the way." : ".") + NothingWritten,
+			DynamicCaseActivationOutcomes.Activated when staysActive => $"'{active}' stays the active version of the "
+				+ "case, and the switch cleared the active flag the other editable members still carried; the notes say what that "
+				+ "means for the bar, new records and running cases.",
 			DynamicCaseActivationOutcomes.Activated => $"'{active}' is now the active version of the case"
 				+ (previous is null ? "" : $" (was '{previous}')") + "; the notes say what that means for the bar, new "
 				+ "records and running cases.",
@@ -88,6 +101,12 @@ public class SetActiveDynamicCaseVersionCommand(IDynamicCaseService dynamicCaseS
 				+ (SaysNothingWasWritten(result) ? string.Empty : NothingWritten)
 		};
 	}
+
+	private static bool IsSameMember(DynamicCaseVersion first, DynamicCaseVersion second) =>
+		first is not null && second is not null
+		&& (!string.IsNullOrWhiteSpace(first.UId) && !string.IsNullOrWhiteSpace(second.UId)
+			? string.Equals(first.UId, second.UId, StringComparison.OrdinalIgnoreCase)
+			: string.Equals(first.Name, second.Name, StringComparison.OrdinalIgnoreCase));
 
 	// Some refusals already say it in their own words; repeating it would read as two separate claims.
 	private static bool SaysNothingWasWritten(SetActiveDynamicCaseVersionResult result) =>

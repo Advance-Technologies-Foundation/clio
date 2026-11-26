@@ -262,6 +262,60 @@ public sealed class ModifyDynamicCaseAsNewVersionCommandTests : BaseClioModuleTe
 	}
 
 	[Test]
+	[Description("failed-rolled-back whose server message already says no version was saved and the writes were undone: the verdict does not say it twice.")]
+	public void Verdict_ShouldNotRepeatTheRollback_WhenTheMessageSaysIt() {
+		// Arrange
+		ModifyDynamicCaseAsNewVersionResult result = Result(DynamicCaseVersionOutcomes.FailedRolledBack, "write-failed",
+			"The save failed. No version was saved, and what this call wrote before the failure was undone.");
+
+		// Act
+		string verdict = ModifyDynamicCaseAsNewVersionCommand.Verdict(result);
+
+		// Assert
+		verdict.Should().Be("The save failed [write-failed]: The save failed. No version was saved, and what this call "
+			+ "wrote before the failure was undone.", because: "the server's message already says both, once");
+	}
+
+	[Test]
+	[Description("failed-leftover without a version whose server message already says no version was saved and lists what could not be undone: the verdict repeats neither and still sends the agent to describe before any retry.")]
+	public void Verdict_ShouldNotRepeatTheLeftovers_WhenTheMessageListsThem() {
+		// Arrange
+		ModifyDynamicCaseAsNewVersionResult listed = Result(DynamicCaseVersionOutcomes.FailedLeftover, "write-failed",
+			"The save failed. No version was saved. These could not be undone and need removing by hand: its "
+			+ "SysDcmSchemaInSettings row 's2'.", ["its SysDcmSchemaInSettings row 's2'"]);
+		ModifyDynamicCaseAsNewVersionResult result = new() {
+			Outcome = listed.Outcome, ErrorCode = listed.ErrorCode, ErrorMessage = listed.ErrorMessage,
+			Leftovers = listed.Leftovers, Notes = [], Warnings = []
+		};
+
+		// Act
+		string verdict = ModifyDynamicCaseAsNewVersionCommand.Verdict(result);
+
+		// Assert
+		verdict.Should().Be("The save failed [write-failed]: The save failed. No version was saved. These could not be "
+			+ "undone and need removing by hand: its SysDcmSchemaInSettings row 's2'. Run describe-dynamic-case before "
+			+ "any retry.", because: "the message already names what was left, and the retry advice is the verdict's own");
+	}
+
+	[Test]
+	[Description("failed-leftover with a saved version whose server message already says it was saved and kept and asks for a describe before any retry: the verdict lists what is left and forbids activation without saying either again.")]
+	public void Verdict_ShouldNotRepeatTheKeptVersion_WhenTheMessageSaysIt() {
+		// Arrange
+		ModifyDynamicCaseAsNewVersionResult result = Result(DynamicCaseVersionOutcomes.FailedLeftover,
+			"read-back-mismatch", "The stages did not read back. The version 'UsrOrderCaseCustom1' was saved and is kept; "
+			+ "it is not active. Describe the family before any retry.", ["the case version 'UsrOrderCaseCustom1'"]);
+
+		// Act
+		string verdict = ModifyDynamicCaseAsNewVersionCommand.Verdict(result);
+
+		// Assert
+		verdict.Should().Be("The call failed after the save [read-back-mismatch]: The stages did not read back. The "
+			+ "version 'UsrOrderCaseCustom1' was saved and is kept; it is not active. Describe the family before any "
+			+ "retry. Left behind: the case version 'UsrOrderCaseCustom1'. Do not activate it.",
+			because: "the message already says the version stays and to describe first; the verdict adds only what it lacks");
+	}
+
+	[Test]
 	[Description("unknown: exit 1 and the service's message as the verdict, which sends the agent to describe before any retry.")]
 	public void Execute_ShouldReportTheUnknownOutcome_AsTheServiceMessage() {
 		// Arrange

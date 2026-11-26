@@ -20,7 +20,11 @@ public static class DynamicCaseVersionOutcomes {
 	/// <summary>The save failed and nothing of the version stays.</summary>
 	public const string FailedRolledBack = DynamicCaseOutcomes.FailedRolledBack;
 
-	/// <summary>The version was saved and stays, but the call failed after the save; see the leftovers.</summary>
+	/// <summary>
+	/// The call failed and left something behind; see the leftovers. Either the version was saved and stays (it did not
+	/// read back as planned; <c>version</c> names it), or no version was saved but the rollback could not undo
+	/// everything this call wrote before the failure, such as its link row or a stage value rename (no <c>version</c>).
+	/// </summary>
 	public const string FailedLeftover = DynamicCaseOutcomes.FailedLeftover;
 
 	/// <summary>No readable answer came back after a write, so whether a version was saved is not known.</summary>
@@ -310,7 +314,8 @@ public sealed class SetActiveCaseVersionResponse : CaseVersionActivation<CaseVer
 
 /// <summary>A member of a case's version family in a tool's result: the server's block plus the designer link.</summary>
 public sealed class DynamicCaseVersion : CaseVersionInfo {
-	/// <summary>The case designer link; only for a member that exists.</summary>
+	/// <summary>The case designer link: in describe, for each member that opens in the designer; in an activation,
+	/// only for the member the call named, once its link row is in place.</summary>
 	[JsonPropertyName("designerUrl"), JsonPropertyOrder(1)]
 	public string DesignerUrl { get; init; }
 }

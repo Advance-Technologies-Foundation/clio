@@ -351,9 +351,14 @@ public sealed class DynamicCaseService(
 		if (unreadOutcome) {
 			outcome = options.DryRun ? DynamicCaseActivationOutcomes.Refused : DynamicCaseActivationOutcomes.Unknown;
 		}
-		// Every member an activation names exists: it was found before anything was written. A dry run that plans the
-		// target's link row says the target has none yet, and the case designer opens only a member that has one.
+		// Every member an activation names exists: it was found before anything was written. But the case designer
+		// opens only a member with its own link row (the rule OpensInTheDesigner applies to describe), and the answer
+		// says that only of the TARGET: its linkRow is reused once this call ensured it (the server never reports a link
+		// row as created), planned on a dry run that would add one, and absent on unchanged, where it is not checked. A member that is not the target - the previously active one, or the
+		// one a failed-not-restored switch left active - comes with no link-row fact, so it gets no link; describe-
+		// dynamic-case links every member that opens.
 		bool targetOpens = !string.Equals(response.LinkRow?.Status, PlannedLinkRowStatus, StringComparison.OrdinalIgnoreCase);
+		bool Opens(CaseVersionInfo member) => targetOpens && IsActivationTarget(request, member);
 		return new SetActiveDynamicCaseVersionResult {
 			Success = response.Success && DynamicCaseActivationOutcomes.IsSuccess(outcome),
 			Outcome = outcome,
@@ -366,8 +371,9 @@ public sealed class DynamicCaseService(
 						+ "of its versions is active before deciding. ")
 					+ (response.ErrorMessage ?? string.Empty)
 				: response.ErrorMessage,
-			ActiveVersion = VersionInfo(options.Environment, response.ActiveVersion, exists: targetOpens),
-			PreviousActiveVersion = VersionInfo(options.Environment, response.PreviousActiveVersion, exists: true),
+			ActiveVersion = VersionInfo(options.Environment, response.ActiveVersion, Opens(response.ActiveVersion)),
+			PreviousActiveVersion = VersionInfo(options.Environment, response.PreviousActiveVersion,
+				Opens(response.PreviousActiveVersion)),
 			SiblingsStillFlagged = response.SiblingsStillFlagged ?? [],
 			DecidedByPackagePosition = response.DecidedByPackagePosition ?? [],
 			LinkRow = response.LinkRow,
@@ -377,6 +383,13 @@ public sealed class DynamicCaseService(
 			Warnings = response.Warnings ?? []
 		};
 	}
+
+	// The member the call named, by the identity it was named with: the request carries exactly one.
+	private static bool IsActivationTarget(SetActiveCaseVersionRequest request, CaseVersionInfo member) =>
+		member is not null && (request.VersionUId is not null
+			? Guid.TryParse(member.UId, out Guid memberUId) && Guid.TryParse(request.VersionUId, out Guid requestUId)
+				&& memberUId == requestUId
+			: string.Equals(member.Name, request.VersionName, StringComparison.OrdinalIgnoreCase));
 
 	private static BuildCaseRequest BuildRequest(CreateDynamicCaseOptions options) =>
 		new() {

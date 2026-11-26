@@ -156,7 +156,7 @@ public sealed class McpToolFactsCoverageTests {
 	internal static readonly IReadOnlyDictionary<string, string> ConfirmedLiveOverwrites = new Dictionary<string, string>(StringComparer.Ordinal) {
 		["modify-dynamic-case-as-new-version"] = "it adds an inactive case version; the one overwrite is a stage value "
 			+ "rename, refused by the server without confirm-value-rename, which the description and the guide say to send "
-			+ "only after the user's yes to a rename that acts at once for every record (owner's decision, ENG-106400 D6)"
+			+ "only after the user's yes to a rename that acts at once for every record (owner's decision, adr-mcp-tool-facts D9)"
 	};
 
 	private static IEnumerable<string> FindHintFailures(string name, McpServerTool tool, McpToolFacts facts) {

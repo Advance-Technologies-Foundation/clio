@@ -1287,7 +1287,7 @@ public sealed class DynamicCaseServiceTests {
 		},
 		SourceName = "UsrOrderCase",
 		Diff = new DynamicCaseDiff { Added = [new DynamicCaseStageChange { Value = "v3", Caption = "Paid" }] },
-		Settings = new DynamicCaseSettings { Status = "added", SysDcmSettingsId = "s1", Bindings = ["UsrOrdersV2"] },
+		Settings = new DynamicCaseSettings { Status = "reused", SysDcmSettingsId = "s1", Bindings = ["UsrOrdersV2"] },
 		Obligations = new DynamicCaseObligations { ReloadOpenPages = true },
 		Leftovers = ["UsrOrderCaseCustom1 schema"],
 		Notes = ["note"],
@@ -1740,7 +1740,7 @@ public sealed class DynamicCaseServiceTests {
 	}
 
 	[Test]
-	[Description("The activation result maps every field of the server's read-back and links the designer on both the active and the previously active member.")]
+	[Description("The activation result maps every field of the server's read-back and links the designer on the member the call named, which the answer says opens; the previously active member gets no link, since the answer carries no link-row fact for it.")]
 	public void SetActiveVersion_ShouldMapEveryFieldOfTheAnswer_WithTheDesignerLinks() {
 		// Arrange
 		SetActiveCaseVersionResponse response = new() {
@@ -1752,7 +1752,7 @@ public sealed class DynamicCaseServiceTests {
 			PreviousActiveVersion = RootVersion(),
 			SiblingsStillFlagged = ["UsrOrderCaseCustom2"],
 			DecidedByPackagePosition = ["UsrOrderCaseVendor"],
-			LinkRow = new DynamicCaseSettings { Status = "added", SysDcmSettingsId = "s2" },
+			LinkRow = new DynamicCaseSettings { Status = "reused", SysDcmSettingsId = "s2" },
 			Obligations = new DynamicCaseObligations { ReloadOpenPages = true },
 			Leftovers = ["link row"],
 			Notes = ["note"],
@@ -1766,7 +1766,8 @@ public sealed class DynamicCaseServiceTests {
 		// Assert
 		NullMembers(result).Should().BeEmpty(because: "every field of a complete read-back reaches the result");
 		NullMembers(result.ActiveVersion).Should().BeEmpty(because: "every field of the active member is mapped");
-		NullMembers(result.PreviousActiveVersion).Should().BeEmpty(because: "every field of the previous member is mapped");
+		NullMembers(result.PreviousActiveVersion).Should().Equal(["DesignerUrl"],
+			because: "every server field of the previous member is mapped, and only the link is left out");
 		result.Success.Should().BeTrue(because: "activated is a success");
 		result.Outcome.Should().Be("activated", because: "the server's outcome is passed through");
 		result.ErrorCode.Should().Be("code", because: "the server's code is passed through");
@@ -1779,8 +1780,9 @@ public sealed class DynamicCaseServiceTests {
 		result.ActiveVersion.DesignerUrl.Should().Be(DesignerPrefix + VersionUId,
 			because: "the active member exists and opens in the designer");
 		result.PreviousActiveVersion.Name.Should().Be("UsrOrderCase", because: "the previous member is named");
-		result.PreviousActiveVersion.DesignerUrl.Should().Be(DesignerPrefix + CaseUId,
-			because: "the previous member exists and opens in the designer");
+		result.PreviousActiveVersion.DesignerUrl.Should().BeNull(
+			because: "whether the previous member has its own link row is not in the answer, and the designer opens no "
+			+ "other; describe-dynamic-case links it when it opens");
 		result.SiblingsStillFlagged.Should().Equal(["UsrOrderCaseCustom2"], because: "still-flagged siblings are named");
 		result.DecidedByPackagePosition.Should().Equal(["UsrOrderCaseVendor"],
 			because: "members in read-only packages are named");
@@ -1915,25 +1917,75 @@ public sealed class DynamicCaseServiceTests {
 			because: "the member that has a link row keeps its link");
 	}
 
-	[TestCase("planned", false)]
-	[TestCase("present", true)]
-	[Description("An activation dry run that plans the target's link row gives the target no designer link (it has no row yet), while one whose target already has a row links it.")]
-	public void SetActiveVersion_ShouldLinkTheTarget_OnlyWhenItHasALinkRow(string linkRowStatus, bool linked) {
+	[TestCase("planned", true, "planned", false)]
+	[TestCase("planned", true, null, true)]
+	[TestCase("activated", false, "reused", true)]
+	[TestCase("activated", false, null, true)]
+	[Description("The target gets a designer link only when it has its own link row: not while a dry run only plans one (status planned), but when the switch created one or the answer adds none because it had one; the previously active member gets none, since the answer says nothing of its link row.")]
+	public void SetActiveVersion_ShouldLinkTheTarget_OnlyWhenItHasALinkRow(string outcome, bool dryRun,
+		string linkRowStatus, bool linked) {
 		// Arrange
 		AnswerActivation(new SetActiveCaseVersionResponse {
-			Success = true, Outcome = "planned", ActiveVersion = NewVersion(active: true),
+			Success = true, Outcome = outcome, ActiveVersion = NewVersion(active: true),
 			PreviousActiveVersion = RootVersion(),
-			LinkRow = new DynamicCaseSettings { Status = linkRowStatus, SysDcmSettingsId = "s2" }
+			LinkRow = linkRowStatus is null ? null : new DynamicCaseSettings { Status = linkRowStatus, SysDcmSettingsId = "s2" }
 		});
 
 		// Act
-		SetActiveDynamicCaseVersionResult result = _service.SetActiveVersion(ActivationOptions(dryRun: true));
+		SetActiveDynamicCaseVersionResult result = _service.SetActiveVersion(ActivationOptions(dryRun));
 
 		// Assert
 		result.ActiveVersion.DesignerUrl.Should().Be(linked ? DesignerPrefix + VersionUId : null,
 			because: "the case designer opens only a member that has its own link row");
-		result.PreviousActiveVersion.DesignerUrl.Should().Be(DesignerPrefix + CaseUId,
-			because: "the member that was active keeps its link");
+		result.PreviousActiveVersion.DesignerUrl.Should().BeNull(
+			because: "the answer carries no link-row fact for a member other than the target");
+	}
+
+	[Test]
+	[Description("A failed-not-restored switch that left another member active links neither member: the target's link row says nothing of the member really active, and the previously active one carries no link-row fact either.")]
+	public void SetActiveVersion_ShouldLinkNoMember_WhenTheActiveOneIsNotTheTarget() {
+		// Arrange
+		AnswerActivation(new SetActiveCaseVersionResponse {
+			Success = false, Outcome = "failed-not-restored", ErrorCode = "write-failed",
+			ActiveVersion = RootVersion(), PreviousActiveVersion = RootVersion()
+		});
+
+		// Act
+		SetActiveDynamicCaseVersionResult result = _service.SetActiveVersion(ActivationOptions());
+
+		// Assert
+		result.ActiveVersion.Name.Should().Be("UsrOrderCase", because: "the member really active is named");
+		result.ActiveVersion.DesignerUrl.Should().BeNull(
+			because: "the member really active is not the one the call named, so its link row is not known");
+		result.PreviousActiveVersion.DesignerUrl.Should().BeNull(
+			because: "the answer carries no link-row fact for a member other than the target");
+	}
+
+	[TestCase(null)]
+	[TestCase("D")]
+	[TestCase("B")]
+	[TestCase("N")]
+	[Description("The repeat after failed-not-restored names the target as both the active and the previous member; being the target, both blocks get its link once the answer says it has a link row, whether the call named it by name or by UId in any GUID format the server accepts.")]
+	public void SetActiveVersion_ShouldLinkThePreviousMember_WhenItIsTheTarget(string uIdFormat) {
+		// Arrange
+		AnswerActivation(new SetActiveCaseVersionResponse {
+			Success = true, Outcome = "activated", ActiveVersion = NewVersion(active: true),
+			PreviousActiveVersion = NewVersion(active: true)
+		});
+		SetActiveDynamicCaseVersionOptions options = ActivationOptions();
+		if (uIdFormat is not null) {
+			options.VersionName = null;
+			options.VersionUId = Guid.Parse(VersionUId).ToString(uIdFormat).ToUpperInvariant();
+		}
+
+		// Act
+		SetActiveDynamicCaseVersionResult result = _service.SetActiveVersion(options);
+
+		// Assert
+		result.ActiveVersion.DesignerUrl.Should().Be(DesignerPrefix + VersionUId,
+			because: "the target had its own link row, so the answer added none");
+		result.PreviousActiveVersion.DesignerUrl.Should().Be(DesignerPrefix + VersionUId,
+			because: "the previous member is the target itself, whose link row the answer vouches for");
 	}
 
 	[Test]
@@ -1983,7 +2035,7 @@ public sealed class DynamicCaseServiceTests {
 	[Description("A modify passes the link row the server added for an inactive member through, and leaves it absent when the server sent none.")]
 	public void Modify_ShouldPassTheLinkRowThrough() {
 		// Arrange
-		DynamicCaseSettings linkRow = new() { Status = "added", SysDcmSettingsId = "s2", Bindings = ["UsrOrders"] };
+		DynamicCaseSettings linkRow = new() { Status = "reused", SysDcmSettingsId = "s2", Bindings = ["UsrOrders"] };
 		_session.Modify(Arg.Any<ModifyCaseRequest>()).Returns(
 			new DynamicCaseReply<ModifyCaseResponse>(DynamicCaseReplyKind.Envelope,
 				new ModifyCaseResponse { Success = true, Outcome = "modified", Case = ExistingCase(), LinkRow = linkRow },

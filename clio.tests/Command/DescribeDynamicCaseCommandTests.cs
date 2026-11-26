@@ -69,6 +69,53 @@ public sealed class DescribeDynamicCaseCommandTests : BaseClioModuleTests {
 		return _command.Execute(Options());
 	}
 
+	[TestCase(false, true, "Dynamic case 'UsrOrderCaseCustom1' read: 2 stages, an inactive version of an enabled family; "
+		+ "nothing was changed.")]
+	[TestCase(false, false, "Dynamic case 'UsrOrderCaseCustom1' read: 2 stages, an inactive version of a disabled "
+		+ "family; nothing was changed.")]
+	[TestCase(true, true, "Dynamic case 'UsrOrderCaseCustom1' read: 2 stages, enabled; nothing was changed.")]
+	[Description("A case read by the name of an inactive member says it is an inactive version, with the family's enabled flag as the family's; the active member reads as before.")]
+	public void Verdict_ShouldNameAnInactiveVersion_WhenTheMemberIsNotActive(bool active, bool enabled,
+		string expected) {
+		// Arrange
+		DynamicCaseInfo read = Case("UsrOrderCaseCustom1", enabled);
+		DescribeDynamicCaseResult result = new() {
+			Success = true,
+			Cases = [new DynamicCaseInfo {
+				SchemaName = read.SchemaName, Enabled = read.Enabled, Status = read.Status, Stages = read.Stages,
+				ActiveVersion = active,
+				Versions = [
+					new DynamicCaseVersionMember { Name = "UsrOrderCase", Active = !active },
+					new DynamicCaseVersionMember { Name = "UsrOrderCaseCustom1", Active = active }
+				]
+			}],
+			Notes = [], Warnings = []
+		};
+
+		// Act
+		string verdict = DescribeDynamicCaseCommand.Verdict(result);
+
+		// Assert
+		verdict.Should().Be(expected, because: "enabled is the family's flag, so an inactive member must not read as "
+			+ "the case in force");
+	}
+
+	[Test]
+	[Description("A case without versions is never called inactive, even when the answer carried no activeVersion: only a family has inactive members.")]
+	public void Verdict_ShouldNotCallACaseInactive_WhenItListsNoVersions() {
+		// Arrange
+		DescribeDynamicCaseResult result = new() {
+			Success = true, Cases = [Case("UsrOrderCase", enabled: true)], Notes = [], Warnings = []
+		};
+
+		// Act
+		string verdict = DescribeDynamicCaseCommand.Verdict(result);
+
+		// Assert
+		verdict.Should().Be("Dynamic case 'UsrOrderCase' read: 2 stages, enabled; nothing was changed.",
+			because: "a missing activeVersion reads as false, which alone must not turn a case into an inactive version");
+	}
+
 	[Test]
 	[Description("One case read: exit 0, an info verdict naming the case, its stage count and whether it is enabled, then the result document that alone carries the notes and warnings; the verdict counts the warnings.")]
 	public void Execute_ShouldReportTheCase_WhenOneCaseIsRead() {

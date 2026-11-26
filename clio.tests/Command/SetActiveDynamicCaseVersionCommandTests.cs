@@ -121,6 +121,55 @@ public sealed class SetActiveDynamicCaseVersionCommandTests : BaseClioModuleTest
 		Verdict().Should().Be(expected, because: "the user must know what the switch changes and what it leaves");
 	}
 
+	[TestCase(DynamicCaseActivationOutcomes.Planned, "Dry run: 'UsrOrderCaseCustom1' would stay the active version, "
+		+ "and the switch would clear the active flag the other editable members still carry. Nothing was written.")]
+	[TestCase(DynamicCaseActivationOutcomes.Activated, "'UsrOrderCaseCustom1' stays the active version of the case, and "
+		+ "the switch cleared the active flag the other editable members still carried; the notes say what that means for the "
+		+ "bar, new records and running cases.")]
+	[Description("The repeat after failed-not-restored names the target as both the active and the previous member: the verdict says it stays active and the switch clears the other members' flags, never that it replaces itself.")]
+	public void Verdict_ShouldSayTheTargetStaysActive_WhenItIsAlsoThePreviousMember(string outcome, string expected) {
+		// Arrange
+		SetActiveDynamicCaseVersionResult result = Result(outcome);
+		result = new SetActiveDynamicCaseVersionResult {
+			Success = result.Success, Outcome = result.Outcome, ActiveVersion = result.ActiveVersion,
+			PreviousActiveVersion = new DynamicCaseVersion { Name = "usrordercasecustom1" }, Warnings = []
+		};
+
+		// Act
+		string verdict = SetActiveDynamicCaseVersionCommand.Verdict(result);
+
+		// Assert
+		verdict.Should().Be(expected, because: "a member does not replace itself; the switch only clears stale flags");
+		verdict.Should().NotContain("instead of").And.NotContain("(was ",
+			because: "naming the target as its own predecessor misreports what the switch does");
+	}
+
+	[TestCase(true, "Dry run: 'UsrOrderCaseCustom1' would become the active version instead of 'UsrOrderCase' unless "
+		+ "a warning below stands in the way. Nothing was written. 1 warning in the result: show it to the user before "
+		+ "any write.")]
+	[TestCase(false, "Dry run: 'UsrOrderCaseCustom1' would stay the active version, and the switch would clear the "
+		+ "active flag the other editable members still carry, unless a warning below stands in the way. Nothing was "
+		+ "written. 1 "
+		+ "warning in the result: show it to the user before any write.")]
+	[Description("A planned switch with a warning is hedged: it would happen unless the warning stands in the way, and the warning count still follows.")]
+	public void Execute_ShouldHedgeThePlan_WhenItCarriesAWarning(bool switches, string expected) {
+		// Arrange
+		SetActiveDynamicCaseVersionResult planned = Result(DynamicCaseActivationOutcomes.Planned);
+		SetActiveDynamicCaseVersionResult result = new() {
+			Success = true, Outcome = planned.Outcome, ActiveVersion = planned.ActiveVersion,
+			PreviousActiveVersion = switches ? planned.PreviousActiveVersion : planned.ActiveVersion,
+			SiblingsStillFlagged = [], DecidedByPackagePosition = [], Leftovers = [], Notes = [],
+			Warnings = ["A member in a package that does not accept changes may outrank it."]
+		};
+
+		// Act
+		Run(result);
+
+		// Assert
+		Verdict().Should().Be(expected,
+			because: "a package-position warning can stop the switch, so the dry run must not promise it");
+	}
+
 	[Test]
 	[Description("unchanged: exit 0 and an info verdict saying the member is already active and nothing was written.")]
 	public void Execute_ShouldReportNoChange_WhenTheOutcomeIsUnchanged() {

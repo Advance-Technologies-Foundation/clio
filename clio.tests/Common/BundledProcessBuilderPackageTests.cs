@@ -989,8 +989,10 @@ public class BundledProcessBuilderPackageTests {
 		string archive = ReadBundledArchiveAsText();
 
 		// Act
-		// Probes bound to their declaring type, not bare wire names: "versions" or "linkRow" alone could come from any
-		// contract, and only the member on the named type says the capability is there.
+		// The two operations and the versions member are probed with their declaring signature, because a bare wire
+		// name ("versions", "linkRow") could come from any contract. The package-position probes are bare DataMember
+		// names and an error-code literal: each names the package-position feature and nothing else, so a match cannot
+		// come from another capability, and a rename on the server side fails them like a missing capability.
 		bool carriesNewVersion = archive.Contains(
 			"ModifyCaseAsNewVersionResponse ModifyCaseAsNewVersion(ModifyCaseAsNewVersionRequest", StringComparison.Ordinal);
 		bool carriesActivation = archive.Contains(
