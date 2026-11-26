@@ -1438,6 +1438,31 @@ public sealed class ODataReadToolTests {
 		urlBuilder.Received(1).Build("odata/Contact?$expand=Account%2FOwner%28%24select%3DId%2CName%29&$top=25");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[TestCase("Account($Select=Name)")]
+	[TestCase("Account($SELECT=Name)")]
+	[Description("The nested $select option is matched in any case, as Creatio itself accepts it, and is sent in its canonical lower-case form (ENG-107610 review).")]
+	public void Read_Should_Accept_A_Nested_Select_Option_In_Any_Case(string expand) {
+		// Arrange
+		ODataReadTool tool = BuildToolReturning(
+			"{\"@odata.context\":\"http://creatio/odata/$metadata#Contact\",\"value\":[]}",
+			out IApplicationClient _,
+			out IServiceUrlBuilder urlBuilder);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Expand = Columns(expand)
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "Creatio applies $Select and $SELECT inside $expand the same as $select");
+		urlBuilder.Received(1).Build("odata/Contact?$expand=Account%28%24select%3DName%29&$top=25");
+	}
+
 	[TestCase("Account($filter=Name eq 'x')", 0, TestName = "Read_Should_Refuse_A_Nested_Filter_In_Expand")]
 	[TestCase("Account($select=Id;$expand=Owner)", 0, TestName = "Read_Should_Refuse_A_Nested_Option_List_In_Expand")]
 	[TestCase("Account($expand=Owner)", 0, TestName = "Read_Should_Refuse_A_Nested_Expand_In_Expand")]

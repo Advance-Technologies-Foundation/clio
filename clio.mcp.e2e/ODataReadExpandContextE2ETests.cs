@@ -121,4 +121,53 @@ public sealed class ODataReadExpandContextE2ETests {
 			.TryGetProperty("Name", out _).Should().BeTrue(
 				because: "the stub answers the nested select with the selected column of the expanded record");
 	}
+
+	[Test]
+	[AllureTag(ODataReadToFileTool.ToolName)]
+	[AllureName("odata-read-to-file sends a nested $select in expand over stdio and writes the projection")]
+	[AllureDescription("Sends a nested select in expand to odata-read-to-file through the real stdio MCP server, and verifies the request URL carries the canonical $expand=Account($select=Name) and the file on disk holds the expanded record projected to the selected column (ENG-107610).")]
+	[Description("odata-read-to-file sends a nested $select inside expand over the real stdio dispatch and writes the projected expanded record to disk.")]
+	public async Task ODataReadToFile_Should_Send_A_Nested_Select_In_Expand_And_Write_The_Projection() {
+		// Arrange
+		string outputFile = Path.Combine(Path.GetTempPath(), $"odata-read-to-file-expand-e2e-{Guid.NewGuid():N}.json");
+		await using ODataPreWriteStand stand = await ODataPreWriteStand.StartAsync(
+			RuntimeDetectionStubServer.ODataExpandRead, Entity);
+		try {
+			// Act
+			CallToolResult callResult = await stand.Session.CallToolAsync(
+				ODataReadToFileTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = stand.EnvironmentName,
+						["entity"] = Entity,
+						["select"] = new[] { "Id" },
+						["expand"] = new[] { "Account($select=Name)" },
+						["top"] = 1,
+						["output-file"] = outputFile
+					}
+				},
+				stand.CancellationToken);
+			ODataReadResponse response = EntitySchemaStructuredResultParser.Extract<ODataReadResponse>(callResult);
+
+			// Assert
+			callResult.IsError.Should().NotBeTrue(
+				because: "a nested $select in expand is an accepted argument of the file tool, not a protocol error");
+			response.Success.Should().BeTrue(
+				because: $"odata-read-to-file accepts a validated nested $select in expand (ENG-107610): {response.Error}");
+			IReadOnlyList<RecordedStubRequest> requests = await stand.GetRecordedRequestsAsync();
+			requests.Select(request => Uri.UnescapeDataString(request.Url)).Should()
+				.Contain(url => url.Contains("$expand=Account($select=Name)", StringComparison.Ordinal),
+					because: "the file tool must send the nested select rebuilt from the parsed names, like odata-read");
+			using JsonDocument written = JsonDocument.Parse(File.ReadAllText(response.OutputFile!));
+			JsonElement account = written.RootElement.GetProperty("value").EnumerateArray().First()
+				.GetProperty(NavigationProperty);
+			account.EnumerateObject().Select(property => property.Name).Should().BeEquivalentTo(
+				["Id", "Name"],
+				because: "the file holds the expanded record projected to the nested select (plus its key)");
+		} finally {
+			if (File.Exists(outputFile)) {
+				File.Delete(outputFile);
+			}
+		}
+	}
 }

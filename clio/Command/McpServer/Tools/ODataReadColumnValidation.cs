@@ -175,9 +175,19 @@ internal static class ODataReadColumnValidation {
 		List<Reference> references) =>
 		references
 			.Where(reference => !IsKnown(shape, reference))
+			//A nested $select name behind a navigation that does not exist cannot be judged: there is no target
+			//type to check it against. The navigation itself is reported, once, and its nested names are not.
+			.Where(reference => !IsNestedSelectOfUnknownNavigation(shape, reference))
 			.DistinctBy(reference => (reference.Argument, reference.Path))
 			.Select(reference => (reference, reference.Path))
 			.ToList();
+
+	//Nested $select names are the only expand references that are not navigation-only (see CollectReferences).
+	private static bool IsNestedSelectOfUnknownNavigation(ODataFieldValidation.EntityShape shape,
+		Reference reference) =>
+		reference.Argument == "expand"
+		&& !reference.NavigationOnly
+		&& !shape.Root.Navigations.Contains(reference.Path.Split('/')[0]);
 
 	/// <summary>
 	/// A single segment must be a property or navigation of the entity (a navigation only, for expand).

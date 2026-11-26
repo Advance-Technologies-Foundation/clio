@@ -183,6 +183,25 @@ public sealed class ODataReadColumnValidationTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("A misspelled navigation with a nested $select is reported once, as the navigation; its nested names are not reported, because without a resolved target type they cannot be judged (ENG-107610 review).")]
+	public void Read_Should_Report_Only_The_Navigation_When_The_Navigation_Of_A_Nested_Select_Is_Unknown() {
+		// Arrange
+		ODataReadTool tool = BuildTool();
+
+		// Act
+		ODataReadResponse response = tool.Read(Args("Activity", expand: Cols("Acount($select=Id,Name)")));
+
+		// Assert
+		response.UnknownMembers.Should().ContainSingle(
+			because: "the one mistake is the navigation name; Id and Name exist on Account");
+		response.UnknownMembers![0].Name.Should().Be("Acount",
+			because: "the navigation is what has to be corrected");
+		response.UnknownMembers[0].Suggestions.Should().Contain("Account",
+			because: "the closest navigation is suggested");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Behind a multi-segment navigation the metadata shape has no target type, so nested names are not checked and not reported, rather than reported as checked-and-known.")]
 	public void Read_Should_Not_Check_Nested_Select_Names_Behind_A_Multi_Segment_Navigation() {
 		// Arrange

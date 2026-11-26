@@ -64,7 +64,7 @@ internal sealed record ODataExpandEntry(string NavigationPath, IReadOnlyList<str
 			return false;
 		}
 		string options = trimmed[(open + 1)..^1];
-		if (!options.StartsWith(SelectOption, StringComparison.Ordinal)) {
+		if (!options.StartsWith(SelectOption, StringComparison.OrdinalIgnoreCase)) {
 			return false;
 		}
 		string[] names = options[SelectOption.Length..].Split(',', StringSplitOptions.TrimEntries);
