@@ -530,10 +530,12 @@ public sealed class ModifyDynamicCaseAsNewVersionToolTests {
 			because: "a blind retry makes one more version, which no case tool deletes");
 		description.Should().Contain("Not idempotent", because: "each write makes one more version");
 		description.Should().Contain("no case tool or Case-library action deletes one (an inactive version goes as a "
-			+ "case does, get-guidance name=process-dynamic-case undo steps 1-2, after the user's yes); a saved version "
+			+ "case does, get-guidance name=process-dynamic-case undo steps 1-2, after the user's yes; never the family "
+			+ "root, every version's parent, or a member that runs cases); a saved version "
 			+ "runs for no record until it is activated, and a later change to it is made in place with "
 			+ "modify-dynamic-case by its case-name",
-			because: "a kept version is inactive, it is removed only as a case is undone, and changing it again needs "
+			because: "a kept version is inactive, it is removed only as a case is undone and never when it is the root or "
+			+ "runs cases, and changing it again needs "
 			+ "no further version")
 			.And.NotContain("toolkit cannot delete", because: "an inactive version can be removed after the user's yes")
 			.And.NotContain("never removed", because: "the description says what the case tools do not do");
