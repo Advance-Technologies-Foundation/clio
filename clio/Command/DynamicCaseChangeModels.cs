@@ -43,9 +43,10 @@ public static class DynamicCaseChangeRequirement {
 	/// that carries the versions and the conditions together: a stage removal takes its steps' conditions with it and is
 	/// refused only as <c>stage-is-condition-target</c>, and a new version copies the steps with their conditions and
 	/// reads back the change-stage tasks they need. 1.6.6.211 gives a new version's condition-target refusal a remedy
-	/// that changes the version, not the running case, and shows the copied steps in the new-version answer.
+	/// that changes the version, not the running case, and shows the copied steps in the new-version answer. 1.6.6.216
+	/// adds review round 1 and is numbered above 1.6.6.212-215 (another branch's cuts without the case versions).
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.211";
+	public const string MinimumProcessBuilderVersion = "1.6.6.216";
 }
 
 /// <summary>
