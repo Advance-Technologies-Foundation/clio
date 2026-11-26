@@ -583,6 +583,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			JsonObject after = await DescribeCaseAsync(context, created);
 			CallToolResult refused = await ModifyAsync(context, created,
 				new Dictionary<string, object?> { ["stages"] = WithSteps(stored, stored[1], null, unknown) });
+			JsonObject afterRefusal = await DescribeCaseAsync(context, created);
 			CallToolResult removed = await ModifyAsync(context, created,
 				new Dictionary<string, object?> { ["stages"] = WithSteps(stored, stored[1], null) });
 			JsonObject afterRemoval = await DescribeCaseAsync(context, created);
@@ -601,6 +602,9 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			Text(ResultOf(refused), "outcome").Should().Be("refused");
 			Text(ResultOf(refused), "errorCode").Should().Be("step-condition-invalid",
 				because: "the task category offers no such result");
+			JsonObject kept = StepsOf(StageOf(afterRefusal, stored[1])).Single()["conditions"]!.AsArray().Single()!.AsObject();
+			Text(kept, "result").Should().Be("Canceled", because: "a refused change writes nothing");
+			Text(kept, "nextStage").Should().Be(Text(StageOf(after, target), "caption"));
 			ShouldHaveLanded(removed, "a step with a condition is removed with it");
 			StepsOf(StageOf(afterRemoval, stored[1])).Should().BeEmpty();
 		} finally {
