@@ -231,9 +231,7 @@ public sealed class DynamicCaseService(
 			ConfirmStageRecords = options.ConfirmStageRecords ? true : null,
 			ConfirmValueRename = options.ConfirmValueRename ? true : null,
 			ValidateOnly = options.DryRun,
-			Filter = options.RemoveFilter
-				? new CaseFilterPatch(null)
-				: options.Filter is null ? null : new CaseFilterPatch(BuildCaseFilterRequest.From(options.Filter))
+			Filter = FilterPatch(options.RemoveFilter, options.Filter)
 		};
 		DynamicCaseReply<ModifyCaseResponse> reply;
 		using (IDynamicCaseSession session = buildCaseClient.OpenSession(options.Environment)) {
@@ -265,7 +263,20 @@ public sealed class DynamicCaseService(
 	/// <inheritdoc />
 	public ModifyDynamicCaseAsNewVersionResult ModifyAsNewVersion(ModifyDynamicCaseAsNewVersionOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
-		ModifyCaseAsNewVersionRequest request = new() {
+		ModifyCaseAsNewVersionRequest request = ModifyAsNewVersionRequest(options);
+		DynamicCaseReply<ModifyCaseAsNewVersionResponse> reply;
+		using (IDynamicCaseSession session = buildCaseClient.OpenSession(options.Environment)) {
+			reply = session.ModifyAsNewVersion(request);
+		}
+		if (reply.Kind != DynamicCaseReplyKind.Envelope) {
+			return ModifyAsNewVersionFault(options.DryRun, reply);
+		}
+		return ModifyAsNewVersionResult(options, reply.Response);
+	}
+
+	private static ModifyCaseAsNewVersionRequest ModifyAsNewVersionRequest(
+		ModifyDynamicCaseAsNewVersionOptions options) =>
+		new() {
 			CaseName = NullIfBlank(options.CaseName),
 			CaseUId = NullIfBlank(options.CaseUId),
 			EntitySchemaName = NullIfBlank(options.EntitySchemaName),
@@ -276,18 +287,11 @@ public sealed class DynamicCaseService(
 			ConfirmStageRecords = options.ConfirmStageRecords ? true : null,
 			ConfirmValueRename = options.ConfirmValueRename ? true : null,
 			ValidateOnly = options.DryRun,
-			Filter = options.RemoveFilter
-				? new CaseFilterPatch(null)
-				: options.Filter is null ? null : new CaseFilterPatch(BuildCaseFilterRequest.From(options.Filter))
+			Filter = FilterPatch(options.RemoveFilter, options.Filter)
 		};
-		DynamicCaseReply<ModifyCaseAsNewVersionResponse> reply;
-		using (IDynamicCaseSession session = buildCaseClient.OpenSession(options.Environment)) {
-			reply = session.ModifyAsNewVersion(request);
-		}
-		if (reply.Kind != DynamicCaseReplyKind.Envelope) {
-			return ModifyAsNewVersionFault(options.DryRun, reply);
-		}
-		ModifyCaseAsNewVersionResponse response = reply.Response;
+
+	private ModifyDynamicCaseAsNewVersionResult ModifyAsNewVersionResult(ModifyDynamicCaseAsNewVersionOptions options,
+		ModifyCaseAsNewVersionResponse response) {
 		// An answer without an outcome is read as what its success flag says, so a refusal never passes as a write.
 		string outcome = response.Outcome ?? (response.Success ? null : DynamicCaseVersionOutcomes.Refused);
 		bool unreadOutcome = !DynamicCaseVersionOutcomes.IsKnown(outcome);
@@ -306,19 +310,12 @@ public sealed class DynamicCaseService(
 			Outcome = outcome,
 			ErrorCode = unreadOutcome ? response.ErrorCode ?? DynamicCaseErrorCodes.RequestFailed : response.ErrorCode,
 			ErrorMessage = unreadOutcome
-				? $"ModifyCaseAsNewVersion answered an outcome clio does not know ('{response.Outcome}')"
-					+ (options.DryRun
-						? ", on a dry run, which writes nothing. "
-						: ", so whether a version was saved is UNKNOWN. Do NOT retry yet: run describe-dynamic-case on the "
-						+ "case first and read its versions. ")
-					+ (response.ErrorMessage ?? string.Empty)
+				? UnknownOutcomeMessage("ModifyCaseAsNewVersion", response.Outcome, options.DryRun,
+					", so whether a version was saved is UNKNOWN. Do NOT retry yet: run describe-dynamic-case on the "
+					+ "case first and read its versions. ", response.ErrorMessage)
 				: response.ErrorMessage,
 			Version = VersionInfo(options.Environment, response.Version, saved),
-			Case = response.Case is null
-				? null
-				: ToCaseInfo(response.Case, saved ? DesignerUrl(options.Environment, response.Case.SchemaUId) : null,
-					response.Case.PackageName, response.Case.EntitySchemaName, response.Case.StageColumnName,
-					Versions(options.Environment, response.Case.Versions)),
+			Case = NewVersionCaseInfo(options.Environment, response.Case, saved),
 			SourceName = response.SourceName,
 			Diff = response.Diff,
 			Settings = response.Settings,
@@ -364,12 +361,9 @@ public sealed class DynamicCaseService(
 			Outcome = outcome,
 			ErrorCode = unreadOutcome ? response.ErrorCode ?? DynamicCaseErrorCodes.RequestFailed : response.ErrorCode,
 			ErrorMessage = unreadOutcome
-				? $"SetActiveCaseVersion answered an outcome clio does not know ('{response.Outcome}')"
-					+ (options.DryRun
-						? ", on a dry run, which writes nothing. "
-						: ", so whether the switch took is UNKNOWN. Run describe-dynamic-case on the case and read which "
-						+ "of its versions is active before deciding. ")
-					+ (response.ErrorMessage ?? string.Empty)
+				? UnknownOutcomeMessage("SetActiveCaseVersion", response.Outcome, options.DryRun,
+					", so whether the switch took is UNKNOWN. Run describe-dynamic-case on the case and read which "
+					+ "of its versions is active before deciding. ", response.ErrorMessage)
 				: response.ErrorMessage,
 			ActiveVersion = VersionInfo(options.Environment, response.ActiveVersion, Opens(response.ActiveVersion)),
 			PreviousActiveVersion = VersionInfo(options.Environment, response.PreviousActiveVersion,
@@ -938,18 +932,47 @@ public sealed class DynamicCaseService(
 			DesignerUrl = member.HasLinkRow ? DesignerUrl(environmentName, member.UId) : null
 		}).ToList();
 
-	private DynamicCaseVersion VersionInfo(string environmentName, CaseVersionInfo info, bool exists) =>
-		info is null
-			? null
-			: new DynamicCaseVersion {
-				Name = info.Name,
-				UId = info.UId,
-				Version = info.Version,
-				PackageName = info.PackageName,
-				RootName = info.RootName,
-				Active = info.Active,
-				DesignerUrl = exists ? DesignerUrl(environmentName, info.UId) : null
-			};
+	private DynamicCaseVersion VersionInfo(string environmentName, CaseVersionInfo info, bool exists) {
+		if (info is null) {
+			return null;
+		}
+		return new DynamicCaseVersion {
+			Name = info.Name,
+			UId = info.UId,
+			Version = info.Version,
+			PackageName = info.PackageName,
+			RootName = info.RootName,
+			Active = info.Active,
+			DesignerUrl = exists ? DesignerUrl(environmentName, info.UId) : null
+		};
+	}
+
+	// The case a modify-as-new-version answered, linked to the designer only when the version was saved.
+	private DynamicCaseInfo NewVersionCaseInfo(string environmentName, BuildCaseCaseInfo info, bool saved) {
+		if (info is null) {
+			return null;
+		}
+		string designerUrl = saved ? DesignerUrl(environmentName, info.SchemaUId) : null;
+		return ToCaseInfo(info, designerUrl, info.PackageName, info.EntitySchemaName, info.StageColumnName,
+			Versions(environmentName, info.Versions));
+	}
+
+	// The filter key of a modify request: an explicit removal, a replacement, or absent (the filter is kept).
+	private static CaseFilterPatch FilterPatch(bool removeFilter, DynamicCaseFilterArgument filter) {
+		if (removeFilter) {
+			return new CaseFilterPatch(null);
+		}
+		return filter is null ? null : new CaseFilterPatch(BuildCaseFilterRequest.From(filter));
+	}
+
+	// The error message of a version write whose outcome clio cannot read: a dry run wrote nothing, a real write may
+	// have, and unknownConsequence tells the agent how to find out. The server's own message, if any, follows.
+	private static string UnknownOutcomeMessage(string operation, string answeredOutcome, bool dryRun,
+		string unknownConsequence, string serverMessage) {
+		string consequence = dryRun ? ", on a dry run, which writes nothing. " : unknownConsequence;
+		return $"{operation} answered an outcome clio does not know ('{answeredOutcome}')" + consequence
+			+ (serverMessage ?? string.Empty);
+	}
 
 	private static DynamicCaseInfo ToCaseInfo(BuildCaseCaseInfo info, string designerUrl, string packageName,
 		string entitySchemaName, string stageColumnName, List<DynamicCaseVersionMember> versions) =>

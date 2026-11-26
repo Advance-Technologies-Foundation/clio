@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Clio.Command;
 
@@ -13,12 +14,7 @@ internal static class DynamicCaseWarningsHint {
 	/// <param name="beforeAnyWrite"><see langword="true"/> for a command that writes, whose warnings must be shown
 	/// before the next write; <see langword="false"/> for a read.</param>
 	internal static string For(IReadOnlyCollection<string> warnings, bool beforeAnyWrite) {
-		int count = 0;
-		foreach (string warning in warnings ?? []) {
-			if (!string.IsNullOrWhiteSpace(warning)) {
-				count++;
-			}
-		}
+		int count = (warnings ?? []).Count(warning => !string.IsNullOrWhiteSpace(warning));
 		if (count == 0) {
 			return string.Empty;
 		}

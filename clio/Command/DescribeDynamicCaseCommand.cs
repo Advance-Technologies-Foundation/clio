@@ -68,16 +68,20 @@ public class DescribeDynamicCaseCommand(IDynamicCaseService dynamicCaseService, 
 			return $"{count} dynamic cases read; nothing was changed.";
 		}
 		DynamicCaseInfo found = result.Cases[0];
+		return $"Dynamic case '{found.SchemaName}' read: {found.Stages?.Count ?? 0} stages, {State(found)}; nothing "
+			+ "was changed.";
+	}
+
+	private static string State(DynamicCaseInfo found) {
 		// enabled is the family's flag, which an inactive member shares: read alone it would let the agent present a
 		// version no record uses as the case in force. Only a family lists versions, and an inactive member always has
 		// one, so a case without versions is never called inactive on a missing activeVersion.
 		bool inactiveMember = !found.ActiveVersion && found.Versions is { Count: > 0 };
-		string family = found.Enabled ? "enabled" : "disabled";
-		string state = inactiveMember
-			? "an inactive version of " + (found.Enabled ? "an enabled" : "a disabled") + " family"
-			: family;
-		return $"Dynamic case '{found.SchemaName}' read: {found.Stages?.Count ?? 0} stages, {state}; nothing was "
-			+ "changed.";
+		if (!inactiveMember) {
+			return found.Enabled ? "enabled" : "disabled";
+		}
+		string family = found.Enabled ? "an enabled" : "a disabled";
+		return "an inactive version of " + family + " family";
 	}
 
 	private void Report(DescribeDynamicCaseResult result) {
