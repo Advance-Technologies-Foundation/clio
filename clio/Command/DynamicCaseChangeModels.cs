@@ -24,12 +24,12 @@ public static class DynamicCaseChangeRequirement {
 	/// 1.6.6.202 were cuts of the same branch that reached only test stands. 1.6.6.206 is the first cut whose step item
 	/// takes <c>conditions</c> and whose describe reports them (ENG-107647): an older package refuses a step's
 	/// conditions, and its describe would show a step with conditions as one without them. 1.6.6.203 and 1.6.6.205 were
-	/// the same branch's cuts before its review fixes and reached no release. 1.6.6.212 is the first cut that takes the
-	/// other step types (approval, open edit page, sub-process, send email, change access rights) and
+	/// the same branch's cuts before its review fixes and reached no release. 1.6.6.213 is the first shipped cut that
+	/// takes the other step types (approval, open edit page, sub-process, send email, change access rights) and
 	/// <c>confirmAllRecords</c> (ENG-107648): an older package refuses those types as not supported and the flag as an
-	/// unknown key.
+	/// unknown key. 1.6.6.212 was the same branch's cut before its review fixes and reached no release.
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.212";
+	public const string MinimumProcessBuilderVersion = "1.6.6.213";
 }
 
 /// <summary>
