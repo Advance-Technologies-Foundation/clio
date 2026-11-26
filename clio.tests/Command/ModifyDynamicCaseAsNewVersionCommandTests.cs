@@ -30,6 +30,9 @@ public sealed class ModifyDynamicCaseAsNewVersionCommandTests : BaseClioModuleTe
 	private IDynamicCaseService _service;
 	private ILogger _logger;
 	private ModifyDynamicCaseAsNewVersionCommand _command;
+	// The verdict of a refusal points at the document, which carries the message once.
+	private const string ErrorMessagePointer = "; the result's errorMessage says why and what to do next.";
+
 	private readonly List<(string Kind, string Text)> _printed = [];
 
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
@@ -173,7 +176,7 @@ public sealed class ModifyDynamicCaseAsNewVersionCommandTests : BaseClioModuleTe
 	}
 
 	[Test]
-	[Description("refused: exit 1, an error verdict carrying the code and the server's message, and that nothing was written.")]
+	[Description("refused: exit 1, an error verdict naming the code, pointing at errorMessage and saying that nothing was written; the message itself is printed once, in the result document.")]
 	public void Execute_ShouldReportTheRefusal_WhenTheOutcomeIsRefused() {
 		// Arrange
 		ModifyDynamicCaseAsNewVersionResult result = Result(DynamicCaseVersionOutcomes.Refused,
@@ -185,23 +188,27 @@ public sealed class ModifyDynamicCaseAsNewVersionCommandTests : BaseClioModuleTe
 		// Assert
 		exitCode.Should().Be(1, because: "a refusal is not a success");
 		VerdictKind().Should().Be("error", because: "a refusal is printed as an error");
-		Verdict().Should().Be("Refused [package-name-required]: The active case's package does not accept changes. "
-			+ "Nothing was written.", because: "the code, the reason and the state are all stated");
+		Verdict().Should().Be("Refused [package-name-required]" + ErrorMessagePointer + " Nothing was written.",
+			because: "the verdict names the code and the state and points at the reason");
+		_printed.Should().HaveCount(2, because: "the log holds the verdict and the result document only");
+		_printed.Count(entry => entry.Text.Contains("The active case's package does not accept changes.")).Should().Be(1,
+			because: "the refusal's message is printed once, in the result document, not again in the verdict");
+		JsonNode.Parse(_printed[1].Text)!["errorMessage"]!.GetValue<string>().Should().Be("The active case's package does not accept changes.",
+			because: "the document carries the reason and the remedy");
 	}
 
 	[Test]
-	[Description("A refusal whose message already says nothing was written is not told so twice.")]
-	public void Execute_ShouldNotRepeatNothingWasWritten_WhenTheMessageSaysIt() {
+	[Description("A refusal without a message gets a verdict that does not point at a missing errorMessage.")]
+	public void Execute_ShouldNotPointAtTheMessage_WhenTheRefusalHasNone() {
 		// Arrange
-		ModifyDynamicCaseAsNewVersionResult result = Result(DynamicCaseVersionOutcomes.Refused, "request-failed",
-			"ModifyCaseAsNewVersion could not read the request. Nothing was written.");
+		ModifyDynamicCaseAsNewVersionResult result = Result(DynamicCaseVersionOutcomes.Refused, "request-failed", null);
 
 		// Act
 		Run(result);
 
 		// Assert
-		Verdict().Should().Be("Refused [request-failed]: ModifyCaseAsNewVersion could not read the request. "
-			+ "Nothing was written.", because: "repeating it would read as two separate claims");
+		Verdict().Should().Be("Refused [request-failed]. Nothing was written.",
+			because: "the code and the state are all there is to say");
 	}
 
 	[Test]

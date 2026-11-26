@@ -55,7 +55,10 @@ public class SetActiveDynamicCaseVersionTool(
 		 + "case's first stage into the record (from this family, the member active at that moment: the previous "
 		 + "one before the switch, this version after it). In a disabled family, a record "
 		 + "without a running case shows no bar of it, and Change case only cancels its case and starts an enabled "
-		 + "case the record fits, if any, never this family's version. Open pages need F5. Run it "
+		 + "case the record fits, if any, never this family's version. A disabled family starts none of its versions "
+		 + "until it is enabled; enabling is the user's own decision, never part of the yes to the switch: the note "
+		 + "gives the user's steps and says whether enabling also needs confirm-running-instances. Open pages need "
+		 + "F5. Run it "
 		 + "with dry-run=true first. A user who asked for this switch has given the yes: with notes only (records in "
 		 + "stages the version lacks, a disabled family), switch and relay every note in full with the result; with warnings "
 		 + "(package position), show them and wait for their yes; the switch itself is then refused until "
@@ -167,7 +170,8 @@ public sealed record SetActiveDynamicCaseVersionArgs(
 	[property: JsonPropertyName("confirm-package-position")]
 	[property: Description("The user's yes to switch although a member in a package that does not accept changes "
 		+ "may outrank the target (the dry run's package-position warning; refused "
-		+ "package-position-confirmation-required without it): new records may then keep starting that member. "
+		+ "package-position-confirmation-required without it): new records its filter fits may then keep starting "
+		+ "that member. "
 		+ "Pass true ONLY after the user agreed, never on your own; default false.")]
 	bool? ConfirmPackagePosition = null) {
 

@@ -300,7 +300,7 @@ public sealed class SetActiveDynamicCaseVersionToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The description is ASCII, its first sentence fits the compact index, and it carries the contract: the versions guide first, a dry run first, a requested switch as the yes unless the dry run warns, never on its own after creating a version, what Change case does to a running case in an enabled and in a disabled family, read-back with failed-not-restored safe to repeat, unchanged on a repeat, and the package floor.")]
+	[Description("The description is ASCII, its first sentence fits the compact index, and it carries the contract: the versions guide first, a dry run first, a requested switch as the yes unless the dry run warns, never on its own after creating a version, what Change case does to a running case in an enabled and in a disabled family, enabling a disabled family as the user's own decision, read-back with failed-not-restored safe to repeat, unchanged on a repeat, and the package floor.")]
 	public void Description_ShouldCarryTheContract() {
 		// Arrange
 		string description = Description();
@@ -344,7 +344,11 @@ public sealed class SetActiveDynamicCaseVersionToolTests {
 			because: "a filtered version is not started by every new record")
 			.And.Contain("In a disabled family, a record without a running case shows no bar of it, and Change case "
 				+ "only cancels its case and starts an enabled case the record fits, if any, never this family's version",
-				because: "in a disabled family Change case never restarts the record at this family's version (measured)");
+				because: "in a disabled family Change case never restarts the record at this family's version (measured)")
+			.And.Contain("A disabled family starts none of its versions until it is enabled; enabling is the user's own "
+				+ "decision, never part of the yes to the switch: the note gives the user's steps and says whether "
+				+ "enabling also needs confirm-running-instances",
+				because: "enabling is a decision of its own, and the measured refusal without that confirmation is named");
 		description.Should().Contain("failed-not-restored").And.Contain("the same call can be repeated",
 			because: "a switch that did not read back is never undone and is safe to repeat");
 		description.Should().Contain("Activating the active member again answers unchanged",

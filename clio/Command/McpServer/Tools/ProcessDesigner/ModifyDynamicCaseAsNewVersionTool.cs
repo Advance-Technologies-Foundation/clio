@@ -10,7 +10,8 @@ namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 
 /// <summary>
 /// MCP tool that saves a change of a dynamic case (DCM) as a NEW, inactive version of it, the way the case designer's
-/// "Save new version" does, leaving the active case and what runs untouched.
+/// "Save new version" does. The active case stays in force; only a confirmed stage value rename reaches its records at
+/// once.
 /// </summary>
 public class ModifyDynamicCaseAsNewVersionTool(
 	ModifyDynamicCaseAsNewVersionCommand command,
@@ -58,13 +59,15 @@ public class ModifyDynamicCaseAsNewVersionTool(
 	// ModifyProcessAsNewVersionTool gives for setTracing - flipping it would put every version write behind destructive
 	// consent for an effect only an explicit confirmation reaches. The facts ADR (D9) names this exception and
 	// McpToolFactsCoverageTests.ConfirmedLiveOverwrites keeps it listed. Idempotent=false: each write makes one more
-	// version, and the toolkit cannot delete one.
+	// version, and no case tool deletes one (an inactive version is removed the way a case is undone).
 	[McpServerTool(Name = ModifyDynamicCaseAsNewVersionToolName, ReadOnly = false, Destructive = false,
 		 Idempotent = false, OpenWorld = false),
 	 Description("Saves a case change as a version. The dynamic case (DCM) designer's \"Save new version\": the "
-		 + "family's ACTIVE case is copied, the change is applied to the copy, and the copy is saved INACTIVE - the "
-		 + "active case, its running cases and new records are untouched. Read get-guidance "
-		 + "name=process-dynamic-case-versions first. Call describe-dynamic-case, then this tool with dry-run=true, show "
+		 + "family's ACTIVE case is copied, the change is applied to the copy, and the copy is saved INACTIVE: the "
+		 + "active case stays the one new records its filter fits start (every record when it has none), and its "
+		 + "running cases go on as they are; only a confirmed stage value rename (below) reaches them at once. Read "
+		 + "get-guidance name=process-dynamic-case-versions first. Call describe-dynamic-case, then this tool with "
+		 + "dry-run=true, show "
 		 + "the user the planned diff and the notes and ask before writing. Name the active case by case-name or "
 		 + "case-uid, or by entity-schema-name when the object has one case. package-name: where the version is saved; "
 		 + "left out, the active case's package, refused package-name-required when that package does not accept "
@@ -76,8 +79,9 @@ public class ModifyDynamicCaseAsNewVersionTool(
 		 + "lookup value AT ONCE, for the active case and every record too, not at activation (confirm-value-rename). "
 		 + "Removing a stage that records hold needs confirm-stage-records. Never activates: after the user has "
 		 + "checked the version and said yes, activate it with set-active-dynamic-case-version. Not idempotent: each "
-		 + "write makes one more version, and the toolkit cannot delete one; a saved version runs for no record until "
-		 + "it is activated, and a later change to it is made in place with modify-dynamic-case by its case-name. "
+		 + "write makes one more version; no case tool or Case-library action deletes one (an inactive version goes "
+		 + "as a case does, get-guidance name=process-dynamic-case undo steps 1-2, after the user's yes); a saved "
+		 + "version runs for no record until it is activated, and a later change to it is made in place with modify-dynamic-case by its case-name. "
 		 + "After failed-leftover or unknown, run "
 		 + $"describe-dynamic-case before any retry. No compile, no restart. Requires CrtProcessBuilder {DynamicCaseChangeRequirement.MinimumProcessBuilderVersion} or "
 		 + "later (install-process-builder, after user approval).")]

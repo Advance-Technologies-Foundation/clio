@@ -158,7 +158,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			Text(rerun, "outcome").Should().Be("already-present", because: "the equivalent case exists");
 			Text(rerun["page"]!.AsObject(), "status").Should().Be("already-present", because: "the bar exists");
 
-			ShouldBeRefused(differentCall, "another order is another case");
+			ShouldBeRefusedOnce(differentCall, "another order is another case");
 			Text(ResultOf(differentCall), "errorCode").Should().Be("case-exists",
 				because: "create does not change an existing case; modify-dynamic-case does");
 			(await CaseSchemaRowsAsync(context)).GetArrayLength().Should().Be(1,
@@ -189,9 +189,9 @@ public sealed class CreateDynamicCaseToolE2ETests {
 
 		// Assert
 		IgnoreWhenProcessBuilderIsBehind(ToolText(notLookup), MinimumPackageVersion);
-		ShouldBeRefused(notLookup, "a text column has no values to become stages");
+		ShouldBeRefusedOnce(notLookup, "a text column has no values to become stages");
 		Text(ResultOf(notLookup), "errorCode").Should().Be("column-not-lookup", because: "the code names the reason");
-		ShouldBeRefused(unknownValue, "a stage must name a lookup value");
+		ShouldBeRefusedOnce(unknownValue, "a stage must name a lookup value");
 		Text(ResultOf(unknownValue), "errorCode").Should().Be("stage-value-unknown", because: "the code names the reason");
 		(await CaseSchemaRowsAsync(context)).GetArrayLength().Should().Be(casesBefore, because: "a refusal writes nothing");
 		(await SettingsRowsAsync(context)).GetArrayLength().Should().Be(settingsBefore,
@@ -228,7 +228,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 		IgnoreWhenProcessBuilderIsBehind(ToolText(textFilter), MinimumPackageVersion);
 		ShouldBeRefused(deactivateAlone, "deactivate-unfiltered disables a case only to let a filtered one start");
 		LogText(deactivateAlone).Should().Contain("[invalid-request]", because: "clio names the stable code");
-		ShouldBeRefused(textFilter, "a filter column must be a lookup of the object");
+		ShouldBeRefusedOnce(textFilter, "a filter column must be a lookup of the object");
 		Text(ResultOf(textFilter), "errorCode").Should().Be("filter-column-invalid", because: "the code names the reason");
 		ShouldBeRefused(filterAndRemove, "a filter and its removal contradict each other");
 		LogText(filterAndRemove).Should().Contain("[invalid-request]", because: "clio names the stable code");
@@ -328,10 +328,10 @@ public sealed class CreateDynamicCaseToolE2ETests {
 
 			// Assert
 			IgnoreWhenProcessBuilderIsBehind(ToolText(unconfirmedCall), CaseChangePackageVersion);
-			ShouldBeRefused(unconfirmedCall, "a value rename reaches every record, so the user agrees first");
+			ShouldBeRefusedOnce(unconfirmedCall, "a value rename reaches every record, so the user agrees first");
 			Text(ResultOf(unconfirmedCall), "errorCode").Should().Be("value-rename-confirmation-required",
 				because: "the code names the yes that is missing");
-			ShouldBeRefused(takenCall, "two values would read the same on the bar");
+			ShouldBeRefusedOnce(takenCall, "two values would read the same on the bar");
 			Text(ResultOf(takenCall), "errorCode").Should().Be("stage-value-ambiguous",
 				because: "the name is another value's");
 			JsonObject after = await DescribeCaseAsync(context, created);
@@ -649,7 +649,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 
 			// Assert
 			IgnoreWhenProcessBuilderIsBehind(ToolText(refusedCall), CaseChangePackageVersion);
-			ShouldBeRefused(refusedCall, "only a stage of the final group can end the case unsuccessfully");
+			ShouldBeRefusedOnce(refusedCall, "only a stage of the final group can end the case unsuccessfully");
 			Text(ResultOf(refusedCall), "errorCode").Should().Be("stage-group-invalid",
 				because: "the code names the reason");
 			afterRefusal["stages"]!.AsArray().Should().OnlyContain(
@@ -741,7 +741,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			ShouldHaveLanded(disableCall, "an enabled case can be disabled");
 			Text(ResultOf(disableCall), "outcome").Should().Be("modified", because: "the case was enabled");
 			afterDisable["enabled"]!.GetValue<bool>().Should().BeFalse(because: "the disable was stored");
-			ShouldBeRefused(mixedCall, "enabled is a save of its own");
+			ShouldBeRefusedOnce(mixedCall, "enabled is a save of its own");
 			Text(ResultOf(mixedCall), "errorCode").Should().Be("invalid-request", because: "the code names the reason");
 			afterMixed["enabled"]!.GetValue<bool>().Should().BeFalse(because: "a refusal writes nothing");
 			Text(afterMixed, "caption").Should().Be(captionBefore, because: "a refusal writes nothing");
@@ -817,6 +817,13 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			ShouldHaveLanded(activatePlanCall, "the version can be activated");
 			Text(ResultOf(activatePlanCall), "outcome").Should().Be("planned", because: "a dry run writes nothing");
 			ShouldHoldOnlyTheVerdictAndThePlan(activatePlanCall);
+			McpCommandExecutionParser.Extract(activatePlanCall).Output![0].Value.Should().Contain(
+				$"'{rootName}' is still the active one",
+				because: "a dry run switches nothing, and the verdict says which member is active now");
+			new[] {
+				ResultOf(activatePlanCall)["activeVersion"]!["active"]!.GetValue<bool>(),
+				ResultOf(activatePlanCall)["previousActiveVersion"]!["active"]!.GetValue<bool>()
+			}.Count(active => active).Should().Be(1, because: "a dry run never shows two members of a family active");
 			ActiveMemberOf(afterActivatePlan).Should().Be(rootName, because: "the activation dry run wrote nothing");
 			ShouldHaveLanded(activateCall, "the version can be activated");
 			Text(ResultOf(activateCall), "outcome").Should().Be("activated", because: "the switch read back");
@@ -882,7 +889,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			Text(ResultOf(captionCall), "outcome").Should().Be("modified", because: "the caption changed");
 			ResultOf(captionCall)["case"]!["activeVersion"]!.GetValue<bool>().Should().BeFalse(
 				because: "an in-place change does not activate the version");
-			ShouldBeRefused(enabledCall, "enabled lives on the active case");
+			ShouldBeRefusedOnce(enabledCall, "enabled lives on the active case");
 			Text(ResultOf(enabledCall), "errorCode").Should().Be("invalid-request", because: "the code names the reason");
 			Text(root, "caption").Should().NotEndWith(" draft", because: "the draft's change never reaches the root");
 			root["enabled"]!.GetValue<bool>().Should().BeTrue(because: "the refused enabled wrote nothing");
@@ -921,12 +928,12 @@ public sealed class CreateDynamicCaseToolE2ETests {
 
 			// Assert
 			IgnoreWhenProcessBuilderIsBehind(ToolText(stepsCall), CaseChangePackageVersion);
-			ShouldBeRefused(stepsCall, "a version copies the active case's steps as they are");
+			ShouldBeRefusedOnce(stepsCall, "a version copies the active case's steps as they are");
 			Text(ResultOf(stepsCall), "errorCode").Should().Be("steps-not-supported",
 				because: "the package's own refusal reaches the agent, not a clio unknown-keys answer");
 			Text(ResultOf(stepsCall), "errorMessage").Should().Contain("modify-dynamic-case",
 				because: "the refusal says where the version's steps are changed");
-			ShouldBeRefused(transitionCall, "a version copies the active case's transition types too");
+			ShouldBeRefusedOnce(transitionCall, "a version copies the active case's transition types too");
 			Text(ResultOf(transitionCall), "errorCode").Should().Be("steps-not-supported",
 				because: "transitionType is a declared stage key the package answers for itself");
 			afterCalls["versions"].Should().BeNull(because: "a refused call writes no version");
@@ -1082,6 +1089,25 @@ public sealed class CreateDynamicCaseToolE2ETests {
 		[.. values.Select<string, object>(stored => stored == value
 			? new Dictionary<string, object?> { ["value"] = stored, ["caption"] = caption }
 			: stored)];
+
+	/// <summary>
+	/// A refused case call prints its reason once: the Error verdict names the stable code and points at the result
+	/// document, whose errorMessage is the one copy of the reason and the remedy.
+	/// </summary>
+	private static void ShouldBeRefusedOnce(CallToolResult result, string because) {
+		ShouldBeRefused(result, because);
+		IReadOnlyList<CommandLogMessageEnvelope> log = McpCommandExecutionParser.Extract(result).Output ?? [];
+		string? errorMessage = Text(ResultOf(result), "errorMessage");
+		errorMessage.Should().NotBeNullOrWhiteSpace(because: "the document carries the reason and the remedy");
+		CommandLogMessageEnvelope verdict = log.Should().ContainSingle(
+			message => message.MessageType == LogDecoratorType.Error,
+			because: "a refusal has one Error line, its verdict").Subject;
+		verdict.Value.Should().StartWith("Refused [", because: "the verdict names the stable code");
+		log.Where(message => message.Value?.TrimStart().StartsWith('{') != true).Should().NotContain(
+			message => message.Value!.Contains(errorMessage!, StringComparison.Ordinal),
+			because: "the reason travels once, in the document, not again in the verdict. The server said: {0}",
+			LogText(result));
+	}
 
 	/// <summary>
 	/// A dry run's log holds exactly two lines: the Info verdict, then the result document. Notes and warnings travel

@@ -28,6 +28,9 @@ public sealed class CreateDynamicCaseCommandTests : BaseClioModuleTests {
 	private IDynamicCaseService _service;
 	private ILogger _logger;
 	private CreateDynamicCaseCommand _command;
+	// The verdict of a refusal points at the document, which carries the message once.
+	private const string ErrorMessagePointer = "; the result's errorMessage says why and what to do next.";
+
 	private readonly List<(string Kind, string Text)> _printed = [];
 
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
@@ -190,7 +193,7 @@ public sealed class CreateDynamicCaseCommandTests : BaseClioModuleTests {
 	}
 
 	[Test]
-	[Description("refused: exit 1 and an error verdict carrying the code and the server's text, plus 'Nothing was written.'")]
+	[Description("refused: exit 1 and an error verdict naming the code, pointing at errorMessage and saying 'Nothing was written.'; the server's text is printed once, in the result document.")]
 	public void Execute_ShouldReportTheCode_AndThatNothingWasWritten_WhenRefused() {
 		// Arrange
 		DynamicCaseResult result = Result(DynamicCaseOutcomes.Refused, "case-exists", "An enabled case exists.");
@@ -201,8 +204,13 @@ public sealed class CreateDynamicCaseCommandTests : BaseClioModuleTests {
 		// Assert
 		exitCode.Should().Be(1, because: "a refusal is an error");
 		VerdictKind().Should().Be("error", because: "a refusal is printed as an error");
-		Verdict().Should().Contain("[case-exists]").And.Contain("An enabled case exists.")
-			.And.Contain("Nothing was written.", because: "a refusal writes nothing");
+		Verdict().Should().Be("Refused [case-exists]" + ErrorMessagePointer + " Nothing was written.",
+			because: "the verdict names the code and the state and points at the reason");
+		_printed.Should().HaveCount(2, because: "the log holds the verdict and the result document only");
+		_printed.Count(entry => entry.Text.Contains("An enabled case exists.")).Should().Be(1,
+			because: "the refusal's message is printed once, in the result document, not again in the verdict");
+		JsonNode.Parse(_printed[1].Text)!["errorMessage"]!.GetValue<string>().Should().Be("An enabled case exists.",
+			because: "the document carries the reason and the remedy");
 	}
 
 	[Test]

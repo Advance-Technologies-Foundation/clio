@@ -1676,7 +1676,7 @@ public sealed class DynamicCaseServiceTests {
 
 	[TestCase(DynamicCaseReplyKind.TransportFailure, "timeout")]
 	[TestCase(DynamicCaseReplyKind.NotAnEnvelope, "<html>")]
-	[Description("A write whose answer could not be read is outcome unknown with request-failed, and the message forbids a blind retry and sends the agent to describe-dynamic-case first, because a retry makes one more version the toolkit cannot delete; a version that was saved is changed further in place with modify-dynamic-case.")]
+	[Description("A write whose answer could not be read is outcome unknown with request-failed, and the message forbids a blind retry and sends the agent to describe-dynamic-case first, because a retry makes one more version no case tool deletes; a version that was saved is changed further in place with modify-dynamic-case.")]
 	public void ModifyAsNewVersion_ShouldReportUnknown_WhenAWriteReplyCannotBeRead(DynamicCaseReplyKind kind,
 		string detail) {
 		// Arrange
@@ -1695,8 +1695,10 @@ public sealed class DynamicCaseServiceTests {
 				because: "only the family's members tell whether the version was saved");
 		result.ErrorMessage.Should().NotContain("dry-run=true",
 			because: "every dry run plans one more version, so it cannot tell whether this one was saved");
-		result.ErrorMessage.Should().Contain("the toolkit cannot delete one",
-			because: "a blind retry leaves a version behind that the toolkit cannot take back");
+		result.ErrorMessage.Should().Contain("no case tool or Case-library action deletes one",
+			because: "a blind retry leaves a version behind that no case tool takes back")
+			.And.NotContain("toolkit cannot delete",
+				because: "an inactive version can be removed the way a case is undone, after the user's yes");
 		result.ErrorMessage.Should().Contain("they show whether the version exists and whether it is active",
 			because: "clio cannot know either, so the message sends the agent to describe for both");
 		result.ErrorMessage.Should().Contain(

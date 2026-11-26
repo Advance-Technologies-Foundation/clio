@@ -27,6 +27,9 @@ public sealed class DescribeDynamicCaseCommandTests : BaseClioModuleTests {
 	private IDynamicCaseService _service;
 	private ILogger _logger;
 	private DescribeDynamicCaseCommand _command;
+	// The verdict of a refusal points at the document, which carries the message once.
+	private const string ErrorMessagePointer = "; the result's errorMessage says why and what to do next.";
+
 	private readonly List<(string Kind, string Text)> _printed = [];
 
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
@@ -197,7 +200,13 @@ public sealed class DescribeDynamicCaseCommandTests : BaseClioModuleTests {
 		// Assert
 		exitCode.Should().Be(1, because: "a refusal is not a success");
 		VerdictKind().Should().Be("error", because: "a refusal is printed as an error");
-		Verdict().Should().Be("Refused [case-ambiguous]: UsrOrder has 2 cases.", because: "the code and reason are stated");
+		Verdict().Should().Be("Refused [case-ambiguous]" + ErrorMessagePointer,
+			because: "the verdict names the code and points at the reason");
+		_printed.Should().HaveCount(2, because: "the log holds the verdict and the result document only");
+		_printed.Count(entry => entry.Text.Contains("UsrOrder has 2 cases.")).Should().Be(1,
+			because: "the refusal's message is printed once, in the result document, not again in the verdict");
+		JsonNode.Parse(_printed[1].Text)!["errorMessage"]!.GetValue<string>().Should().Be("UsrOrder has 2 cases.",
+			because: "the document carries the reason and the remedy");
 	}
 
 	[Test]

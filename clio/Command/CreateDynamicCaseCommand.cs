@@ -85,16 +85,14 @@ public sealed class CreateDynamicCaseOptions : EnvironmentOptions {
 
 /// <summary>
 /// Creates a minimal dynamic case and reports the outcome in two lines: a one-line verdict that also counts the
-/// warnings, then the result document, whose <c>notes</c> and <c>warnings</c> are the one copy of what to relay. The
-/// exit code is 0 for <c>planned</c>, <c>created</c>, <c>created-page-skipped</c> and <c>already-present</c>, and 1
+/// warnings, then the result document, whose <c>notes</c>, <c>warnings</c> and a refusal's <c>errorMessage</c> are the
+/// one copy of what to relay. The exit code is 0 for <c>planned</c>, <c>created</c>, <c>created-page-skipped</c> and <c>already-present</c>, and 1
 /// for everything else.
 /// </summary>
 public class CreateDynamicCaseCommand(IDynamicCaseService dynamicCaseService, ILogger logger)
 	: Command<CreateDynamicCaseOptions> {
 
 	private const string NothingWritten = " Nothing was written.";
-
-	private const string NothingWrittenPhrase = "nothing was written";
 
 	private static readonly JsonSerializerOptions ResultJsonOptions = new() {
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -150,14 +148,9 @@ public class CreateDynamicCaseCommand(IDynamicCaseService dynamicCaseService, IL
 			DynamicCaseOutcomes.FailedLeftover => $"The build failed [{result.ErrorCode}] and could not undo everything "
 				+ $"it wrote: {result.ErrorMessage} Remove, in this order: {string.Join("; ", result.Leftovers ?? [])}.",
 			DynamicCaseOutcomes.Unknown => result.ErrorMessage,
-			_ => $"Refused [{result.ErrorCode}]: {result.ErrorMessage}"
-				+ (SaysNothingWasWritten(result) ? string.Empty : nothingWritten)
+			_ => DynamicCaseRefusalVerdict.For(result.ErrorCode, result.ErrorMessage, nothingWritten)
 		};
 	}
-
-	// Some refusals already say it in their own words; repeating it would read as two separate claims.
-	private static bool SaysNothingWasWritten(DynamicCaseResult result) =>
-		result.ErrorMessage?.Contains(NothingWrittenPhrase, StringComparison.OrdinalIgnoreCase) == true;
 
 	private static string PageClause(DynamicCaseResult result) => result.Page?.Status switch {
 		DynamicCaseService.PageInserted => $" The progress bar was added to '{result.Page.PageSchemaName}'.",

@@ -151,7 +151,7 @@ public class CaseVersionInfo {
 	[JsonPropertyName("rootName")]
 	public string RootName { get; init; }
 
-	/// <summary>Whether the bar and new records use this member.</summary>
+	/// <summary>Whether the bar and the new records its filter fits use this member (in an enabled family).</summary>
 	[JsonPropertyName("active")]
 	public bool Active { get; init; }
 }
@@ -178,7 +178,8 @@ public class CaseVersionMemberInfo {
 	[JsonPropertyName("packageReadOnly")]
 	public bool PackageReadOnly { get; init; }
 
-	/// <summary>Whether the platform's pick names this member: the one the bar and new records use.</summary>
+	/// <summary>Whether the platform's pick names this member: the one the bar and the new records its filter fits use
+	/// (in an enabled family).</summary>
 	[JsonPropertyName("active")]
 	public bool Active { get; init; }
 
@@ -261,11 +262,12 @@ public abstract class CaseVersionCreation<TVersion, TCase> : CaseVersionCallResu
 /// <summary>A switch of a family's active version; the server's answer and the tool's result differ only in the version shape.</summary>
 /// <typeparam name="TVersion">The version block: the server's, or the tool's with the designer link.</typeparam>
 public abstract class CaseVersionActivation<TVersion> : CaseVersionCallResult {
-	/// <summary>The member the bar and new records use after the call, as read back.</summary>
+	/// <summary>The member the bar and the new records its filter fits use after the call, as read back; on a dry run,
+	/// the member that would be active once the switch is written.</summary>
 	[JsonPropertyName("activeVersion")]
 	public TVersion ActiveVersion { get; init; }
 
-	/// <summary>The member that was active before the call.</summary>
+	/// <summary>The member that was active before the call; on a dry run, the one active now.</summary>
 	[JsonPropertyName("previousActiveVersion")]
 	public TVersion PreviousActiveVersion { get; init; }
 

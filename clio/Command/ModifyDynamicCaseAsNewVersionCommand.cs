@@ -56,16 +56,14 @@ public sealed class ModifyDynamicCaseAsNewVersionOptions : EnvironmentOptions {
 
 /// <summary>
 /// Saves a change of a dynamic case as a new, inactive version and reports the outcome in two lines: a one-line
-/// verdict that also counts the warnings, then the result document, whose <c>notes</c> and <c>warnings</c> are the one
-/// copy of what to relay. The exit code is 0 for <c>planned</c> and <c>version-created</c>, and 1 for everything
+/// verdict that also counts the warnings, then the result document, whose <c>notes</c>, <c>warnings</c> and a refusal's
+/// <c>errorMessage</c> are the one copy of what to relay. The exit code is 0 for <c>planned</c> and <c>version-created</c>, and 1 for everything
 /// else.
 /// </summary>
 public class ModifyDynamicCaseAsNewVersionCommand(IDynamicCaseService dynamicCaseService, ILogger logger)
 	: Command<ModifyDynamicCaseAsNewVersionOptions> {
 
 	private const string NothingWritten = " Nothing was written.";
-
-	private const string NothingWrittenPhrase = "nothing was written";
 
 	// The server's failure messages (CrtProcessBuilder's ModifyCaseAsNewVersion) say these in their own words.
 	private const string NoVersionSavedPhrase = "no version was saved";
@@ -111,7 +109,7 @@ public class ModifyDynamicCaseAsNewVersionCommand(IDynamicCaseService dynamicCas
 				+ "Activate the version with set-active-dynamic-case-version only after the user has checked it and "
 				+ "said yes.",
 			// The server's own message may already say what happened to the version and list what is left; a clause it
-			// carries is not said twice, as SaysNothingWasWritten does for refusals.
+			// carries is not said twice.
 			DynamicCaseVersionOutcomes.FailedRolledBack => Says(result, NoVersionSavedPhrase)
 				? $"The save failed [{result.ErrorCode}]: {result.ErrorMessage}"
 				: $"The version was not created [{result.ErrorCode}]; nothing of it stays: {result.ErrorMessage}",
@@ -128,14 +126,9 @@ public class ModifyDynamicCaseAsNewVersionCommand(IDynamicCaseService dynamicCas
 				+ $"{Leftovers(result)}. Do not activate it"
 				+ (Says(result, BeforeAnyRetryPhrase) ? "." : "; run describe-dynamic-case before any retry."),
 			DynamicCaseVersionOutcomes.Unknown => result.ErrorMessage,
-			_ => $"Refused [{result.ErrorCode}]: {result.ErrorMessage}"
-				+ (SaysNothingWasWritten(result) ? string.Empty : NothingWritten)
+			_ => DynamicCaseRefusalVerdict.For(result.ErrorCode, result.ErrorMessage, NothingWritten)
 		};
 	}
-
-	// Some refusals already say it in their own words; repeating it would read as two separate claims.
-	private static bool SaysNothingWasWritten(ModifyDynamicCaseAsNewVersionResult result) =>
-		Says(result, NothingWrittenPhrase);
 
 	private static bool Says(ModifyDynamicCaseAsNewVersionResult result, string phrase) =>
 		result.ErrorMessage?.Contains(phrase, StringComparison.OrdinalIgnoreCase) == true;

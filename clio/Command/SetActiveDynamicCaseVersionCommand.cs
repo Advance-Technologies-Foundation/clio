@@ -32,16 +32,14 @@ public sealed class SetActiveDynamicCaseVersionOptions : EnvironmentOptions {
 
 /// <summary>
 /// Makes a member of a dynamic case's version family the active one and reports the outcome in two lines: a one-line
-/// verdict that also counts the warnings, then the result document, whose <c>notes</c> and <c>warnings</c> are the one
-/// copy of what to relay. The exit code is 0 for <c>planned</c>, <c>activated</c> and <c>unchanged</c>, and 1 for
+/// verdict that also counts the warnings, then the result document, whose <c>notes</c>, <c>warnings</c> and a refusal's
+/// <c>errorMessage</c> are the one copy of what to relay. The exit code is 0 for <c>planned</c>, <c>activated</c> and <c>unchanged</c>, and 1 for
 /// everything else.
 /// </summary>
 public class SetActiveDynamicCaseVersionCommand(IDynamicCaseService dynamicCaseService, ILogger logger)
 	: Command<SetActiveDynamicCaseVersionOptions> {
 
 	private const string NothingWritten = " Nothing was written.";
-
-	private const string NothingWrittenPhrase = "nothing was written";
 
 	private static readonly JsonSerializerOptions ResultJsonOptions = new() {
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -78,9 +76,12 @@ public class SetActiveDynamicCaseVersionCommand(IDynamicCaseService dynamicCaseS
 			DynamicCaseActivationOutcomes.Planned when staysActive => $"Dry run: '{active}' would stay the active "
 				+ "version, and the switch would clear the active flag the other editable members still carry"
 				+ (warned ? ", unless a warning below stands in the way." : ".") + NothingWritten,
+			// A dry run reports the planned switch, so the verdict says which member is active NOW: read alone, the
+			// planned activeVersion beside the current previousActiveVersion would show two active members.
 			DynamicCaseActivationOutcomes.Planned => $"Dry run: '{active}' would become the active version"
 				+ (previous is null ? string.Empty : $" instead of '{previous}'")
-				+ (warned ? " unless a warning below stands in the way." : ".") + NothingWritten,
+				+ (warned ? " unless a warning below stands in the way." : ".") + NothingWritten
+				+ (previous is null ? string.Empty : $" '{previous}' is still the active one."),
 			DynamicCaseActivationOutcomes.Activated when staysActive => $"'{active}' stays the active version of the "
 				+ "case, and the switch cleared the active flag the other editable members still carried; the notes say what that "
 				+ "means for the bar, new records and running cases.",
@@ -97,8 +98,7 @@ public class SetActiveDynamicCaseVersionCommand(IDynamicCaseService dynamicCaseS
 			DynamicCaseActivationOutcomes.FailedLeftover => $"No switch [{result.ErrorCode}]: {result.ErrorMessage} "
 				+ $"Left behind: {string.Join("; ", result.Leftovers ?? [])}.",
 			DynamicCaseActivationOutcomes.Unknown => result.ErrorMessage,
-			_ => $"Refused [{result.ErrorCode}]: {result.ErrorMessage}"
-				+ (SaysNothingWasWritten(result) ? string.Empty : NothingWritten)
+			_ => DynamicCaseRefusalVerdict.For(result.ErrorCode, result.ErrorMessage, NothingWritten)
 		};
 	}
 
@@ -107,10 +107,6 @@ public class SetActiveDynamicCaseVersionCommand(IDynamicCaseService dynamicCaseS
 		&& (!string.IsNullOrWhiteSpace(first.UId) && !string.IsNullOrWhiteSpace(second.UId)
 			? string.Equals(first.UId, second.UId, StringComparison.OrdinalIgnoreCase)
 			: string.Equals(first.Name, second.Name, StringComparison.OrdinalIgnoreCase));
-
-	// Some refusals already say it in their own words; repeating it would read as two separate claims.
-	private static bool SaysNothingWasWritten(SetActiveDynamicCaseVersionResult result) =>
-		result.ErrorMessage?.Contains(NothingWrittenPhrase, StringComparison.OrdinalIgnoreCase) == true;
 
 	private void Report(SetActiveDynamicCaseVersionResult result) {
 		string verdict = Verdict(result) + DynamicCaseWarningsHint.For(result.Warnings, beforeAnyWrite: true);

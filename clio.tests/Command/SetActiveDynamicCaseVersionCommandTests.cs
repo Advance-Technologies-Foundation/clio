@@ -28,6 +28,9 @@ public sealed class SetActiveDynamicCaseVersionCommandTests : BaseClioModuleTest
 	private IDynamicCaseService _service;
 	private ILogger _logger;
 	private SetActiveDynamicCaseVersionCommand _command;
+	// The verdict of a refusal points at the document, which carries the message once.
+	private const string ErrorMessagePointer = "; the result's errorMessage says why and what to do next.";
+
 	private readonly List<(string Kind, string Text)> _printed = [];
 
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
@@ -83,9 +86,9 @@ public sealed class SetActiveDynamicCaseVersionCommandTests : BaseClioModuleTest
 	}
 
 	[TestCase(true, "Dry run: 'UsrOrderCaseCustom1' would become the active version instead of 'UsrOrderCase'. "
-		+ "Nothing was written.")]
+		+ "Nothing was written. 'UsrOrderCase' is still the active one.")]
 	[TestCase(false, "Dry run: 'UsrOrderCaseCustom1' would become the active version. Nothing was written.")]
-	[Description("planned: exit 0 and an info verdict naming the member that would become active, and the one it replaces when known.")]
+	[Description("planned: exit 0 and an info verdict naming the member that would become active, and, when known, the one it replaces, which the verdict says is still the active one: a dry run switches nothing.")]
 	public void Execute_ShouldReportThePlan_WhenTheOutcomeIsPlanned(bool withPrevious, string expected) {
 		// Arrange
 		SetActiveDynamicCaseVersionResult result = Result(DynamicCaseActivationOutcomes.Planned,
@@ -145,8 +148,8 @@ public sealed class SetActiveDynamicCaseVersionCommandTests : BaseClioModuleTest
 	}
 
 	[TestCase(true, "Dry run: 'UsrOrderCaseCustom1' would become the active version instead of 'UsrOrderCase' unless "
-		+ "a warning below stands in the way. Nothing was written. 1 warning in the result: show it to the user before "
-		+ "any write.")]
+		+ "a warning below stands in the way. Nothing was written. 'UsrOrderCase' is still the active one. 1 warning in "
+		+ "the result: show it to the user before any write.")]
 	[TestCase(false, "Dry run: 'UsrOrderCaseCustom1' would stay the active version, and the switch would clear the "
 		+ "active flag the other editable members still carry, unless a warning below stands in the way. Nothing was "
 		+ "written. 1 "
@@ -201,7 +204,7 @@ public sealed class SetActiveDynamicCaseVersionCommandTests : BaseClioModuleTest
 	}
 
 	[Test]
-	[Description("refused: exit 1, an error verdict carrying the code and the server's message, and that nothing was written.")]
+	[Description("refused: exit 1, an error verdict naming the code, pointing at errorMessage and saying that nothing was written; the message itself is printed once, in the result document.")]
 	public void Execute_ShouldReportTheRefusal_WhenTheOutcomeIsRefused() {
 		// Arrange
 		SetActiveDynamicCaseVersionResult result = Result(DynamicCaseActivationOutcomes.Refused, "version-not-found",
@@ -213,23 +216,27 @@ public sealed class SetActiveDynamicCaseVersionCommandTests : BaseClioModuleTest
 		// Assert
 		exitCode.Should().Be(1, because: "a refusal is not a success");
 		VerdictKind().Should().Be("error", because: "a refusal is printed as an error");
-		Verdict().Should().Be("Refused [version-not-found]: No member named UsrNope. Nothing was written.",
-			because: "the code, the reason and the state are all stated");
+		Verdict().Should().Be("Refused [version-not-found]" + ErrorMessagePointer + " Nothing was written.",
+			because: "the verdict names the code and the state and points at the reason");
+		_printed.Should().HaveCount(2, because: "the log holds the verdict and the result document only");
+		_printed.Count(entry => entry.Text.Contains("No member named UsrNope.")).Should().Be(1,
+			because: "the refusal's message is printed once, in the result document, not again in the verdict");
+		JsonNode.Parse(_printed[1].Text)!["errorMessage"]!.GetValue<string>().Should().Be("No member named UsrNope.",
+			because: "the document carries the reason and the remedy");
 	}
 
 	[Test]
-	[Description("A refusal whose message already says nothing was written is not told so twice.")]
-	public void Execute_ShouldNotRepeatNothingWasWritten_WhenTheMessageSaysIt() {
+	[Description("A refusal without a message gets a verdict that does not point at a missing errorMessage.")]
+	public void Execute_ShouldNotPointAtTheMessage_WhenTheRefusalHasNone() {
 		// Arrange
-		SetActiveDynamicCaseVersionResult result = Result(DynamicCaseActivationOutcomes.Refused, "request-failed",
-			"SetActiveCaseVersion could not read the request. Nothing was written.");
+		SetActiveDynamicCaseVersionResult result = Result(DynamicCaseActivationOutcomes.Refused, "request-failed", null);
 
 		// Act
 		Run(result);
 
 		// Assert
-		Verdict().Should().Be("Refused [request-failed]: SetActiveCaseVersion could not read the request. "
-			+ "Nothing was written.", because: "repeating it would read as two separate claims");
+		Verdict().Should().Be("Refused [request-failed]. Nothing was written.",
+			because: "the code and the state are all there is to say");
 	}
 
 	[Test]

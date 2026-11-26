@@ -27,7 +27,8 @@ public sealed class DescribeDynamicCaseOptions : EnvironmentOptions {
 
 /// <summary>
 /// Reads an existing dynamic case and reports it in two lines: a one-line verdict that also counts the warnings, then
-/// the result document, whose <c>notes</c> and <c>warnings</c> are the one copy of what to relay. The exit code is 0
+/// the result document, whose <c>notes</c>, <c>warnings</c> and a refusal's <c>errorMessage</c> are the one copy of what
+/// to relay. The exit code is 0
 /// when the case or the object could be read, and 1 otherwise.
 /// </summary>
 public class DescribeDynamicCaseCommand(IDynamicCaseService dynamicCaseService, ILogger logger)
@@ -58,7 +59,7 @@ public class DescribeDynamicCaseCommand(IDynamicCaseService dynamicCaseService, 
 	/// <param name="result">The result document.</param>
 	internal static string Verdict(DescribeDynamicCaseResult result) {
 		if (!result.Success) {
-			return $"Refused [{result.ErrorCode}]: {result.ErrorMessage}";
+			return DynamicCaseRefusalVerdict.For(result.ErrorCode, result.ErrorMessage, string.Empty);
 		}
 		int count = result.Cases?.Count ?? 0;
 		if (count == 0) {

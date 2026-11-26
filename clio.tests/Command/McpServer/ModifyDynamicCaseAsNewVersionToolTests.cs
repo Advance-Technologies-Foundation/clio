@@ -517,19 +517,26 @@ public sealed class ModifyDynamicCaseAsNewVersionToolTests {
 			because: "the versions article owns the workflow of a case's versions");
 		description.Should().Contain("dry-run=true").And.Contain("ask before writing",
 			because: "the user sees the planned diff before a version is written");
-		description.Should().Contain("saved INACTIVE", because: "the active case and what runs are untouched");
+		description.Should().Contain("saved INACTIVE: the active case stays the one new records its filter fits start "
+			+ "(every record when it has none), and its running cases go on as they are; only a confirmed stage value "
+			+ "rename (below) reaches them at once",
+			because: "the active case stays in force, for the records its filter fits, except for a value rename")
+			.And.NotContain("untouched", because: "a confirmed value rename reaches the active case and every record");
 		description.Should().Contain("Never activates").And.Contain("set-active-dynamic-case-version",
 			because: "activation is a separate call the user agrees to");
 		description.Should().Contain("renames the stage's lookup value AT ONCE").And.Contain("not at activation",
 			because: "a value rename takes effect for every record immediately, not when the version is activated");
 		description.Should().Contain("After failed-leftover or unknown, run describe-dynamic-case before any retry.",
-			because: "a blind retry makes one more version, which the toolkit cannot delete");
+			because: "a blind retry makes one more version, which no case tool deletes");
 		description.Should().Contain("Not idempotent", because: "each write makes one more version");
-		description.Should().Contain("the toolkit cannot delete one; a saved version runs for no record until it is "
-			+ "activated, and a later change to it is made in place with modify-dynamic-case by its case-name",
-			because: "a kept version is inactive, and changing it again needs no further version")
-			.And.NotContain("never removed", because: "the description says what the toolkit cannot do")
-			.And.NotContain("case library", because: "the case library offers no delete for a version");
+		description.Should().Contain("no case tool or Case-library action deletes one (an inactive version goes as a "
+			+ "case does, get-guidance name=process-dynamic-case undo steps 1-2, after the user's yes); a saved version "
+			+ "runs for no record until it is activated, and a later change to it is made in place with "
+			+ "modify-dynamic-case by its case-name",
+			because: "a kept version is inactive, it is removed only as a case is undone, and changing it again needs "
+			+ "no further version")
+			.And.NotContain("toolkit cannot delete", because: "an inactive version can be removed after the user's yes")
+			.And.NotContain("never removed", because: "the description says what the case tools do not do");
 		description.Should().Contain($"Requires CrtProcessBuilder {DynamicCaseChangeRequirement.MinimumProcessBuilderVersion} or later",
 			because: "an older package lacks the operation");
 	}

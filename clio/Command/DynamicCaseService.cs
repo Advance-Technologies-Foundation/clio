@@ -297,7 +297,7 @@ public sealed class DynamicCaseService(
 		bool unreadOutcome = !DynamicCaseVersionOutcomes.IsKnown(outcome);
 		if (unreadOutcome) {
 			// A write whose outcome clio cannot read may have saved a version; "refused, nothing was written" would send
-			// the agent into a retry that makes another version, which the toolkit cannot delete.
+			// the agent into a retry that makes another version, which no case tool deletes.
 			outcome = options.DryRun ? DynamicCaseVersionOutcomes.Refused : DynamicCaseVersionOutcomes.Unknown;
 		}
 		// Only a saved version opens in the designer: a dry run names no UId (the package mints the copy's UId per
@@ -761,15 +761,15 @@ public sealed class DynamicCaseService(
 			"modify-dynamic-case-as-new-version", reply.Kind, reply.Detail, "Nothing was written.");
 		if (message is null && !dryRun) {
 			// Not "re-run with dry-run" as on modify: every dry run plans one MORE version, so it cannot tell whether
-			// this one was saved; only the family's members can, and a blind retry makes a version the toolkit cannot
-			// delete.
+			// this one was saved; only the family's members can, and a blind retry makes a version no case tool
+			// deletes.
 			return new ModifyDynamicCaseAsNewVersionResult {
 				Success = false,
 				Outcome = DynamicCaseVersionOutcomes.Unknown,
 				ErrorCode = DynamicCaseErrorCodes.RequestFailed,
 				ErrorMessage = "ModifyCaseAsNewVersion returned a response clio could not read, so whether a version "
-					+ "was saved is UNKNOWN. Do NOT retry yet: a retry makes one more version, and the toolkit cannot "
-					+ "delete one. Run describe-dynamic-case on the case first and read its versions: they show "
+					+ "was saved is UNKNOWN. Do NOT retry yet: a retry makes one more version, and no case tool or "
+					+ "Case-library action deletes one. Run describe-dynamic-case on the case first and read its versions: they show "
 					+ "whether the version exists and whether it is active. A further change to an existing inactive "
 					+ "version is made in place with modify-dynamic-case by its case-name. The server said: "
 					+ $"{reply.Detail}",
