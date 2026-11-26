@@ -160,6 +160,82 @@ public sealed class ODataReadColumnValidationTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("A nested $select name the navigation's target does not have is reported under expand as Nav/Name, with suggestions from the target's properties (ENG-107610).")]
+	public void Read_Should_Report_An_Unknown_Nested_Select_Name_As_A_Navigation_Path() {
+		// Arrange
+		ODataReadTool tool = BuildTool();
+
+		// Act
+		ODataReadResponse response = tool.Read(Args("Activity", expand: Cols("Account($select=Id,Nme)")));
+
+		// Assert
+		response.UnknownMembers.Should().ContainSingle(
+			because: "Account and its Id exist; only the misspelled nested name is unknown");
+		response.UnknownMembers![0].Argument.Should().Be("expand",
+			because: "the nested name was sent inside expand");
+		response.UnknownMembers[0].Name.Should().Be("Account/Nme",
+			because: "the nested name is addressed through its navigation so the caller can tell where it belongs");
+		response.UnknownMembers[0].Suggestions.Should().Contain("Account/Name",
+			because: "the closest property of the navigation's target is suggested with its navigation");
+		response.Error.Should().Contain("expand: Account($select=Id,Nme)",
+			because: "the names this request sent are echoed in the canonical form the request carried");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A misspelled navigation with a nested $select is reported once, as the navigation; its nested names are not reported, because without a resolved target type they cannot be judged (ENG-107610 review).")]
+	public void Read_Should_Report_Only_The_Navigation_When_The_Navigation_Of_A_Nested_Select_Is_Unknown() {
+		// Arrange
+		ODataReadTool tool = BuildTool();
+
+		// Act
+		ODataReadResponse response = tool.Read(Args("Activity", expand: Cols("Acount($select=Id,Name)")));
+
+		// Assert
+		response.UnknownMembers.Should().ContainSingle(
+			because: "the one mistake is the navigation name; Id and Name exist on Account");
+		response.UnknownMembers![0].Name.Should().Be("Acount",
+			because: "the navigation is what has to be corrected");
+		response.UnknownMembers[0].Suggestions.Should().Contain("Account",
+			because: "the closest navigation is suggested");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Behind a multi-segment navigation the metadata shape has no target type, so nested names are not checked and not reported, rather than reported as checked-and-known.")]
+	public void Read_Should_Not_Check_Nested_Select_Names_Behind_A_Multi_Segment_Navigation() {
+		// Arrange
+		ODataReadTool tool = BuildTool();
+
+		// Act
+		ODataReadResponse response = tool.Read(Args("Activity", select: Cols("Titel"),
+			expand: Cols("Account/Owner($select=Bogus)")));
+
+		// Assert
+		response.UnknownMembers.Should().NotContain(member => member.Name.Contains("Bogus"),
+			because: "the shape holds one level of navigation targets, so a name behind Account/Owner cannot be checked");
+		response.UnknownMembers.Should().Contain(member => member.Argument == "select",
+			because: "the rest of the query is still checked as before");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Known nested $select names are not reported, so an unrelated rejection is not blamed on a valid expand.")]
+	public void Read_Should_Not_Report_Known_Nested_Select_Names() {
+		// Arrange
+		ODataReadTool tool = BuildTool();
+
+		// Act
+		ODataReadResponse response = tool.Read(Args("Activity", select: Cols("Titel"),
+			expand: Cols("Account($select=Id,Name)")));
+
+		// Assert
+		response.UnknownMembers.Should().ContainSingle(because: "only the select name is misspelled")
+			.Which.Argument.Should().Be("select", because: "the valid nested names are not unknown");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("A lookup written as ActivityCategory/Id is valid; the raw ActivityCategoryId column is valid; a valid query is sent.")]
 	public void Read_Should_Send_A_Valid_Query() {
 		// Arrange

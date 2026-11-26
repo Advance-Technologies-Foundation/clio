@@ -2,10 +2,11 @@
 description: odata-read reports no server prose - its invalid-query message is rebuilt from the CALLER's own filter/select/expand/order-by names (only for a CLASSIFIED query-shape failure), plus validated identifiers such as the unknown property, operand types or column path that DescribeStructuredODataError captures from four measured wordings
 applies-to:
   - clio/Command/McpServer/Tools/ODataReadTool.cs
+  - clio/Command/McpServer/Tools/ODataExpandEntry.cs
   - clio/Common/CreatioResponseError.cs
   - clio/Common/CreatioResponseError.StructuredDetail.cs
   - clio/Command/McpServer/Tools/ODataFileContract.cs
-ticket: GH-1407, GH-1550
+ticket: GH-1407, GH-1550, ENG-107610
 date: 2026-09-30
 ---
 
@@ -31,9 +32,12 @@ built locally from these parts, and nothing else leaves `CreatioResponseError`:
   odata-read no hint;
 - the DETAIL the caller reads is a restatement of the request: the filter fields, `select`, `expand`
   and `order-by` names that arrived in `ODataReadArgs`. What makes echoing them safe is only that they
-  are the caller's own text going back to the caller — `ValidateArguments` now holds all four to
-  `ODataKeyFormatter.IsValidMemberPath`, but that is a request-hygiene rule, not what authorizes the
-  echo;
+  are the caller's own text going back to the caller — `ValidateAndNormalizeArguments` holds filter
+  fields, `select` and `order-by` to `ODataKeyFormatter.IsValidMemberPath`, and `expand` to
+  `ODataExpandEntry.TryParse` (a member path with an optional nested `$select` of plain identifiers,
+  ENG-107610), but that is a request-hygiene rule, not what authorizes the echo. `expand` is echoed in
+  the canonical form rebuilt from its parsed identifiers (`Account($select=Id,Name)`), which is also
+  the text the request URL carried;
 - the lookup hint (`SysSettingsId` → `SysSettings/Id`) is likewise derived from the request alone:
   `ODataKeyFormatter.IsIdish` (the word-boundary rule, so `Paid` and `Void` are not lookups), longer
   than `Id`, and containing no `/`.
