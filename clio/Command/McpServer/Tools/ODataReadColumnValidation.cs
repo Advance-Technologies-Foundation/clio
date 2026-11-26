@@ -71,11 +71,11 @@ internal static class ODataReadColumnValidation {
 		IServiceUrlBuilder urlBuilder,
 		ODataReadArgs args,
 		IReadOnlyList<string>? selectColumns,
-		IReadOnlyList<string>? expandColumns) {
+		IReadOnlyList<ODataExpandEntry>? expandEntries) {
 		if (response.Success || response.ErrorCode != ODataReadErrorCodes.InvalidQuery) {
 			return response;
 		}
-		Explanation? explanation = Validate(client, urlBuilder, args, selectColumns, expandColumns);
+		Explanation? explanation = Validate(client, urlBuilder, args, selectColumns, expandEntries);
 		if (explanation is null) {
 			return response;
 		}
@@ -99,8 +99,8 @@ internal static class ODataReadColumnValidation {
 		IServiceUrlBuilder urlBuilder,
 		ODataReadArgs args,
 		IReadOnlyList<string>? selectColumns,
-		IReadOnlyList<string>? expandColumns) {
-		List<Reference> references = CollectReferences(args, selectColumns, expandColumns);
+		IReadOnlyList<ODataExpandEntry>? expandEntries) {
+		List<Reference> references = CollectReferences(args, selectColumns, expandEntries);
 		if (references.Count == 0) {
 			return null;
 		}
@@ -138,13 +138,23 @@ internal static class ODataReadColumnValidation {
 			.ToList();
 
 	private static List<Reference> CollectReferences(ODataReadArgs args, IReadOnlyList<string>? select,
-		IReadOnlyList<string>? expand) {
+		IReadOnlyList<ODataExpandEntry>? expand) {
 		List<Reference> references = [];
 		foreach (string name in select ?? []) {
 			references.Add(new Reference("select", name, false));
 		}
-		foreach (string name in expand ?? []) {
-			references.Add(new Reference("expand", name, true));
+		foreach (ODataExpandEntry entry in expand ?? []) {
+			references.Add(new Reference("expand", entry.NavigationPath, true));
+			//A nested $select name is a member of the navigation's target, checked and reported as Nav/Name.
+			//The metadata shape holds ONE level of navigation targets, so behind a multi-segment navigation
+			//(Account/Owner) the target is unknown and its nested names are not checked - the same depth
+			//limit every other path here has. Adding them would only make an unchecked name look checked.
+			if (entry.NavigationPath.Contains('/', StringComparison.Ordinal)) {
+				continue;
+			}
+			foreach (string name in entry.Select ?? []) {
+				references.Add(new Reference("expand", $"{entry.NavigationPath}/{name}", false));
+			}
 		}
 		if (!string.IsNullOrWhiteSpace(args.OrderBy)) {
 			foreach (string clause in args.OrderBy.Split(',')) {
@@ -165,9 +175,19 @@ internal static class ODataReadColumnValidation {
 		List<Reference> references) =>
 		references
 			.Where(reference => !IsKnown(shape, reference))
+			//A nested $select name behind a navigation that does not exist cannot be judged: there is no target
+			//type to check it against. The navigation itself is reported, once, and its nested names are not.
+			.Where(reference => !IsNestedSelectOfUnknownNavigation(shape, reference))
 			.DistinctBy(reference => (reference.Argument, reference.Path))
 			.Select(reference => (reference, reference.Path))
 			.ToList();
+
+	//Nested $select names are the only expand references that are not navigation-only (see CollectReferences).
+	private static bool IsNestedSelectOfUnknownNavigation(ODataFieldValidation.EntityShape shape,
+		Reference reference) =>
+		reference.Argument == "expand"
+		&& !reference.NavigationOnly
+		&& !shape.Root.Navigations.Contains(reference.Path.Split('/')[0]);
 
 	/// <summary>
 	/// A single segment must be a property or navigation of the entity (a navigation only, for expand).
