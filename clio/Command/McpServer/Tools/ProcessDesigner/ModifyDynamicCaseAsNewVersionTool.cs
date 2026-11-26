@@ -64,7 +64,7 @@ public class ModifyDynamicCaseAsNewVersionTool(
 	 Description("Saves a case change as a version. The dynamic case (DCM) designer's \"Save new version\": the "
 		 + "family's ACTIVE case is copied, the change is applied to the copy, and the copy is saved INACTIVE - the "
 		 + "active case, its running cases and new records are untouched. Read get-guidance "
-		 + "name=process-dynamic-case-change first. Call describe-dynamic-case, then this tool with dry-run=true, show "
+		 + "name=process-dynamic-case-versions first. Call describe-dynamic-case, then this tool with dry-run=true, show "
 		 + "the user the planned diff and the notes and ask before writing. Name the active case by case-name or "
 		 + "case-uid, or by entity-schema-name when the object has one case. package-name: where the version is saved; "
 		 + "left out, the active case's package, refused package-name-required when that package does not accept "

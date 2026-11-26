@@ -300,7 +300,7 @@ public sealed class SetActiveDynamicCaseVersionToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The description is ASCII, its first sentence fits the compact index, and it carries the contract: a dry run first, a requested switch as the yes unless the dry run warns, never on its own after creating a version, what Change case does to a running case in an enabled and in a disabled family, read-back with failed-not-restored safe to repeat, unchanged on a repeat, and the package floor.")]
+	[Description("The description is ASCII, its first sentence fits the compact index, and it carries the contract: the versions guide first, a dry run first, a requested switch as the yes unless the dry run warns, never on its own after creating a version, what Change case does to a running case in an enabled and in a disabled family, read-back with failed-not-restored safe to repeat, unchanged on a repeat, and the package floor.")]
 	public void Description_ShouldCarryTheContract() {
 		// Arrange
 		string description = Description();
@@ -311,6 +311,8 @@ public sealed class SetActiveDynamicCaseVersionToolTests {
 		// Assert
 		description.All(character => character < 128).Should().BeTrue(because: "tool descriptions are ASCII only");
 		firstSentence.Length.Should().BeLessThanOrEqualTo(120, because: "the compact index cuts the purpose at 120");
+		description.Should().Contain("Read get-guidance name=process-dynamic-case-versions first.",
+			because: "the versions article owns the workflow of switching a case's active version");
 		description.Should().Contain("refused until confirm-package-position=true, sent only after that yes",
 			because: "the server refuses a switch a foreign member may outrank until the user's own yes");
 		description.Should().Contain("Run it with dry-run=true first", because: "every switch is planned before it is made")

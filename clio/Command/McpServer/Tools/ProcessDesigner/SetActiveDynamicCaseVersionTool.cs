@@ -47,7 +47,7 @@ public class SetActiveDynamicCaseVersionTool(
 	// Idempotent=true: the same call again answers unchanged.
 	[McpServerTool(Name = SetActiveDynamicCaseVersionToolName, ReadOnly = false, Destructive = true,
 		 Idempotent = true, OpenWorld = false),
-	 Description("Activates a case version. Makes one member of a dynamic case (DCM) version family the "
+	 Description("Activates a case version. Read get-guidance name=process-dynamic-case-versions first. Makes one member of a dynamic case (DCM) version family the "
 		 + "active one, the family root included (that is how you go back). In an enabled family the version becomes "
 		 + "the case of the records its filter fits (every record when it has none): such a NEW record starts it, and "
 		 + "one with no running case shows it at once; a running case keeps its version while it runs, and Change "

@@ -1,7 +1,7 @@
 {
   "library": "com.creatio.clio",
-  "libraryVersion": "1.15.261",
-  "sequence": 1015261000,
+  "libraryVersion": "1.15.263",
+  "sequence": 1015263000,
   "availableNames": [
     "administration",
     "agent-execution",
@@ -141,6 +141,7 @@
     "creatio.process-dynamic-case",
     "creatio.process-dynamic-case-change",
     "creatio.process-dynamic-case-filters",
+    "creatio.process-dynamic-case-versions",
     "creatio.process-element-catalog",
     "creatio.process-element-catalog-details",
     "creatio.process-files",
@@ -328,6 +329,7 @@
     "process-dynamic-case",
     "process-dynamic-case-change",
     "process-dynamic-case-filters",
+    "process-dynamic-case-versions",
     "process-element-catalog",
     "process-element-catalog-details",
     "process-files",

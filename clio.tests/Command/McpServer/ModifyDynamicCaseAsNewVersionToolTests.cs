@@ -477,8 +477,8 @@ public sealed class ModifyDynamicCaseAsNewVersionToolTests {
 		// Assert
 		description.All(character => character < 128).Should().BeTrue(because: "tool descriptions are ASCII only");
 		firstSentence.Length.Should().BeLessThanOrEqualTo(120, because: "the compact index cuts the purpose at 120");
-		description.Should().Contain("Read get-guidance name=process-dynamic-case-change first.",
-			because: "the change article owns the workflow of changing a case");
+		description.Should().Contain("Read get-guidance name=process-dynamic-case-versions first.",
+			because: "the versions article owns the workflow of a case's versions");
 		description.Should().Contain("dry-run=true").And.Contain("ask before writing",
 			because: "the user sees the planned diff before a version is written");
 		description.Should().Contain("saved INACTIVE", because: "the active case and what runs are untouched");
