@@ -275,7 +275,7 @@ internal static class PageBusinessRuleRedundancy {
 			if (normalizeBoolean
 				&& rightIsConst
 				&& BusinessRuleHelpers.IsEqualityComparisonType(comparison)
-				&& right!.Value is { ValueKind: JsonValueKind.False }) {
+				&& right?.Value is { ValueKind: JsonValueKind.False }) {
 				comparison = NegatedComparisons[comparison];
 				right = right with { Value = TrueConstant };
 			}
