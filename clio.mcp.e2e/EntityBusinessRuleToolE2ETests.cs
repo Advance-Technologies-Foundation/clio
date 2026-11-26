@@ -402,6 +402,94 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
+	[Description("ENG-95270: an apply-static-filter rule is checked on the environment before it is saved, and the result says how many records of the target lookup its filter keeps.")]
+	[AllureTag(ToolName)]
+	[AllureName("Entity business-rule MCP tools report the static filter's match count on create and update")]
+	[AllureDescription("Requires a reachable sandbox environment and destructive opt-in. Calls create-entity-business-rules for Contact with an apply-static-filter on the Account lookup (accounts whose name starts with 'A'), then update-entity-business-rules for the same rule by name, and verifies both save the rule and carry filterMatchCount from the environment.")]
+	public async Task BusinessRuleCreate_Should_Report_Static_Filter_Match_Count_In_Creatio() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false - skipping destructive apply-static-filter create-entity-business-rule test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		string packageName = ResolvePackageName(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
+		string caption = $"MCP E2E static filter {Guid.NewGuid():N}";
+
+		Dictionary<string, object?> StaticFilterRule(string? name) {
+			Dictionary<string, object?> rule = new Dictionary<string, object?> {
+				["caption"] = caption,
+				["condition"] = new Dictionary<string, object?> {
+					["logicalOperation"] = "AND",
+					["conditions"] = Array.Empty<object>()
+				},
+				["actions"] = new object[] {
+					new Dictionary<string, object?> {
+						["type"] = "apply-static-filter",
+						["targetAttribute"] = "Account",
+						["filter"] = new Dictionary<string, object?> {
+							["logicalOperation"] = "AND",
+							["filters"] = new object[] {
+								new Dictionary<string, object?> {
+									["columnPath"] = "Name",
+									["comparisonType"] = "START_WITH",
+									["value"] = "A"
+								}
+							}
+						}
+					}
+				}
+			};
+			if (name is not null) {
+				rule["name"] = name;
+			}
+			return rule;
+		}
+
+		// Act
+		CallToolResult callResult = await CallAsync(ToolName, StaticFilterRule(null));
+		BusinessRuleBatchResponse batchResponse = McpCommandExecutionParser.ExtractBusinessRuleBatchResponse(callResult);
+		string? ruleName = batchResponse.Results.FirstOrDefault()?.RuleName;
+		CallToolResult updateResult = ruleName is null
+			? callResult
+			: await CallAsync(UpdateEntityBusinessRuleTool.ToolName, StaticFilterRule(ruleName));
+		BusinessRuleBatchResponse updateResponse = McpCommandExecutionParser.ExtractBusinessRuleBatchResponse(updateResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a valid static-filter rule returns the structured batch-create response");
+		batchResponse.Succeeded.Should().Be(1,
+			because: "the environment ran the filter, so the rule is saved");
+		batchResponse.Results.Should().ContainSingle(
+				because: "the batch holds one rule")
+			.Which.FilterMatchCount.Should().NotBeNull(
+				because: "the filter was run on the environment before saving, and its count is reported");
+		ruleName.Should().NotBeNullOrWhiteSpace(because: "the created rule's name is the update key");
+		updateResult.IsError.Should().NotBeTrue(
+			because: "updating the same rule by name returns the structured batch response");
+		updateResponse.Succeeded.Should().Be(1, because: "the updated filter still runs on the environment");
+		updateResponse.Results.Should().ContainSingle(because: "the update batch holds one rule")
+			.Which.FilterMatchCount.Should().NotBeNull(
+				because: "update-entity-business-rules runs the same check and must report its count, not a silent success");
+
+		Task<CallToolResult> CallAsync(string tool, Dictionary<string, object?> rule) =>
+			arrangeContext.Session.CallToolAsync(
+				tool,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["package-name"] = packageName,
+						["entity-schema-name"] = "Contact",
+						["rules"] = new object[] { rule }
+					}
+				},
+				arrangeContext.CancellationTokenSource.Token);
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
 	[Description("Creates an entity business rule with a system-variable condition for Contact through the real MCP server and verifies the persisted SysValue right expression.")]
 	[AllureTag(ToolName)]
 	[AllureName("Entity business-rule MCP tool creates a system-variable condition rule")]
