@@ -17,7 +17,9 @@ namespace Clio.Command.BusinessRules;
 /// condition (AND: a strict subset of the conditions; OR: a strict superset), so this one never changes the
 /// outcome. AND and OR groups are not compared with each other.</item>
 /// <item><b>inverse-redundant</b>: the condition is the exact negation of another rule's condition (De Morgan
-/// for groups) and the action is the opposite state on the same items. A page state rule undoes itself when its
+/// for groups) and the action is the opposite state on the same items. Two near-opposites agents write count too:
+/// <c>X not-equal v OR X is-not-filled-in</c> against <c>X equal v</c>, and <c>Flag equal false</c> against
+/// <c>Flag equal true</c> (boolean constants only). A page state rule undoes itself when its
 /// condition turns false, so the inverse rule only restores what the platform restores anyway. Not verified for
 /// an element that is read-only, required or hidden by default; the warning says so.</item>
 /// </list>
@@ -31,6 +33,15 @@ internal static class PageBusinessRuleRedundancy {
 
 	private const string And = "AND";
 	private const string Or = "OR";
+	private const string IsFilledIn = "is-filled-in";
+	private const string IsNotFilledIn = "is-not-filled-in";
+
+	private static readonly JsonElement TrueConstant = JsonSerializer.SerializeToElement(true);
+
+	// The comparisons that are true on an empty value; every other value comparison is false on it.
+	private static readonly HashSet<string> TrueOnEmptyComparisons = new(StringComparer.Ordinal) {
+		"not-equal", "not-contain"
+	};
 
 	private static readonly IReadOnlyDictionary<string, string> OppositeStateActions = BuildOppositeStateActions(
 		(new MakeReadOnlyBusinessRuleAction().ActionType, new MakeEditableBusinessRuleAction().ActionType),
@@ -131,10 +142,12 @@ internal static class PageBusinessRuleRedundancy {
 
 	private static bool IsInverseOf(RuleShape rule, RuleShape other) {
 		if (!CoversActions(rule, other, otherType => OppositeStateActions[otherType])
-			|| !TryNegate(other, out string negatedOperation, out HashSet<ConditionKey> negatedConditions)) {
+			|| !TryNegate(other.InverseForm(), out string negatedOperation,
+				out HashSet<ConditionKey> negatedConditions)) {
 			return false;
 		}
-		return rule.Operation == negatedOperation && rule.Conditions.SetEquals(negatedConditions);
+		RuleShape ruleForm = rule.InverseForm();
+		return ruleForm.Operation == negatedOperation && ruleForm.Conditions.SetEquals(negatedConditions);
 	}
 
 	/// <summary>
@@ -174,10 +187,51 @@ internal static class PageBusinessRuleRedundancy {
 
 	private sealed record ActionShape(string Type, HashSet<string> Items);
 
-	private sealed record ConditionKey(string Left, string Comparison, string Right);
+	/// <param name="RightIsConst">Whether the right side is a constant; only then can it not be empty.</param>
+	private sealed record ConditionKey(string Left, string Comparison, string Right, bool RightIsConst);
 
+	/// <param name="Conditions">The conditions as written; subsumption compares these.</param>
+	/// <param name="BooleanNormalizedConditions">The same conditions with every comparison with the boolean constant
+	/// <c>false</c> keyed as the opposite comparison with <c>true</c>; only <see cref="InverseForm"/> reads them.</param>
 	private sealed record RuleShape(string Label, string Operation, HashSet<ConditionKey> Conditions,
-		IReadOnlyList<ActionShape> Actions) {
+		HashSet<ConditionKey> BooleanNormalizedConditions, IReadOnlyList<ActionShape> Actions) {
+
+		/// <summary>
+		/// The form the inverse check compares, with both near-opposite relaxations applied; subsumption never sees it.
+		/// "Flag equal false" reads as "Flag not-equal true", so it negates "Flag equal true", and the null checks a
+		/// value comparison already settles are dropped (see <see cref="WithoutImpliedNullChecks"/>).
+		/// </summary>
+		public RuleShape InverseForm() =>
+			(this with {
+				Operation = NormalizeOperation(Operation, BooleanNormalizedConditions.Count),
+				Conditions = BooleanNormalizedConditions
+			}).WithoutImpliedNullChecks();
+
+		/// <summary>
+		/// The same rule without the null checks a value comparison on the same attribute already settles:
+		/// <c>is-not-filled-in</c> in an OR group beside a comparison that is true on an empty value
+		/// (<c>not-equal</c>, <c>not-contain</c>), and <c>is-filled-in</c> in an AND group beside one that is false on
+		/// it (<c>equal</c>, <c>contain</c>, the relational ones). So "X not-equal v OR X is-not-filled-in", the way
+		/// agents negate "X equal v", reads as "X not-equal v". Only a comparison with a constant settles the check:
+		/// another attribute, system value or setting on the right can be empty too.
+		/// </summary>
+		private RuleShape WithoutImpliedNullChecks() {
+			bool isAnd = Operation == And;
+			string impliedCheck = isAnd ? IsFilledIn : IsNotFilledIn;
+			if (Conditions.Count < 2 || Conditions.All(c => c.Comparison != impliedCheck)) {
+				return this;
+			}
+			var settledLefts = new HashSet<string>(Conditions
+				.Where(c => c.RightIsConst && !BusinessRuleHelpers.IsUnaryComparisonType(c.Comparison)
+					&& TrueOnEmptyComparisons.Contains(c.Comparison) != isAnd)
+				.Select(c => c.Left), StringComparer.Ordinal);
+			HashSet<ConditionKey> kept = Conditions
+				.Where(c => c.Comparison != impliedCheck || !settledLefts.Contains(c.Left))
+				.ToHashSet();
+			return kept.Count == Conditions.Count
+				? this
+				: this with { Operation = NormalizeOperation(Operation, kept.Count), Conditions = kept };
+		}
 
 		public static RuleShape? TryCreate(BusinessRule rule) {
 			if (rule.Enabled == false || rule.Condition?.Conditions is not { Count: > 0 } conditions
@@ -197,14 +251,35 @@ internal static class PageBusinessRuleRedundancy {
 				actionShapes.Add(new ActionShape(action.ActionType,
 					new HashSet<string>(fieldAction.FieldSelectionItems, StringComparer.Ordinal)));
 			}
-			HashSet<ConditionKey> keys = conditions
-				.OfType<BusinessRuleCondition>()
-				.Select(condition => new ConditionKey(Describe(condition.LeftExpression),
-					(condition.ComparisonType ?? string.Empty).Trim().ToLowerInvariant(),
-					Describe(condition.RightExpression)))
+			List<BusinessRuleCondition> typedConditions = conditions.OfType<BusinessRuleCondition>().ToList();
+			HashSet<ConditionKey> keys = typedConditions
+				.Select(condition => CreateConditionKey(condition, normalizeBoolean: false))
+				.ToHashSet();
+			HashSet<ConditionKey> booleanNormalizedKeys = typedConditions
+				.Select(condition => CreateConditionKey(condition, normalizeBoolean: true))
 				.ToHashSet();
 			string label = string.IsNullOrWhiteSpace(rule.Caption) ? rule.Name ?? string.Empty : rule.Caption.Trim();
-			return new RuleShape(label, NormalizeOperation(operation, keys.Count), keys, actionShapes);
+			return new RuleShape(label, NormalizeOperation(operation, keys.Count), keys, booleanNormalizedKeys,
+				actionShapes);
+		}
+
+		/// <summary>
+		/// Builds the comparable key of a condition. With <paramref name="normalizeBoolean"/>, a comparison with the
+		/// boolean constant <c>false</c> is keyed as the opposite comparison with <c>true</c>.
+		/// </summary>
+		private static ConditionKey CreateConditionKey(BusinessRuleCondition condition, bool normalizeBoolean) {
+			string comparison = (condition.ComparisonType ?? string.Empty).Trim().ToLowerInvariant();
+			BusinessRuleExpression? right = condition.RightExpression;
+			bool rightIsConst = string.Equals(right?.Type, BusinessRuleConstants.ConstExpressionType,
+				StringComparison.OrdinalIgnoreCase);
+			if (normalizeBoolean
+				&& rightIsConst
+				&& BusinessRuleHelpers.IsEqualityComparisonType(comparison)
+				&& right?.Value is { ValueKind: JsonValueKind.False }) {
+				comparison = NegatedComparisons[comparison];
+				right = right with { Value = TrueConstant };
+			}
+			return new ConditionKey(Describe(condition.LeftExpression), comparison, Describe(right), rightIsConst);
 		}
 
 		private static string Describe(BusinessRuleExpression? expression) =>
