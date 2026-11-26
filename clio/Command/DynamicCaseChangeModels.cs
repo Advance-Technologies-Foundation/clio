@@ -45,8 +45,10 @@ public static class DynamicCaseChangeRequirement {
 	/// reads back the change-stage tasks they need. 1.6.6.211 gives a new version's condition-target refusal a remedy
 	/// that changes the version, not the running case, and shows the copied steps in the new-version answer. 1.6.6.216
 	/// adds review round 1 and is numbered above 1.6.6.212-215 (another branch's cuts without the case versions).
+	/// 1.6.6.217 carries the run-5 remarks: a set-active dry run reports the planned active member, and a new-version dry
+	/// run previews the binding it adds, which the tool descriptions and the E2E rely on.
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.216";
+	public const string MinimumProcessBuilderVersion = "1.6.6.217";
 }
 
 /// <summary>
