@@ -72,25 +72,25 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>fda07911</c>, the
-	/// compile-marker restamp on top of the ENG-106400 branch <c>feature/ENG-106400-dcm-versioning</c>, whose base is
-	/// <c>main</c> <c>8fa1e6a3</c> merged in as <c>1590a5b0</c>, tagged <c>crtprocessbuilder-1.6.6.209</c>; the stamp is its child <c>3b63658b</c>).
-	/// <c>main</c> there carries the 1.6.6.204 cut master bundles before this one, so the cut carries everything 1.6.6.204
-	/// carries and the case versions of ENG-106400, with the fixes of its isolated agent runs (an object found by its
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>6c10708d</c>, the
+	/// compile-marker restamp on top of the ENG-106400 branch <c>feature/ENG-106400-dcm-versioning</c>, tagged
+	/// <c>crtprocessbuilder-1.6.6.210</c>; the stamp is its child <c>380f944a</c>). Its base is <c>main</c> <c>fdde18c4</c>
+	/// (the 1.6.6.206 cut master bundles before this one: steps inside stages and their conditions, ENG-107646 and
+	/// ENG-107647), merged in as <c>1bf66114</c>, so the cut carries everything 1.6.6.206 carries and the case versions of
+	/// ENG-106400, with the fixes of its isolated agent runs (an object found by its
 	/// caption, the draft's uncovered-values note, the notes of a disabled family, an outranked activation refused without the user's yes, a pinned member judged by its rank, the records in a removed stage split by running case, disabling gated on the family's running cases, every text inaccuracy of the fourth run, a new-version dry run without uIds), main's steps inside stages merged into
 	/// the shared change planner (<c>1590a5b0</c>, the reason for 1.6.6.208: a stage that holds steps is removed with them, named in
-	/// <c>diff.steps</c>, and a new version refuses steps sent with it), and <c>f692d28a</c>, the reason for 1.6.6.209: a new
+	/// <c>diff.steps</c>, and a new version refuses steps sent with it), <c>f692d28a</c>, the reason for 1.6.6.209: a new
 	/// version that removes a stage with steps drops what those steps leave (their <c>after</c> transitions and element
-	/// mappings), as the in-place change does, and names the steps in <c>diff.steps</c>.
+	/// mappings), as the in-place change does, and names the steps in <c>diff.steps</c>, and, the reason for 1.6.6.210,
+	/// main's step conditions merged in (<c>1bf66114</c>) with <c>b8da37e1</c>: a new version reads back the change-stage
+	/// tasks its step conditions need, and answers failed-leftover when they are missing.
 	/// This cut is a SCRIPT cut (<c>rebundle-process-builder.ps1</c>): the producing commit carries the restamped compile
-	/// marker, the script stamped the package descriptor to 1.6.6.209 and packed that commit with it overlaid (478
-	/// entries), and the stamp was committed after it as the child commit <c>3b63658b</c>.
+	/// marker, the script stamped the package descriptor to 1.6.6.210 and packed that commit with it overlaid (480
+	/// entries), and the stamp was committed after it as the child commit <c>380f944a</c>.
 	/// 1.6.6.193 is skipped: a dev build of the same branch numbered 1.6.6.193 reached a shared test stand, so that
-	/// number names other bytes there. 1.6.6.194 (<c>c2ee4c6d</c>), 1.6.6.195 (<c>b7635268</c>), 1.6.6.196 (<c>3958ae40</c>), 1.6.6.197 (<c>9d14d885</c>), 1.6.6.198 (<c>34a89779</c>), 1.6.6.199 (<c>f4015423</c>), 1.6.6.207 (<c>546ead35</c>) and 1.6.6.208 (<c>39b646d3</c>) are the branch's earlier cuts,
+	/// number names other bytes there. 1.6.6.194 (<c>c2ee4c6d</c>), 1.6.6.195 (<c>b7635268</c>), 1.6.6.196 (<c>3958ae40</c>), 1.6.6.197 (<c>9d14d885</c>), 1.6.6.198 (<c>34a89779</c>), 1.6.6.199 (<c>f4015423</c>), 1.6.6.207 (<c>546ead35</c>), 1.6.6.208 (<c>39b646d3</c>) and 1.6.6.209 (<c>fda07911</c>) are the branch's earlier cuts,
 	/// superseded by this one.
-	/// Master meanwhile bundled 1.6.6.206 (<c>dba2873b</c>, ENG-107647: a step's <c>conditions</c>, which move a case
-	/// to another stage); this archive does not carry them yet. The next cut of this branch merges that <c>main</c>
-	/// in and restamps above 1.6.6.209.
 	/// Whichever package branch lands after this one restamps above it.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
@@ -104,21 +104,22 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What this cut carries over 1.6.6.204, the cut master bundles (steps inside stages): the case versions of ENG-106400. Two new
+	/// <para>What this cut carries over 1.6.6.206, the cut master bundles (steps inside stages and their conditions): the case versions of ENG-106400. Two new
 	/// operations, <c>ModifyCaseAsNewVersion</c> (a change of the family's active case saved as a new, inactive version)
 	/// and <c>SetActiveCaseVersion</c> (the platform's switch, read back), each behind the case gate in its own handler;
 	/// <c>DescribeCase</c> lists a case's <c>versions</c> and reads any family member by name, and <c>ModifyCase</c>
 	/// changes an inactive member in place and refuses <c>enabled</c> on it. Merged with main's steps inside stages, a
-	/// change removes a stage that holds steps together with them (named in <c>diff.steps</c>; refused only
-	/// <c>step-has-conditions</c> or <c>stage-is-condition-target</c>), a new version drops what the removed steps
-	/// leave (transitions, mappings) and refuses <c>steps</c> / <c>transitionType</c> sent with it, or a version in
+	/// change removes a stage that holds steps together with them and their conditions (named in <c>diff.steps</c>; refused
+	/// only <c>stage-is-condition-target</c>), a new version copies the active case's steps with their conditions,
+	/// reads back the change-stage tasks those conditions need, drops what the removed steps leave (transitions,
+	/// mappings) and refuses <c>steps</c> / <c>transitionType</c> sent with it, or a version in
 	/// another package of a case that has steps, as <c>steps-not-supported</c>. The service surface is 13 operations, 6
 	/// design-gate call sites and five case-gate call sites, counted in the shipped archive by the guards below. The
 	/// shared floor of the four case-change tools moves to this cut. What earlier cuts carried is in this file's git
 	/// history.
 	/// </para>
 	/// <para>
-	/// The package suite ran on the sources of this cut, not carried over from a previous one: 7600 passed, 0 failed, on
+	/// The package suite ran on the sources of this cut, not carried over from a previous one: 7663 passed, 0 failed, on
 	/// <c>dev-nf</c> on the producing commit (by the script). <c>dev-n8</c> was not run for this cut.
 	/// That matters beyond hygiene, because skipping the suite
 	/// (<c>-SkipTests</c> on the script; simply not running it on a hand cut) is the ONE path that can reach the coarse
@@ -201,7 +202,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"FA8F7A9CF1CF8BD1B3699E9F65DBF64A1E69617458A100CA249D183CC6400743";
+		"6DFBA766CD2D2981931E35698B26FF90FD17E685F1BA1B0DBD832BC2E50B8D21";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -229,7 +230,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.209";
+	private const string ExpectedArchiveVersion = "1.6.6.210";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
@@ -242,7 +243,7 @@ public class BundledProcessBuilderPackageTests {
 	/// commit, and the version and stamp come from the descriptor restamp the script wrote, committed right after.
 	/// 1.6.6.171 is a hand cut from the stamp commit again, and 1.6.6.172, 1.6.6.173, 1.6.6.179, 1.6.6.180, 1.6.6.184,
 	/// 1.6.6.185 and 1.6.6.186 are script cuts. 1.6.6.188 (<c>7510a0dd</c>), 1.6.6.189 (<c>ddba99a8</c>) and 1.6.6.190 (<c>1f5cc5a4</c>),
-	/// which reached only a test stand, 1.6.6.191, 1.6.6.192, 1.6.6.194, 1.6.6.195, 1.6.6.196, 1.6.6.197, 1.6.6.198, 1.6.6.199, 1.6.6.200, 1.6.6.201, 1.6.6.202, 1.6.6.204, 1.6.6.205, 1.6.6.206, 1.6.6.207, 1.6.6.208 and 1.6.6.209 are script cuts naming the marker restamp. 1.6.6.187 is a hand cut from the stamp commit, re-cut at the same
+	/// which reached only a test stand, 1.6.6.191, 1.6.6.192, 1.6.6.194, 1.6.6.195, 1.6.6.196, 1.6.6.197, 1.6.6.198, 1.6.6.199, 1.6.6.200, 1.6.6.201, 1.6.6.202, 1.6.6.204, 1.6.6.205, 1.6.6.206, 1.6.6.207, 1.6.6.208, 1.6.6.209 and 1.6.6.210 are script cuts naming the marker restamp. 1.6.6.187 is a hand cut from the stamp commit, re-cut at the same
 	/// number from the package's restamp <c>632e1f22</c> (after the gate-1 fixes, the noJob and misfire follow-ups,
 	/// the check of kept timers before a modify save or an activation, the gate-3 fixes and the core-reuse changes, stored dates read as the scheduler reads them and the fixes of their review, the leading-zero nW / L-nW refusal, and the second review round (the held-trigger kept-timer check, an echoed once start, the shifted year step); both <c>ModifiedOnUtc</c> values moved). The earlier cuts,
 	/// <c>50784731</c>, <c>b282c77d</c>, <c>a1b02353</c>, <c>7c14a526</c>, <c>24e2dfbb</c>, <c>4f338365</c>, <c>1313a72c</c>, <c>6ed95468</c>, <c>41aa113f</c>, <c>13ab3dc4</c> and <c>e0e6d48c</c>, reached only the author's own test stands.
@@ -253,7 +254,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "fda07911b47fe631263859203bd1aa5761d941d1";
+	private const string ExpectedProducingCommit = "6c10708d437ae2da2bd817f41c28e1759bc5803a";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -279,7 +280,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1795690490000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1795701816000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -294,7 +295,7 @@ public class BundledProcessBuilderPackageTests {
 	/// fixed, but nothing re-stamps a descriptor written before the fix — so the field with the worst record
 	/// was the only one with no guard.
 	/// </remarks>
-	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1795690384000)/";
+	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1795701739000)/";
 
 	/// <summary>
 	/// The authorization gate inside the shipped package. See
