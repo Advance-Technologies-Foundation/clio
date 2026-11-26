@@ -597,7 +597,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 	}
 
 	[Test]
-	[Description("A change saved as a new version: the dry run plans an inactive version and writes nothing; the write creates it inactive with a designer link while the case stays active; describe lists both members; the activation dry run writes nothing; each dry run logs only the verdict and the result document; the activation reads the version back as active; the same activation again, with an unneeded confirm-package-position, answers unchanged; activating the root goes back.")]
+	[Description("A change saved as a new version: the dry run plans an inactive version, names it by name only (no uId, no case schemaUId) and writes nothing, and the write saves it under that name; the write creates it inactive with a designer link while the case stays active; describe lists both members; the activation dry run writes nothing; each dry run logs only the verdict and the result document; the activation reads the version back as active; the same activation again, with an unneeded confirm-package-position, answers unchanged; activating the root goes back.")]
 	[AllureName("modify-dynamic-case-as-new-version and set-active-dynamic-case-version: create, check, activate, go back")]
 	public async Task DynamicCaseVersion_ShouldBeCreatedInactive_ThenActivated_ThenRolledBack() {
 		// Arrange
@@ -639,6 +639,12 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			ShouldHoldOnlyTheVerdictAndThePlan(planCall);
 			ResultOf(planCall)["version"]!["active"]!.GetValue<bool>().Should().BeFalse(
 				because: "a version is always planned inactive");
+			ResultOf(planCall)["version"]!.AsObject().ContainsKey("uId").Should().BeFalse(
+				because: "the dry run's copy gets a UId per call that the write never saves, so the plan names none");
+			ResultOf(planCall)["case"]!.AsObject().ContainsKey("schemaUId").Should().BeFalse(
+				because: "the case block names the same unsaved copy");
+			Text(ResultOf(planCall)["version"]!.AsObject(), "name").Should().Be(versionName,
+				because: "the name is the handle: the write saves the version under the name the dry run planned");
 			afterPlan["versions"].Should().BeNull(because: "the dry run wrote no version, so the case has no other member");
 			Text(version, "outcome").Should().Be("version-created", because: "the version was saved");
 			version["version"]!["active"]!.GetValue<bool>().Should().BeFalse(because: "creating never activates");

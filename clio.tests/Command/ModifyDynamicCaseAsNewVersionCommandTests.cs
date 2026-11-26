@@ -60,14 +60,14 @@ public sealed class ModifyDynamicCaseAsNewVersionCommandTests : BaseClioModuleTe
 		new() { Environment = "sandbox", CaseName = "UsrOrderCase" };
 
 	private static ModifyDynamicCaseAsNewVersionResult Result(string outcome, string errorCode = null,
-		string errorMessage = null, List<string> leftovers = null) =>
+		string errorMessage = null, List<string> leftovers = null, string versionUId = VersionUId) =>
 		new() {
 			Success = DynamicCaseVersionOutcomes.IsSuccess(outcome),
 			Outcome = outcome,
 			ErrorCode = errorCode,
 			ErrorMessage = errorMessage,
 			Version = new DynamicCaseVersion {
-				Name = "UsrOrderCaseCustom1", UId = VersionUId, Version = 1, Active = false
+				Name = "UsrOrderCaseCustom1", UId = versionUId, Version = 1, Active = false
 			},
 			SourceName = "UsrOrderCase",
 			Leftovers = leftovers ?? [],
@@ -118,6 +118,42 @@ public sealed class ModifyDynamicCaseAsNewVersionCommandTests : BaseClioModuleTe
 			+ "): 'UsrOrderCase' stays active; the notes say what happens to running cases. Activate the version "
 			+ "with set-active-dynamic-case-version only after the user has checked it and said yes.",
 			because: "the agent must not read the save as an activation");
+	}
+
+	[Test]
+	[Description("Regression guard for behaviour that already held: planned without a UId (the package names none on a dry run) prints a document with the version's name and no uId, and a verdict that names the version by that name.")]
+	public void Execute_ShouldNameThePlannedVersionByName_WhenItHasNoUId() {
+		// Arrange
+		ModifyDynamicCaseAsNewVersionResult result = Result(DynamicCaseVersionOutcomes.Planned, versionUId: null);
+
+		// Act
+		int exitCode = Run(result);
+
+		// Assert
+		exitCode.Should().Be(0, because: "a dry run that passed is a success with or without a UId");
+		Verdict().Should().StartWith("Dry run: version 'UsrOrderCaseCustom1' of 'UsrOrderCase' is planned",
+			because: "the name is the planned version's handle");
+		JsonObject version = JsonNode.Parse(_printed[1].Text)!["version"]!.AsObject();
+		version.ContainsKey("uId").Should().BeFalse(
+			because: "a dry run's UId would name nothing the write saves, so none is printed, not even as null");
+		version.ContainsKey("designerUrl").Should().BeFalse(because: "a planned version has nothing to open");
+		version["name"]!.GetValue<string>().Should().Be("UsrOrderCaseCustom1",
+			because: "the name is what the write saves the version under");
+	}
+
+	[Test]
+	[Description("version-created without a UId still reads: the verdict leaves the UId out instead of printing an empty one.")]
+	public void Verdict_ShouldLeaveTheUIdOut_WhenTheCreatedVersionHasNone() {
+		// Arrange
+		ModifyDynamicCaseAsNewVersionResult result = Result(DynamicCaseVersionOutcomes.VersionCreated, versionUId: null);
+
+		// Act
+		string verdict = ModifyDynamicCaseAsNewVersionCommand.Verdict(result);
+
+		// Assert
+		verdict.Should().StartWith("Version 'UsrOrderCaseCustom1' of 'UsrOrderCase' created, INACTIVE: 'UsrOrderCase' "
+			+ "stays active", because: "a missing UId is left out rather than printed as an empty value");
+		verdict.Should().NotContain("UId:", because: "there is no UId to show");
 	}
 
 	[Test]

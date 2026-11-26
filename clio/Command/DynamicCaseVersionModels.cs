@@ -128,7 +128,10 @@ public class CaseVersionInfo {
 	[JsonPropertyName("name")]
 	public string Name { get; init; }
 
-	/// <summary>The member's schema UId.</summary>
+	/// <summary>
+	/// The member's schema UId; absent on the planned version of a <c>modify-dynamic-case-as-new-version</c> dry run,
+	/// which has none yet (the write saves the version under a UId of its own), so the name is that version's handle.
+	/// </summary>
 	[JsonPropertyName("uId")]
 	public string UId { get; init; }
 

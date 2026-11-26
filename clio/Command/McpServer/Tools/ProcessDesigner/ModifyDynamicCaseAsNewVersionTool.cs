@@ -69,7 +69,9 @@ public class ModifyDynamicCaseAsNewVersionTool(
 		 + "lookup value AT ONCE, for the active case and every record too, not at activation (confirm-value-rename). "
 		 + "Removing a stage that records hold needs confirm-stage-records. Never activates: after the user has "
 		 + "checked the version and said yes, activate it with set-active-dynamic-case-version. Not idempotent: each "
-		 + "write makes one more version, and a saved version is never removed. After failed-leftover or unknown, run "
+		 + "write makes one more version, and the toolkit cannot delete one; a saved version runs for no record until "
+		 + "it is activated, and a later change to it is made in place with modify-dynamic-case by its case-name. "
+		 + "After failed-leftover or unknown, run "
 		 + $"describe-dynamic-case before any retry. No compile, no restart. Requires CrtProcessBuilder {DynamicCaseChangeRequirement.MinimumProcessBuilderVersion} or "
 		 + "later (install-process-builder, after user approval).")]
 	[McpToolExecution(
@@ -233,9 +235,9 @@ public sealed record ModifyDynamicCaseAsNewVersionArgs(
 
 	[property: JsonPropertyName("confirm-stage-records")]
 	[property: Description("LEAVE IT OUT unless the user said yes to a version without a stage that records hold "
-		+ "(once it is active, records without a running case show no current stage; a record with a running case "
-		+ "keeps its version while it runs); never set it on your own. Without it such a version is "
-		+ "refused (stage-records-confirmation-required) with the counts.")]
+		+ "(once it is active in an enabled family, records without a running case show no current stage; a record "
+		+ "with a running case keeps its version while it runs); never set it on your own. Without it such a version "
+		+ "is refused (stage-records-confirmation-required) with the counts.")]
 	bool? ConfirmStageRecords = null,
 
 	[property: JsonPropertyName("confirm-value-rename")]

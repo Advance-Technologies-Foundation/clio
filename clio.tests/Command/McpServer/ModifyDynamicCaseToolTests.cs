@@ -348,8 +348,11 @@ public sealed class ModifyDynamicCaseToolTests {
 		firstSentence.Length.Should().BeLessThanOrEqualTo(120, because: "the compact index cuts the purpose at 120");
 		description.Should().Contain("Read get-guidance name=process-dynamic-case-change first.",
 			because: "the change article owns the workflow of changing a case");
-		description.Should().Contain("cancelled at their record's next stage change",
-			because: "a disable next to another enabled case cancels running cases (measured, dev testing X7)");
+		description.Should().Contain("cancelled at their record's next change of an enabled case's stage or filter "
+			+ "column, and the record then starts the enabled case it fits, if any",
+			because: "a disable next to another enabled case cancels running cases at a stage-column change and at a "
+			+ "filter-column change, and the record then starts the case it fits (both measured)")
+			.And.NotContain("next stage change", because: "a filter-column change cancels them too");
 		description.Should().Contain("a stage caption renames that value for every record",
 			because: "a stage shows its value's name, so a stage rename renames the value (dev testing A6)");
 		description.Should().Contain("describe-dynamic-case").And.Contain("dry-run=true")

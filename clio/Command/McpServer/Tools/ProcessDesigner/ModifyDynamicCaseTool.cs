@@ -71,7 +71,8 @@ public class ModifyDynamicCaseTool(
 		 + "enabled=false disables the case and true enables it; send enabled alone, on the active version only "
 		 + "(invalid-request on an inactive one). Disabled, its running cases "
 		 + "continue only when no other case of the object is enabled; otherwise they are cancelled at their record's "
-		 + "next stage change. Three writes need the user's yes first, each refused until then with the counts to "
+		 + "next change of an enabled case's stage or filter column, and the record then starts the enabled case it "
+		 + "fits, if any. Three writes need the user's yes first, each refused until then with the counts to "
 		 + "show: running cases (confirm-running-instances), records in a removed stage (confirm-stage-records), a "
 		 + "stage value rename (confirm-value-rename). Every refusal answers outcome refused with a stable errorCode "
 		 + "and writes nothing; the same call again answers unchanged. A case is interpreted: no compile-creatio and "
@@ -226,8 +227,8 @@ public sealed record ModifyDynamicCaseArgs(
 
 	[property: JsonPropertyName("enabled")]
 	[property: Description("Optional: false disables the case (new records start none; its running cases continue only "
-		+ "when no other case of the object is enabled, otherwise they are cancelled at their record's next stage "
-		+ "change), true enables it. Send it alone, with no other change, to the active version only.")]
+		+ "when no other case of the object is enabled, otherwise they are cancelled at their record's next change "
+		+ "of an enabled case's stage or filter column), true enables it. Send it alone, with no other change, to the active version only.")]
 	bool? Enabled = null,
 
 	[property: JsonPropertyName("confirm-running-instances")]

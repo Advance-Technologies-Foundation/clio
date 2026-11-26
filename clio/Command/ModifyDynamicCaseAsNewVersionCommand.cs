@@ -96,8 +96,9 @@ public class ModifyDynamicCaseAsNewVersionCommand(IDynamicCaseService dynamicCas
 		return result.Outcome switch {
 			DynamicCaseVersionOutcomes.Planned => $"Dry run: version '{name}' of '{source}' is planned as the diff shows; "
 				+ "it would be created inactive." + NothingWritten,
-			DynamicCaseVersionOutcomes.VersionCreated => $"Version '{name}' of '{source}' created, INACTIVE (UId: "
-				+ $"{result.Version?.UId}): '{source}' stays active; the notes say what happens to running cases. "
+			DynamicCaseVersionOutcomes.VersionCreated => $"Version '{name}' of '{source}' created, INACTIVE"
+				+ (string.IsNullOrWhiteSpace(result.Version?.UId) ? string.Empty : $" (UId: {result.Version.UId})")
+				+ $": '{source}' stays active; the notes say what happens to running cases. "
 				+ "Activate the version with set-active-dynamic-case-version only after the user has checked it and "
 				+ "said yes.",
 			DynamicCaseVersionOutcomes.FailedRolledBack => $"The version was not created [{result.ErrorCode}]; nothing of "

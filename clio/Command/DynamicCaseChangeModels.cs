@@ -30,9 +30,10 @@ public static class DynamicCaseChangeRequirement {
 	/// <c>set-active-dynamic-case-version</c> sends as <c>confirm-package-position</c>. 1.6.6.198 stops warning at
 	/// creation about a pinned member ranked below the version, a warning the new-version tool relays. 1.6.6.199 splits
 	/// the records in a removed stage by whether their case still runs and gates disabling on the family's running
-	/// cases, which the tool descriptions and the verdicts now defer to.
+	/// cases, which the tool descriptions and the verdicts now defer to. 1.6.6.207 leaves the uIds out of a new-version
+	/// dry run, which the new-version description and its E2E rely on, and words every note the stand measured.
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.199";
+	public const string MinimumProcessBuilderVersion = "1.6.6.207";
 }
 
 /// <summary>

@@ -1513,6 +1513,38 @@ public sealed class DynamicCaseServiceTests {
 			because: "every member the family lists exists, but the designer opens only a member with its own link row");
 	}
 
+	[TestCase("planned")]
+	[TestCase("version-created")]
+	[Description("Regression guard for behaviour that already held: a version the server names without a UId - a dry run's planned version once the package omits it, a saved one never in practice - reaches the result without uId, and no designer link is built from the missing UId, on the version or on the case block; the name stays the handle.")]
+	public void ModifyAsNewVersion_ShouldBuildNoDesignerLink_WhenTheVersionHasNoUId(string outcome) {
+		// Arrange
+		ModifyCaseAsNewVersionResponse answered = NewVersionResponse(outcome, true);
+		AnswerNewVersion(new ModifyCaseAsNewVersionResponse {
+			Success = answered.Success, Outcome = answered.Outcome, SourceName = answered.SourceName,
+			Version = new CaseVersionInfo {
+				Name = "UsrOrderCaseCustom1", Version = 2, PackageName = "UsrOrdersV2", RootName = "UsrOrderCase"
+			},
+			Case = new BuildCaseCaseInfo {
+				Status = answered.Case.Status, SchemaName = answered.Case.SchemaName, SchemaUId = null,
+				PackageName = answered.Case.PackageName, EntitySchemaName = answered.Case.EntitySchemaName,
+				StageColumnName = answered.Case.StageColumnName, Caption = answered.Case.Caption,
+				Stages = answered.Case.Stages
+			},
+			Notes = answered.Notes, Warnings = answered.Warnings
+		});
+
+		// Act
+		ModifyDynamicCaseAsNewVersionResult result = _service.ModifyAsNewVersion(NewVersionOptions());
+
+		// Assert
+		result.Success.Should().BeTrue(because: "a missing UId does not change a successful outcome");
+		result.Version.Name.Should().Be("UsrOrderCaseCustom1", because: "the name is the version's handle");
+		result.Version.UId.Should().BeNull(because: "a UId the server did not name is not invented");
+		result.Version.DesignerUrl.Should().BeNull(because: "a designer link needs the UId it opens");
+		result.Case.SchemaUId.Should().BeNull(because: "the case block names the same version");
+		result.Case.DesignerUrl.Should().BeNull(because: "a designer link needs the UId it opens");
+	}
+
 	[TestCase(true)]
 	[TestCase(false)]
 	[Description("A new-version write answered without an outcome: a failed one is refused, so a refusal never passes as a write, and a successful one is unknown, because the version may have been saved and a blind retry makes another one.")]
@@ -1615,7 +1647,7 @@ public sealed class DynamicCaseServiceTests {
 
 	[TestCase(DynamicCaseReplyKind.TransportFailure, "timeout")]
 	[TestCase(DynamicCaseReplyKind.NotAnEnvelope, "<html>")]
-	[Description("A write whose answer could not be read is outcome unknown with request-failed, and the message forbids a blind retry and sends the agent to describe-dynamic-case first, because a retry makes one more version that is never removed.")]
+	[Description("A write whose answer could not be read is outcome unknown with request-failed, and the message forbids a blind retry and sends the agent to describe-dynamic-case first, because a retry makes one more version the toolkit cannot delete; a version that was saved is changed further in place with modify-dynamic-case.")]
 	public void ModifyAsNewVersion_ShouldReportUnknown_WhenAWriteReplyCannotBeRead(DynamicCaseReplyKind kind,
 		string detail) {
 		// Arrange
@@ -1634,6 +1666,15 @@ public sealed class DynamicCaseServiceTests {
 				because: "only the family's members tell whether the version was saved");
 		result.ErrorMessage.Should().NotContain("dry-run=true",
 			because: "every dry run plans one more version, so it cannot tell whether this one was saved");
+		result.ErrorMessage.Should().Contain("the toolkit cannot delete one",
+			because: "a blind retry leaves a version behind that the toolkit cannot take back");
+		result.ErrorMessage.Should().Contain("they show whether the version exists and whether it is active",
+			because: "clio cannot know either, so the message sends the agent to describe for both");
+		result.ErrorMessage.Should().Contain(
+				"A further change to an existing inactive version is made in place with modify-dynamic-case by its case-name",
+				because: "a saved inactive version is changed again in place, not by another version")
+			.And.NotContain("never removed", because: "the message says what the toolkit cannot do, not what nobody can")
+			.And.NotContain("case library", because: "the case library offers no delete for a version");
 		result.Leftovers.Should().BeEmpty(because: "nothing is known to be left");
 		result.Notes.Should().BeEmpty(because: "there is no answer to relay");
 		result.Warnings.Should().BeEmpty(because: "there is no answer to relay");

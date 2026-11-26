@@ -72,7 +72,7 @@ public sealed class SetActiveDynamicCaseVersionToolTests {
 		attribute.Name.Should().Be("set-active-dynamic-case-version", because: "the guidance and agents spell this name");
 		attribute.ReadOnly.Should().BeFalse(because: "it switches which member is active");
 		attribute.Destructive.Should().BeTrue(
-			because: "the switch changes the case the bar and every new record use");
+			because: "the switch changes the case the bar and the new records its filter fits use");
 		attribute.Idempotent.Should().BeTrue(because: "the same call again answers unchanged");
 		attribute.OpenWorld.Should().BeFalse(because: "it talks to one registered environment");
 		McpReadDeadlineGate.IsRetrySafe(attribute.Name!, attribute.ReadOnly, attribute.Destructive).Should().BeFalse(
@@ -316,6 +316,8 @@ public sealed class SetActiveDynamicCaseVersionToolTests {
 		description.Should().Contain("Run it with dry-run=true first", because: "every switch is planned before it is made")
 			.And.Contain("A user who asked for this switch has given the yes",
 				because: "a request to switch is the consent when the dry run carries notes only")
+			.And.Contain("switch and relay every note in full with the result",
+				because: "a note condensed by the agent loses the sentence the user needs (as the guide says)")
 			.And.Contain("with warnings (package position), show them and wait for their yes",
 				because: "a warning may change the user's mind, so it needs its own yes")
 			.And.Contain("Never call it on your own after modify-dynamic-case-as-new-version: ask the user whether to activate",
@@ -323,12 +325,21 @@ public sealed class SetActiveDynamicCaseVersionToolTests {
 		description.Should().Contain("the family root included (that is how you go back)",
 			because: "going back to the root is an activation too");
 		description.Should().Contain("a running case keeps its version while it runs, and Change case on the record's "
-			+ "page cancels it and restarts the record at the new version's first stage",
-			because: "a running case is not moved by the switch, and Change case writes the first stage (measured)")
+			+ "page cancels it and starts the enabled case the record fits, if any, writing that case's first stage into "
+			+ "the record (from this family, the member active at that moment: the previous one before the switch, "
+			+ "this version after it)",
+			because: "a running case is not moved by the switch, and Change case starts the enabled case the record "
+			+ "fits, writing its first stage (measured), which is this version only once the switch is written")
+			.And.NotContain("restarts the record at the new version's first stage",
+			because: "a record the version's filter does not fit, or one changed before the switch, starts another case")
 			.And.NotContain("Change case on its page, which cancels its running case",
 			because: "the old wording left out that Change case resets the record's stage");
-		description.Should().Contain("In an enabled family, a record with no running case shows it at once",
-			because: "a record shows the new active version at once only when the family is enabled")
+		description.Should().Contain("In an enabled family the version becomes the case of the records its filter fits "
+			+ "(every record when it has none): such a NEW record starts it, and one with no running case shows it at once",
+			because: "a new record starts the version only when its filter fits, and a record shows it at once only "
+			+ "when the family is enabled")
+			.And.NotContain("every NEW record of an enabled family",
+			because: "a filtered version is not started by every new record")
 			.And.Contain("In a disabled family, a record without a running case shows no bar of it, and Change case "
 				+ "only cancels its case and starts an enabled case the record fits, if any, never this family's version",
 				because: "in a disabled family Change case never restarts the record at this family's version (measured)");

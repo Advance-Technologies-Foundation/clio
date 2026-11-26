@@ -293,10 +293,12 @@ public sealed class DynamicCaseService(
 		bool unreadOutcome = !DynamicCaseVersionOutcomes.IsKnown(outcome);
 		if (unreadOutcome) {
 			// A write whose outcome clio cannot read may have saved a version; "refused, nothing was written" would send
-			// the agent into a retry that makes another version, which is never removed.
+			// the agent into a retry that makes another version, which the toolkit cannot delete.
 			outcome = options.DryRun ? DynamicCaseVersionOutcomes.Refused : DynamicCaseVersionOutcomes.Unknown;
 		}
-		// Only a saved version opens in the designer: a dry run's UId names nothing yet, and a rolled-back one is gone.
+		// Only a saved version opens in the designer: a dry run names no UId (the package mints the copy's UId per
+		// call, so current cuts omit it and older ones send one the write never saves), and a rolled-back one is gone.
+		// DesignerUrl builds no link from a missing UId, so a saved outcome without one has no designerUrl either.
 		bool saved = response.Version is not null
 			&& outcome is DynamicCaseVersionOutcomes.VersionCreated or DynamicCaseVersionOutcomes.FailedLeftover;
 		return new ModifyDynamicCaseAsNewVersionResult {
@@ -750,15 +752,18 @@ public sealed class DynamicCaseService(
 			"modify-dynamic-case-as-new-version", reply.Kind, reply.Detail, "Nothing was written.");
 		if (message is null && !dryRun) {
 			// Not "re-run with dry-run" as on modify: every dry run plans one MORE version, so it cannot tell whether
-			// this one was saved; only the family's members can, and a blind retry makes a version that is never removed.
+			// this one was saved; only the family's members can, and a blind retry makes a version the toolkit cannot
+			// delete.
 			return new ModifyDynamicCaseAsNewVersionResult {
 				Success = false,
 				Outcome = DynamicCaseVersionOutcomes.Unknown,
 				ErrorCode = DynamicCaseErrorCodes.RequestFailed,
 				ErrorMessage = "ModifyCaseAsNewVersion returned a response clio could not read, so whether a version "
-					+ "was saved is UNKNOWN. Do NOT retry yet: a retry makes one more version, and a saved version is "
-					+ "never removed. Run describe-dynamic-case on the case first and read its versions to see whether "
-					+ $"the version exists. The server said: {reply.Detail}",
+					+ "was saved is UNKNOWN. Do NOT retry yet: a retry makes one more version, and the toolkit cannot "
+					+ "delete one. Run describe-dynamic-case on the case first and read its versions: they show "
+					+ "whether the version exists and whether it is active. A further change to an existing inactive "
+					+ "version is made in place with modify-dynamic-case by its case-name. The server said: "
+					+ $"{reply.Detail}",
 				Leftovers = [],
 				Notes = [],
 				Warnings = []

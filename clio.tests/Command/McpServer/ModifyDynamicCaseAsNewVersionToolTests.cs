@@ -401,8 +401,13 @@ public sealed class ModifyDynamicCaseAsNewVersionToolTests {
 		description.Should().Contain("renames the stage's lookup value AT ONCE").And.Contain("not at activation",
 			because: "a value rename takes effect for every record immediately, not when the version is activated");
 		description.Should().Contain("After failed-leftover or unknown, run describe-dynamic-case before any retry.",
-			because: "a blind retry makes one more version, which is never removed");
+			because: "a blind retry makes one more version, which the toolkit cannot delete");
 		description.Should().Contain("Not idempotent", because: "each write makes one more version");
+		description.Should().Contain("the toolkit cannot delete one; a saved version runs for no record until it is "
+			+ "activated, and a later change to it is made in place with modify-dynamic-case by its case-name",
+			because: "a kept version is inactive, and changing it again needs no further version")
+			.And.NotContain("never removed", because: "the description says what the toolkit cannot do")
+			.And.NotContain("case library", because: "the case library offers no delete for a version");
 		description.Should().Contain($"Requires CrtProcessBuilder {DynamicCaseChangeRequirement.MinimumProcessBuilderVersion} or later",
 			because: "an older package lacks the operation");
 	}
@@ -423,14 +428,14 @@ public sealed class ModifyDynamicCaseAsNewVersionToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("confirm-stage-records says what the user agrees to: once the version is active, records without a running case show no current stage, while a record with a running case keeps its version while it runs.")]
+	[Description("confirm-stage-records says what the user agrees to: once the version is active in an enabled family, records without a running case show no current stage, while a record with a running case keeps its version while it runs.")]
 	public void ConfirmStageRecords_ShouldSayWhatHappensToTheRecords() {
 		// Arrange & Act
 		string description = ParameterDescription("confirm-stage-records");
 
 		// Assert
-		description.Should().Contain("(once it is active, records without a running case show no current stage; a "
-			+ "record with a running case keeps its version while it runs)",
+		description.Should().Contain("(once it is active in an enabled family, records without a running case show no "
+			+ "current stage; a record with a running case keeps its version while it runs)",
 			because: "the user's yes covers the records that lose their current stage, not the running cases, which "
 				+ "keep their version");
 	}
