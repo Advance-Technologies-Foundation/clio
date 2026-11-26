@@ -1,7 +1,7 @@
 {
   "library": "com.creatio.clio",
-  "libraryVersion": "1.15.267",
-  "sequence": 1015267000,
+  "libraryVersion": "1.15.268",
+  "sequence": 1015268000,
   "availableNames": [
     "administration",
     "agent-execution",
@@ -248,6 +248,9 @@
     "creatio.websocket-messaging",
     "creatio.when-to-use-requests",
     "creatio.widget-color-and-icon",
+    "creatio.word-printable",
+    "creatio.word-printable-template",
+    "creatio.word-printable-troubleshooting",
     "creatio.workplaces",
     "creatio.workplaces-details",
     "custom-mcp-tools",
@@ -436,6 +439,9 @@
     "websocket-messaging",
     "when-to-use-requests",
     "widget-color-and-icon",
+    "word-printable",
+    "word-printable-template",
+    "word-printable-troubleshooting",
     "workplaces",
     "workplaces-details"
   ],
