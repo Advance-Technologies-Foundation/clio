@@ -336,14 +336,10 @@ internal static partial class PageBodyAstLinter {
 	// callback inside it) calls `next.handle(...)`, and the result reaches the caller - an arrow's expression body
 	// gives it, or a block body returns it (directly or through a variable assigned from it), never runs off its end,
 	// and on every path where the call may already have run every `return` gives it. A `return` (or `throw`) reached
-	// before the call runs is a deliberate stop (`if (child) { return openChild(request, child); }
-	// return next?.handle(request);`); running off the end is not.
+	// before the call runs is a deliberate stop, such as a record that opens its own child page before the request is
+	// handed on; running off the end is not.
 	private static string NextProblem(IFunction handler) {
-		string next = handler.Params.Count > 1 ? handler.Params[1] switch {
-			Identifier identifier => identifier.Name,
-			AssignmentPattern {Left: Identifier defaulted} => defaulted.Name,
-			_ => null
-		} : null;
+		string next = NextParameterName(handler);
 		if (next is null) {
 			return "takes no `next`";
 		}
@@ -352,6 +348,35 @@ internal static partial class PageBodyAstLinter {
 		if (!own.Any(node => IsNextHandleCall(node, next))) {
 			return "never calls `next.handle(request)`";
 		}
+		HashSet<string> fromNext = NamesFromNext(own, next);
+		if (handler.Body is not BlockStatement block) {
+			return GivesNextResult((Node)handler.Body, next, fromNext, depth: 0) ? null : NoReturnOfNext;
+		}
+		if (!own.OfType<ReturnStatement>().Any(r => r.Argument is not null && GivesNextResult(r.Argument, next, fromNext, depth: 0))) {
+			return NoReturnOfNext;
+		}
+		NextPathWalk walk = new(next, fromNext);
+		PathState end = walk.Walk(block, called: false, depth: 0);
+		if (walk.Problem is not null || !end.Normal) {
+			return walk.Problem;
+		}
+		return end.Called ? EndAfterNext : EndWithoutReturn;
+	}
+
+	// The name of a handler's `next` parameter (`next` or `next = null`), or null when it takes none.
+	private static string NextParameterName(IFunction handler) {
+		if (handler.Params.Count < 2) {
+			return null;
+		}
+		return handler.Params[1] switch {
+			Identifier identifier => identifier.Name,
+			AssignmentPattern {Left: Identifier defaulted} => defaulted.Name,
+			_ => null
+		};
+	}
+
+	// The variables a body assigns the chain's result to.
+	private static HashSet<string> NamesFromNext(List<Node> own, string next) {
 		HashSet<string> fromNext = new(StringComparer.Ordinal);
 		foreach (Node node in own) {
 			switch (node) {
@@ -363,15 +388,7 @@ internal static partial class PageBodyAstLinter {
 					break;
 			}
 		}
-		if (handler.Body is not BlockStatement block) {
-			return GivesNextResult((Node)handler.Body, next, fromNext, depth: 0) ? null : NoReturnOfNext;
-		}
-		if (!own.OfType<ReturnStatement>().Any(r => r.Argument is not null && GivesNextResult(r.Argument, next, fromNext, depth: 0))) {
-			return NoReturnOfNext;
-		}
-		NextPathWalk walk = new(next, fromNext);
-		PathState end = walk.Walk(block, called: false, depth: 0);
-		return walk.Problem ?? (end.Normal ? (end.Called ? EndAfterNext : EndWithoutReturn) : null);
+		return fromNext;
 	}
 
 	// Where a walk stands after a statement. `Normal`: some path completes it and goes on to the next statement, and
@@ -400,10 +417,7 @@ internal static partial class PageBodyAstLinter {
 			}
 			switch (statement) {
 				case ReturnStatement exit:
-					if (!Gives(exit.Argument) && (called || CallsNext(exit.Argument))) {
-						Problem = ReturnAfterNext;
-					}
-					return new PathState(false, called, null);
+					return WalkReturn(exit, called);
 				case ThrowStatement:
 					return new PathState(false, called, null);
 				case BreakStatement or ContinueStatement:
@@ -411,8 +425,7 @@ internal static partial class PageBodyAstLinter {
 				case BlockStatement block:
 					return WalkAll(block.Body, called, depth + 1);
 				case LabeledStatement labeled:
-					PathState inner = Walk(labeled.Body, called, depth + 1);
-					return inner.Break is { } broke ? Join(inner with {Break = null}, new PathState(true, broke, null)) : inner;
+					return WalkLabeled(labeled, called, depth);
 				case IfStatement branch:
 					bool afterTest = called || CallsNext(branch.Test);
 					return Join(Walk(branch.Consequent, afterTest, depth + 1), Walk(branch.Alternate, afterTest, depth + 1));
@@ -427,6 +440,23 @@ internal static partial class PageBodyAstLinter {
 				default:
 					return new PathState(true, called || CallsNext(statement), null);
 			}
+		}
+
+		// A `return` reached after the call may have run must give its result; one reached before it is a stop.
+		private PathState WalkReturn(ReturnStatement exit, bool called) {
+			if (!Gives(exit.Argument) && (called || CallsNext(exit.Argument))) {
+				Problem = ReturnAfterNext;
+			}
+			return new PathState(false, called, null);
+		}
+
+		// A `break label` out of a labeled statement goes on after it.
+		private PathState WalkLabeled(LabeledStatement labeled, bool called, int depth) {
+			PathState inner = Walk(labeled.Body, called, depth + 1);
+			if (inner.Break is not { } broke) {
+				return inner;
+			}
+			return Join(inner with {Break = null}, new PathState(true, broke, null));
 		}
 
 		private PathState WalkAll(IEnumerable<Statement> statements, bool called, int depth) {
@@ -474,7 +504,15 @@ internal static partial class PageBodyAstLinter {
 		private static PathState Join(PathState a, PathState b) =>
 			new(a.Normal || b.Normal, (a.Normal && a.Called) || (b.Normal && b.Called), Or(a.Break, b.Break));
 
-		private static bool? Or(bool? a, bool? b) => a is null ? b : b is null ? a : a.Value || b.Value;
+		private static bool? Or(bool? a, bool? b) {
+			if (a is null) {
+				return b;
+			}
+			if (b is null) {
+				return a;
+			}
+			return a.Value || b.Value;
+		}
 
 		private static Statement LoopBody(Statement loop) =>
 			loop switch {
