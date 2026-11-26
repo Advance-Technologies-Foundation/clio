@@ -613,7 +613,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 	}
 
 	[Test]
-	[Description("Step types (ENG-107648): an access-rights step without a filter is refused step-acts-on-all-records with nothing written; a dry run with an approval (a condition on Positive) and an access-rights step on the case's record writes nothing; the write stores both, describe returns each type's block, the approval's condition and the filter as [#Record.Id#], and the described steps sent back answer unchanged.")]
+	[Description("Step types (ENG-107648): an access-rights step without a filter is refused step-acts-on-all-records with nothing written; a dry run with an approval (a condition on Positive) and an access-rights step on the contact who created the case's record writes nothing; the write stores both, describe returns each type's block, the approval's condition and the filter as [#Record.CreatedBy#], and the described steps sent back answer unchanged.")]
 	[AllureName("modify-dynamic-case writes and describes an approval and an access-rights step")]
 	public async Task ModifyDynamicCase_ShouldWriteAndDescribeTheApprovalAndAccessRightsSteps() {
 		// Arrange
@@ -636,14 +636,16 @@ public sealed class CreateDynamicCaseToolE2ETests {
 				},
 				["conditions"] = new[] { new Dictionary<string, object?> { ["result"] = "Positive", ["nextStage"] = target } }
 			};
+			// Contact, not the seeded object: an object without record permissions refuses any rights step as one that
+			// changes nothing, before the all-records check (the seed's object has none; seen on the ProcessDesigner lane).
 			Dictionary<string, object?> unfiltered = new() {
 				["type"] = "changeAccessRights",
-				["caption"] = "Lock the order",
+				["caption"] = "Lock the creator's contact",
 				["accessRights"] = new Dictionary<string, object?> {
-					["object"] = Entity,
+					["object"] = "Contact",
 					["remove"] = new[] {
 						new Dictionary<string, object?> {
-							["operations"] = new[] { "edit", "delete" },
+							["operations"] = new[] { "delete" },
 							["grantee"] = new Dictionary<string, object?> { ["type"] = "role", ["role"] = "All employees" }
 						}
 					}
@@ -651,7 +653,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			};
 			Dictionary<string, object?> filtered = new(unfiltered) {
 				["filter"] = new Dictionary<string, object?> {
-					["conditions"] = new[] { new Dictionary<string, object?> { ["column"] = "Id", ["value"] = "[#Record.Id#]" } }
+					["conditions"] = new[] { new Dictionary<string, object?> { ["column"] = "Id", ["value"] = "[#Record.CreatedBy#]" } }
 				}
 			};
 
@@ -687,7 +689,8 @@ public sealed class CreateDynamicCaseToolE2ETests {
 				.Should().Be(Text(StageOf(after, target), "caption"));
 			JsonObject condition = steps[1]["filter"]!["conditions"]!.AsArray().Single()!.AsObject();
 			Text(condition, "column").Should().Be("Id");
-			Text(condition, "value").Should().Be("[#Record.Id#]", because: "the filter names the case's own record");
+			Text(condition, "value").Should().Be("[#Record.CreatedBy#]",
+				because: "the filter names the contact who created the case's record");
 			ShouldHaveLanded(again, "the described steps are valid steps");
 			Text(ResultOf(again), "outcome").Should().Be("unchanged",
 				because: "describe's steps sent back are the stored ones");
