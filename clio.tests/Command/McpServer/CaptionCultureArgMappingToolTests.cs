@@ -117,6 +117,28 @@ public sealed class CaptionCultureArgMappingToolTests {
 	}
 
 	[Test]
+	[Description("ENG-107757: create-page always sets PageCreateOptions.RequireHeaderCaption, so the MCP path refuses a home page or dashboard without a human-readable caption while the CLI keeps its default.")]
+	public void CreatePage_ShouldRequireHeaderCaption_OnTheMcpPath() {
+		// Arrange
+		CapturingPageCreateCommand command = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageCreateCommand>(Arg.Any<PageCreateOptions>())
+			.Returns(command);
+		PageCreateTool tool = new(command, ConsoleLogger.Instance, commandResolver);
+		PageCreateArgs args = new("UsrHome", "BaseHomePage", "Custom") { EnvironmentName = "dev" };
+
+		// Act
+		ConsoleLogger.Instance.ClearMessages();
+		tool.CreatePage(args);
+
+		// Assert
+		command.CapturedOptions.Should().NotBeNull("because the resolved command must receive the mapped options");
+		command.CapturedOptions!.RequireHeaderCaption.Should().BeTrue(
+			"because the MCP tool must opt into the header-caption check the CLI leaves off");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
 	[Description("create-app-section maps args.caption-culture into ApplicationSectionCreateRequest.CaptionCulture.")]
 	public async Task ApplicationSectionCreate_ShouldMapCaptionCulture_WhenCaptionCultureProvided() {
 		// Arrange
