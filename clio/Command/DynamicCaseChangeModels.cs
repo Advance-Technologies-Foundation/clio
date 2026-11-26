@@ -242,6 +242,11 @@ public sealed record ModifyCaseRequest {
 	[JsonPropertyName("confirmValueRename")]
 	public bool? ConfirmValueRename { get; init; }
 
+	/// <summary>The user's separate yes to an access-rights step without a filter, which changes the rights on every
+	/// record of its object each time a record enters the stage; null when not given.</summary>
+	[JsonPropertyName("confirmAllRecords")]
+	public bool? ConfirmAllRecords { get; init; }
+
 	/// <summary>True to run every check and answer the planned change without writing anything.</summary>
 	[JsonPropertyName("validateOnly")]
 	public bool ValidateOnly { get; init; }

@@ -113,17 +113,18 @@ public sealed class ModifyDynamicCaseToolTests {
 		options.ConfirmRunningInstances.Should().BeFalse(because: "the user's yes is never assumed");
 		options.ConfirmStageRecords.Should().BeFalse(because: "the user's yes is never assumed");
 		options.ConfirmValueRename.Should().BeFalse(because: "the user's yes is never assumed");
+		options.ConfirmAllRecords.Should().BeFalse(because: "the user's yes is never assumed");
 		options.DryRun.Should().BeFalse(because: "a call writes unless it asks for a dry run");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("dry-run, the three confirmations, enabled and caption map onto the options the service sends (dry-run becomes validateOnly there).")]
+	[Description("dry-run, the four confirmations, enabled and caption map onto the options the service sends (dry-run becomes validateOnly there).")]
 	public void ModifyDynamicCase_ShouldMapTheFlags() {
 		// Arrange
 		ModifyDynamicCaseArgs args = Args("{" + Identity
 			+ ",\"dry-run\":true,\"confirm-running-instances\":true,\"confirm-stage-records\":true,"
-			+ "\"confirm-value-rename\":true,\"enabled\":false,\"caption\":\" Orders \"}");
+			+ "\"confirm-value-rename\":true,\"confirm-all-records\":true,\"enabled\":false,\"caption\":\" Orders \"}");
 
 		// Act
 		_tool.ModifyDynamicCase(args);
@@ -133,6 +134,7 @@ public sealed class ModifyDynamicCaseToolTests {
 		_resolved.Captured.ConfirmRunningInstances.Should().BeTrue(because: "the user's yes is passed through");
 		_resolved.Captured.ConfirmStageRecords.Should().BeTrue(because: "the user's yes is passed through");
 		_resolved.Captured.ConfirmValueRename.Should().BeTrue(because: "the user's yes is passed through");
+		_resolved.Captured.ConfirmAllRecords.Should().BeTrue(because: "the user's yes is passed through");
 		_resolved.Captured.Enabled.Should().BeFalse(because: "enabled=false disables the case");
 		_resolved.Captured.Caption.Should().Be("Orders", because: "the caption is forwarded trimmed");
 	}

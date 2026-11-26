@@ -613,6 +613,90 @@ public sealed class CreateDynamicCaseToolE2ETests {
 	}
 
 	[Test]
+	[Description("Step types (ENG-107648): an access-rights step without a filter is refused step-acts-on-all-records with nothing written; a dry run with an approval (a condition on Positive) and an access-rights step on the case's record writes nothing; the write stores both, describe returns each type's block, the approval's condition and the filter as [#Record.Id#], and the described steps sent back answer unchanged.")]
+	[AllureName("modify-dynamic-case writes and describes an approval and an access-rights step")]
+	public async Task ModifyDynamicCase_ShouldWriteAndDescribeTheApprovalAndAccessRightsSteps() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync(CaseChangePackageVersion);
+		JsonObject? created = null;
+		try {
+			CallToolResult createCall = await CallAsync(context, WithoutBar());
+			IgnoreWhenProcessBuilderIsBehind(ToolText(createCall), MinimumPackageVersion);
+			created = ResultOf(createCall);
+			ShouldHaveLanded(createCall, "the seeded object takes a case");
+			List<string> stored = StageValues(created["case"]!.AsObject());
+			string target = stored[^1];
+			Dictionary<string, object?> approval = new() {
+				["type"] = "approval",
+				["caption"] = "Approve the order",
+				["approval"] = new Dictionary<string, object?> {
+					["object"] = Entity,
+					["recordId"] = new Dictionary<string, object?> { ["recordId"] = "[#Record.Id#]" },
+					["approver"] = new Dictionary<string, object?> { ["type"] = "user", ["employee"] = "Supervisor" }
+				},
+				["conditions"] = new[] { new Dictionary<string, object?> { ["result"] = "Positive", ["nextStage"] = target } }
+			};
+			Dictionary<string, object?> unfiltered = new() {
+				["type"] = "changeAccessRights",
+				["caption"] = "Lock the order",
+				["accessRights"] = new Dictionary<string, object?> {
+					["object"] = Entity,
+					["remove"] = new[] {
+						new Dictionary<string, object?> {
+							["operations"] = new[] { "edit", "delete" },
+							["grantee"] = new Dictionary<string, object?> { ["type"] = "role", ["role"] = "All employees" }
+						}
+					}
+				}
+			};
+			Dictionary<string, object?> filtered = new(unfiltered) {
+				["filter"] = new Dictionary<string, object?> {
+					["conditions"] = new[] { new Dictionary<string, object?> { ["column"] = "Id", ["value"] = "[#Record.Id#]" } }
+				}
+			};
+
+			// Act
+			CallToolResult everyRecord = await ModifyAsync(context, created,
+				new Dictionary<string, object?> { ["stages"] = WithSteps(stored, stored[1], null, unfiltered) });
+			CallToolResult dryRun = await ModifyAsync(context, created, new Dictionary<string, object?> {
+				["stages"] = WithSteps(stored, stored[1], null, approval, filtered), ["dry-run"] = true
+			});
+			JsonObject afterDryRun = await DescribeCaseAsync(context, created);
+			CallToolResult write = await ModifyAsync(context, created,
+				new Dictionary<string, object?> { ["stages"] = WithSteps(stored, stored[1], null, approval, filtered) });
+			JsonObject after = await DescribeCaseAsync(context, created);
+			CallToolResult again = await ModifyAsync(context, created, new Dictionary<string, object?> {
+				["stages"] = WithDescribedSteps(stored, stored[1], StageOf(after, stored[1])["steps"]!.DeepClone())
+			});
+
+			// Assert
+			IgnoreWhenProcessBuilderIsBehind(ToolText(everyRecord), CaseChangePackageVersion);
+			Text(ResultOf(everyRecord), "outcome").Should().Be("refused");
+			Text(ResultOf(everyRecord), "errorCode").Should().Be("step-acts-on-all-records",
+				because: "without a filter the step changes the rights on every record of the object");
+			ShouldHaveLanded(dryRun, "an approval and a filtered access-rights step are valid steps");
+			Text(ResultOf(dryRun), "outcome").Should().Be("planned");
+			StepsOf(StageOf(afterDryRun, stored[1])).Should().BeEmpty(because: "neither the refusal nor the dry run wrote");
+			ShouldHaveLanded(write, "the planned steps can be written");
+			List<JsonObject> steps = StepsOf(StageOf(after, stored[1]));
+			steps.Select(step => Text(step, "type")).Should().Equal("approval", "changeAccessRights");
+			JsonObject approvalStep = steps[0];
+			approvalStep["required"]!.GetValue<bool>().Should().BeTrue(because: "an approval is required by default");
+			Text(approvalStep["approval"]!["approver"]!.AsObject(), "type").Should().Be("user");
+			Text(approvalStep["conditions"]!.AsArray().Single()!.AsObject(), "nextStage")
+				.Should().Be(Text(StageOf(after, target), "caption"));
+			JsonObject condition = steps[1]["filter"]!["conditions"]!.AsArray().Single()!.AsObject();
+			Text(condition, "column").Should().Be("Id");
+			Text(condition, "value").Should().Be("[#Record.Id#]", because: "the filter names the case's own record");
+			ShouldHaveLanded(again, "the described steps are valid steps");
+			Text(ResultOf(again), "outcome").Should().Be("unchanged",
+				because: "describe's steps sent back are the stored ones");
+		} finally {
+			await CleanUpAsync(context, created, null, null, string.Empty);
+		}
+	}
+
+	[Test]
 	[Description("successful=false on a stage outside the final group is refused as stage-group-invalid with nothing written; grouping the last two stages, the second unsuccessful, stores the group and the flag, read back by describe-dynamic-case from the saved case.")]
 	[AllureName("modify-dynamic-case groups the final stages and refuses an unsuccessful non-final stage")]
 	public async Task ModifyDynamicCase_ShouldGroupTheFinalStages_AndRefuseAnUnsuccessfulNonFinalStage() {

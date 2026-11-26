@@ -208,6 +208,7 @@ public sealed class DynamicCaseService(
 			ConfirmRunningInstances = options.ConfirmRunningInstances,
 			ConfirmStageRecords = options.ConfirmStageRecords ? true : null,
 			ConfirmValueRename = options.ConfirmValueRename ? true : null,
+			ConfirmAllRecords = options.ConfirmAllRecords ? true : null,
 			ValidateOnly = options.DryRun,
 			Filter = options.RemoveFilter
 				? new CaseFilterPatch(null)

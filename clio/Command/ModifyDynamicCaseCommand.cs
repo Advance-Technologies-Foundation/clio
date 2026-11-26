@@ -53,6 +53,9 @@ public sealed class ModifyDynamicCaseOptions : EnvironmentOptions {
 	/// <summary>The user's yes to renaming a stage's lookup value for every record.</summary>
 	public bool ConfirmValueRename { get; set; }
 
+	/// <summary>The user's separate yes to an access-rights step without a filter, which changes every record of its object.</summary>
+	public bool ConfirmAllRecords { get; set; }
+
 	/// <summary>Run every check and return the planned change without writing anything.</summary>
 	public bool DryRun { get; set; }
 }
