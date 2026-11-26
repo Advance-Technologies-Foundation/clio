@@ -35,9 +35,9 @@ public static class DynamicCaseChangeRequirement {
 	/// is the cut with the steps inside stages (ENG-107646): its stage item takes <c>steps</c> and <c>transitionType</c>
 	/// and its describe reports them; an older package refuses a stage's steps and shows a stage with steps as one without
 	/// them. 1.6.6.208 carries both: a stage with steps can be removed with them, and a new version refuses steps sent
-	/// with it.
+	/// with it. 1.6.6.209 also drops what a removed stage's steps leave in the version (transitions, mappings).
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.208";
+	public const string MinimumProcessBuilderVersion = "1.6.6.209";
 }
 
 /// <summary>
