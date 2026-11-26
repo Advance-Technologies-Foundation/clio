@@ -17,11 +17,13 @@ public static class DynamicCaseChangeRequirement {
 	/// that answers its route with a 404. 1.6.6.179 was the first shipped cut with case filters; 1.6.6.185 is the first
 	/// shipped cut whose stage rename renames the lookup value and whose describe reports <c>records</c>. Not 1.6.6.180:
 	/// that number is also another branch's cut without this code. An older package would ignore the two
-	/// confirmations, and a stage rename there would write a caption no one sees. 1.6.6.201 is the first cut whose
-	/// stage item takes <c>steps</c> and <c>transitionType</c> and whose describe reports them (ENG-107646): an older
-	/// package refuses a stage's steps, and its describe would show a stage with steps as one without them.
+	/// confirmations, and a stage rename there would write a caption no one sees. 1.6.6.204 is the first shipped cut
+	/// whose stage item takes <c>steps</c> and <c>transitionType</c>, whose describe reports them, and whose modify
+	/// takes a step sent back as describe returns it (ENG-107646): an older package refuses a stage's steps, or such a
+	/// step as unknown keys, and its describe would show a stage with steps as one without them. 1.6.6.200 to
+	/// 1.6.6.202 were cuts of the same branch that reached only test stands; 1.6.6.203 is another branch's.
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.201";
+	public const string MinimumProcessBuilderVersion = "1.6.6.204";
 }
 
 /// <summary>

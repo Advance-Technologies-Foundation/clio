@@ -457,7 +457,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 	}
 
 	[Test]
-	[Description("Steps inside a stage (ENG-107646): a dry run with a stage's steps and transitionType answers planned and writes nothing; the write stores two Perform task steps, the second after the first and with a hint, and the stage's transitionType, read back by describe-dynamic-case; the same call again, hint included, answers unchanged.")]
+	[Description("Steps inside a stage (ENG-107646): a dry run with a stage's steps and transitionType answers planned and writes nothing; the write stores two Perform task steps, the second after the first and with a hint, and the stage's transitionType, read back by describe-dynamic-case; the same call again, hint included, answers unchanged, and so does the stage's steps sent back as describe returns them.")]
 	[AllureName("modify-dynamic-case plans, writes and describes the steps of a stage")]
 	public async Task ModifyDynamicCase_ShouldPlanThenWriteTheStepsOfAStage() {
 		// Arrange
@@ -479,6 +479,10 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			CallToolResult write = await ModifyAsync(context, created, new Dictionary<string, object?> { ["stages"] = withSteps });
 			JsonObject after = await DescribeCaseAsync(context, created);
 			CallToolResult again = await ModifyAsync(context, created, new Dictionary<string, object?> { ["stages"] = withSteps });
+			JsonNode described = StageOf(after, stored[1])["steps"]!.DeepClone();
+			CallToolResult echo = await ModifyAsync(context, created, new Dictionary<string, object?> {
+				["stages"] = WithDescribedSteps(stored, stored[1], described)
+			});
 
 			// Assert
 			IgnoreWhenProcessBuilderIsBehind(ToolText(dryRun), CaseChangePackageVersion);
@@ -486,20 +490,23 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			Text(ResultOf(dryRun), "outcome").Should().Be("planned", because: "a dry run only plans");
 			StepsOf(StageOf(afterDryRun, stored[1])).Should().BeEmpty(because: "the dry run wrote nothing");
 			ShouldHaveLanded(write, "the planned steps can be written");
-			Text(ResultOf(write), "outcome").Should().Be("modified");
+			Text(ResultOf(write), "outcome").Should().Be("modified", because: "the steps were written");
 			JsonObject stage = StageOf(after, stored[1]);
 			Text(stage, "transitionType").Should().Be("afterRequired", because: "the stage moves on after its required steps");
 			List<JsonObject> steps = StepsOf(stage);
 			steps.Select(step => Text(step, "caption")).Should().Equal(["Check the order", "Send contract"],
 				because: "the steps are stored in the order sent");
-			steps.Should().OnlyContain(step => Text(step, "type") == "performTask");
-			steps[0]["required"]!.GetValue<bool>().Should().BeTrue();
+			steps.Should().OnlyContain(step => Text(step, "type") == "performTask", because: "both steps are Perform tasks");
+			steps[0]["required"]!.GetValue<bool>().Should().BeTrue(because: "the first step was sent as required");
 			steps[1]["required"]!.GetValue<bool>().Should().BeFalse(because: "a Perform task is optional by default");
 			Text(steps[1], "after").Should().Be("Check the order", because: "the second step waits for the first");
 			Text(steps[1], "hint").Should().Be("Attach the price list", because: "a Perform task's block is written");
 			ShouldHaveLanded(again, "the same call again is a success");
 			Text(ResultOf(again), "outcome").Should().Be("unchanged",
 				because: "the steps are stored as sent, and a block equal to the stored one changes nothing");
+			ShouldHaveLanded(echo, "describe's steps sent back are taken as they are");
+			Text(ResultOf(echo), "outcome").Should().Be("unchanged",
+				because: "what only describe reports is ignored, and every block is what the step stores");
 		} finally {
 			await CleanUpAsync(context, created, null, null, string.Empty);
 		}
@@ -819,6 +826,12 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			}
 			return item;
 		})];
+
+	/// <summary>The stage list with <paramref name="value"/> carrying the steps exactly as describe returned them.</summary>
+	private static object[] WithDescribedSteps(List<string> values, string value, JsonNode steps) =>
+		[.. values.Select<string, object>(stored => stored != value
+			? stored
+			: new Dictionary<string, object?> { ["value"] = stored, ["steps"] = steps })];
 
 	/// <summary>A described stage's steps; none when the stage has none.</summary>
 	private static List<JsonObject> StepsOf(JsonObject stage) =>
