@@ -31,9 +31,10 @@ public static class DynamicCaseChangeRequirement {
 	/// creation about a pinned member ranked below the version, a warning the new-version tool relays. 1.6.6.199 splits
 	/// the records in a removed stage by whether their case still runs and gates disabling on the family's running
 	/// cases, which the tool descriptions and the verdicts now defer to. 1.6.6.207 leaves the uIds out of a new-version
-	/// dry run, which the new-version description and its E2E rely on, and words every note the stand measured.
+	/// dry run, which the new-version description and its E2E rely on, and words every note the stand measured. 1.6.6.208
+	/// carries main's steps inside stages: a stage with steps can be removed, and a new version refuses steps sent with it.
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.207";
+	public const string MinimumProcessBuilderVersion = "1.6.6.208";
 }
 
 /// <summary>

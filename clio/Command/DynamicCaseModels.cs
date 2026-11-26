@@ -254,7 +254,8 @@ public sealed class DynamicCaseStage {
 	[JsonPropertyName("isFinal")]
 	public bool? IsFinal { get; init; }
 
-	/// <summary>The stage holds steps (process elements), so removing it is refused.</summary>
+	/// <summary>The stage holds steps (process elements). CrtProcessBuilder 1.6.6.208 removes them with the stage and refuses
+	/// only a removal a step condition depends on (stage-is-condition-target).</summary>
 	[JsonPropertyName("hasSteps")]
 	public bool? HasSteps { get; init; }
 
