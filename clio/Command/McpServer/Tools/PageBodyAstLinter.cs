@@ -778,14 +778,22 @@ internal static partial class PageBodyAstLinter {
 	}
 
 	private static void CollectReturnedSectionProperties(IFunction function, HashSet<Node> sections) {
-		//An arrow with an expression body - `() => ({ handlers: [...] })` - returns its object literal
-		//without a `return` statement at all, and is a shape Page Designer emits.
+		foreach (ObjectExpression returned in ReturnedObjectLiterals(function)) {
+			AddSectionProperties(returned, sections);
+		}
+	}
+
+	/// <summary>
+	/// The object literals a factory returns from its own top-level block: `return { ... }`, `return schema` after
+	/// `const schema = { ... }`, or an arrow's expression body `() => ({ ... })` (a shape Page Designer emits).
+	/// </summary>
+	internal static IEnumerable<ObjectExpression> ReturnedObjectLiterals(IFunction function) {
 		if (function.Body is ObjectExpression conciseBody) {
-			AddSectionProperties(conciseBody, sections);
-			return;
+			yield return conciseBody;
+			yield break;
 		}
 		if (function.Body is not BlockStatement body) {
-			return;
+			yield break;
 		}
 		foreach (Statement statement in body.Body) {
 			if (statement is not ReturnStatement {Argument: not null} returnStatement) {
@@ -796,7 +804,7 @@ internal static partial class PageBodyAstLinter {
 					? FindObjectLiteralDeclaration(body, returnedName.Name)
 					: null);
 			if (returned is not null) {
-				AddSectionProperties(returned, sections);
+				yield return returned;
 			}
 		}
 	}

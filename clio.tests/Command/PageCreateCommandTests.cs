@@ -755,6 +755,121 @@ public sealed class PageCreateCommandTests
 				&& s.Contains("\"group\":\"Desktop\"")));
 	}
 
+	private const string HomePageTemplateUId = "c1a0e5b4-0000-4000-8000-00000000a001";
+
+	private void StubHeaderCaptionTemplates() {
+		_catalog.FindTemplate(SchemaTemplateCatalog.HomePageTemplateName).Returns(new PageTemplateInfo {
+			UId = HomePageTemplateUId, Name = SchemaTemplateCatalog.HomePageTemplateName,
+			Title = "Home page", GroupName = "Homepage", SchemaType = 9
+		});
+		_catalog.FindTemplate(HomePageTemplateUId).Returns(new PageTemplateInfo {
+			UId = HomePageTemplateUId, Name = SchemaTemplateCatalog.HomePageTemplateName,
+			Title = "Home page", GroupName = "Homepage", SchemaType = 9
+		});
+		_catalog.FindTemplate(SchemaTemplateCatalog.DashboardTemplateName).Returns(new PageTemplateInfo {
+			UId = SchemaTemplateCatalog.DashboardTemplateUId, Name = SchemaTemplateCatalog.DashboardTemplateName,
+			Title = "Dashboard", GroupName = "Dashboard", SchemaType = 9
+		});
+	}
+
+	[TestCase(SchemaTemplateCatalog.HomePageTemplateName, null)]
+	[TestCase(SchemaTemplateCatalog.HomePageTemplateName, "   ")]
+	[TestCase(SchemaTemplateCatalog.HomePageTemplateName, "UsrItRequestsOverviewHomePage")]
+	[TestCase(SchemaTemplateCatalog.HomePageTemplateName, " usritrequestsoverviewhomepage ")]
+	[TestCase(SchemaTemplateCatalog.DashboardTemplateName, null)]
+	[TestCase(SchemaTemplateCatalog.DashboardTemplateName, "   ")]
+	[TestCase(SchemaTemplateCatalog.DashboardTemplateName, "UsrItRequestsOverviewHomePage")]
+	[TestCase(SchemaTemplateCatalog.DashboardTemplateName, " USRITREQUESTSOVERVIEWHOMEPAGE ")]
+	[TestCase(HomePageTemplateUId, null)]
+	[TestCase(HomePageTemplateUId, "UsrItRequestsOverviewHomePage")]
+	[Description("ENG-107757: with RequireHeaderCaption (the MCP path) a home page or dashboard without a caption, or with a caption equal to schema-name, is refused before any request, also when the template is given by UId.")]
+	public void TryCreatePage_RefusesHeaderTemplateWithoutHumanCaption_WhenRequired(string template, string caption) {
+		// Arrange
+		StubHeaderCaptionTemplates();
+		PageCreateOptions options = new() {
+			SchemaName = "UsrItRequestsOverviewHomePage",
+			Template = template,
+			PackageName = "Custom",
+			Caption = caption,
+			RequireHeaderCaption = true
+		};
+
+		// Act
+		bool result = _command.TryCreatePage(options, out PageCreateResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "the header would otherwise show the technical schema name");
+		response.Error.Should().Contain("caption").And.Contain("page header",
+			because: "the error must tell the agent what to pass so it can retry");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default);
+	}
+
+	[TestCase(SchemaTemplateCatalog.HomePageTemplateName)]
+	[TestCase(SchemaTemplateCatalog.DashboardTemplateName)]
+	[Description("ENG-107757: with RequireHeaderCaption a home page or dashboard with a human-readable caption is saved with that caption.")]
+	public void TryCreatePage_SavesHeaderTemplateWithHumanCaption_WhenRequired(string template) {
+		// Arrange
+		StubHeaderCaptionTemplates();
+		StubHappyPathSelectAndSave();
+		PageCreateOptions options = new() {
+			SchemaName = "UsrItRequestsOverviewHomePage",
+			Template = template,
+			PackageName = "Custom",
+			Caption = "IT Requests overview",
+			RequireHeaderCaption = true
+		};
+
+		// Act
+		bool result = _command.TryCreatePage(options, out PageCreateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: $"a human-readable caption satisfies the header-caption check (error: {response.Error})");
+		response.Caption.Should().Be("IT Requests overview", because: "the supplied caption is the header title");
+		_applicationClient.Received(1).ExecutePostRequest(SaveSchemaUrl,
+			Arg.Is<string>(s => s.Contains("IT Requests overview")));
+	}
+
+	[Test]
+	[Description("ENG-107757: without RequireHeaderCaption (the CLI path) a home page without a caption still defaults the caption to schema-name.")]
+	public void TryCreatePage_DefaultsHeaderTemplateCaptionToSchemaName_WhenNotRequired() {
+		// Arrange
+		StubHeaderCaptionTemplates();
+		StubHappyPathSelectAndSave();
+		PageCreateOptions options = new() {
+			SchemaName = "UsrItRequestsOverviewHomePage",
+			Template = SchemaTemplateCatalog.HomePageTemplateName,
+			PackageName = "Custom"
+		};
+
+		// Act
+		bool result = _command.TryCreatePage(options, out PageCreateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "the CLI keeps its documented default");
+		response.Caption.Should().Be("UsrItRequestsOverviewHomePage",
+			because: "an omitted caption defaults to schema-name outside the MCP path");
+	}
+
+	[Test]
+	[Description("ENG-107757: RequireHeaderCaption leaves templates without a header title alone, so a blank page without a caption is still created.")]
+	public void TryCreatePage_DoesNotRequireCaptionForOtherTemplates_WhenRequired() {
+		// Arrange
+		StubHappyPathSelectAndSave();
+		PageCreateOptions options = new() {
+			SchemaName = "UsrDemo_BlankPage",
+			Template = TemplateName,
+			PackageName = "Custom",
+			RequireHeaderCaption = true
+		};
+
+		// Act
+		bool result = _command.TryCreatePage(options, out PageCreateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "only BaseHomePage and BaseDashboardTemplate require a caption");
+		response.Caption.Should().Be("UsrDemo_BlankPage", because: "other templates keep the schema-name default");
+	}
+
 	private void StubSelectQueryResponse(string url, string responseJson) {
 		_applicationClient.ExecutePostRequest(url, Arg.Any<string>()).Returns(responseJson);
 	}

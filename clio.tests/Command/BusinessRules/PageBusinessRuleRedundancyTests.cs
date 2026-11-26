@@ -23,6 +23,16 @@ public sealed class PageBusinessRuleRedundancyTests {
 		new(new BusinessRuleExpression("AttributeValue", path: attribute), "not-equal",
 			new BusinessRuleExpression("Const", value: JsonSerializer.SerializeToElement(value)));
 
+	private static BusinessRuleCondition IsNotFilledIn(string attribute) =>
+		new(new BusinessRuleExpression("AttributeValue", path: attribute), "is-not-filled-in", null);
+
+	private static BusinessRuleCondition IsFilledIn(string attribute) =>
+		new(new BusinessRuleExpression("AttributeValue", path: attribute), "is-filled-in", null);
+
+	private static BusinessRuleCondition EqualFlag(string attribute, bool value) =>
+		new(new BusinessRuleExpression("AttributeValue", path: attribute), "equal",
+			new BusinessRuleExpression("Const", value: JsonSerializer.SerializeToElement(value)));
+
 	private static BusinessRule Rule(string caption, string logicalOperation, BusinessRuleAction action,
 		params BusinessRuleCondition[] conditions) =>
 		new(caption, new BusinessRuleConditionGroup(logicalOperation, conditions.ToList()), [action]) {
@@ -201,6 +211,192 @@ public sealed class PageBusinessRuleRedundancyTests {
 
 		// Assert
 		warnings[0].Should().ContainSingle(because: "NOT (a AND b) is (NOT a) OR (NOT b)");
+	}
+
+	[TestCase(true, Description = "The near-opposite rule is the incoming one.")]
+	[TestCase(false, Description = "The near-opposite rule is the stored one.")]
+	[Description("ENG-107305 reopen: 'X not-equal v OR X is-not-filled-in' undoes 'X equal v', as agents write it.")]
+	public void Analyze_WhenInverseAddsIsNotFilledInToNegatedEqual_ReturnsInverseRedundantWarning(bool nearOppositeIncoming) {
+		// Arrange — the benchmark run: "read-only when closed" plus "editable when not closed or empty".
+		BusinessRule exact = Rule("Read-only when closed", "AND", ReadOnly("Amount"), Equal("Status", Commercial));
+		BusinessRule nearOpposite = Rule("Editable when open", "OR", new MakeEditableBusinessRuleAction(["Amount"]),
+			NotEqual("Status", Commercial), IsNotFilledIn("Status"));
+		(BusinessRule stored, BusinessRule incoming) = nearOppositeIncoming ? (exact, nearOpposite) : (nearOpposite, exact);
+
+		// Act
+		IReadOnlyList<IReadOnlyList<string>> warnings = PageBusinessRuleRedundancy.Analyze([stored], [incoming]);
+
+		// Assert
+		warnings[0].Should().ContainSingle(because: "an empty value already makes 'equal v' false, so the rule only undoes the other one")
+			.Which.Should().Contain("inverse-redundant", because: "the warning names its rule id")
+			.And.Contain(stored.Caption, because: "the warning names the rule this one undoes");
+	}
+
+	[TestCase(true, Description = "The rule on false is the incoming one.")]
+	[TestCase(false, Description = "The rule on false is the stored one.")]
+	[Description("ENG-107305 reopen: 'Flag equal false' undoes 'Flag equal true' with the opposite state action.")]
+	public void Analyze_WhenInverseUsesOppositeBooleanValue_ReturnsInverseRedundantWarning(bool falseRuleIncoming) {
+		// Arrange — the benchmark run: "required when approved" plus "optional when not approved".
+		BusinessRule onTrue = Rule("Amount required when approved", "AND", Required("Amount"), EqualFlag("Approved", true));
+		BusinessRule onFalse = Rule("Amount optional when not approved", "AND", Optional("Amount"), EqualFlag("Approved", false));
+		(BusinessRule stored, BusinessRule incoming) = falseRuleIncoming ? (onTrue, onFalse) : (onFalse, onTrue);
+
+		// Act
+		IReadOnlyList<IReadOnlyList<string>> warnings = PageBusinessRuleRedundancy.Analyze([stored], [incoming]);
+
+		// Assert
+		warnings[0].Should().ContainSingle(because: "'equal false' is the negation of 'equal true' for a boolean")
+			.Which.Should().Contain("inverse-redundant", because: "the warning names its rule id");
+	}
+
+	[Test]
+	[Description("Keeps subsumption on the conditions as written: boolean constants are re-keyed for the inverse check only.")]
+	public void Analyze_WhenBooleanConstantsDifferOnlyInForm_KeepsSubsumptionAsWritten() {
+		// Arrange
+		BusinessRuleCondition notEqualTrue = new(new BusinessRuleExpression("AttributeValue", path: "Approved"), "not-equal",
+			new BusinessRuleExpression("Const", value: JsonSerializer.SerializeToElement(true)));
+		BusinessRule stored = Rule("Read-only when not approved", "AND", ReadOnly("Amount"), EqualFlag("Approved", false));
+		BusinessRule otherForm = Rule("Read-only when not approved and closed", "AND", ReadOnly("Amount"),
+			notEqualTrue, Equal("Status", Commercial));
+		BusinessRule sameForm = Rule("Read-only when false and closed", "AND", ReadOnly("Amount"),
+			EqualFlag("Approved", false), Equal("Status", Commercial));
+
+		// Act
+		IReadOnlyList<IReadOnlyList<string>> warnings = PageBusinessRuleRedundancy.Analyze([stored], [otherForm, sameForm]);
+
+		// Assert
+		warnings[0].Should().NotContain(warning => warning.Contains("subsumed"),
+			because: "'equal false' and 'not-equal true' are different conditions as written, so subsumption does not match them");
+		warnings[1].Should().ContainSingle(warning => warning.Contains("subsumed"),
+			because: "the same condition as written plus one more is still subsumed, as before this change");
+	}
+
+	[Test]
+	[Description("Drops an is-filled-in check beside 'equal' in an AND group: 'X equal v AND X is-filled-in' undoes 'X not-equal v'.")]
+	public void Analyze_WhenInverseAddsIsFilledInToEqual_ReturnsInverseRedundantWarning() {
+		// Arrange
+		BusinessRule existing = Rule("Editable when open", "AND", new MakeEditableBusinessRuleAction(["Amount"]),
+			NotEqual("Status", Commercial));
+		BusinessRule incoming = Rule("Read-only when closed and set", "AND", ReadOnly("Amount"),
+			Equal("Status", Commercial), IsFilledIn("Status"));
+
+		// Act
+		IReadOnlyList<IReadOnlyList<string>> warnings = PageBusinessRuleRedundancy.Analyze([existing], [incoming]);
+
+		// Assert
+		warnings[0].Should().ContainSingle(because: "'equal v' is already false on an empty value, so the check adds nothing")
+			.Which.Should().Contain("inverse-redundant", because: "the warning names its rule id");
+	}
+
+	[Test]
+	[Description("Keeps an is-filled-in check in an AND group when it targets another attribute.")]
+	public void Analyze_WhenAndedIsFilledInTargetsOtherAttribute_ReturnsNoWarning() {
+		// Arrange
+		BusinessRule existing = Rule("Editable when open", "AND", new MakeEditableBusinessRuleAction(["Amount"]),
+			NotEqual("Status", Commercial));
+		BusinessRule incoming = Rule("Read-only when closed with owner", "AND", ReadOnly("Amount"),
+			Equal("Status", Commercial), IsFilledIn("Owner"));
+
+		// Act
+		IReadOnlyList<IReadOnlyList<string>> warnings = PageBusinessRuleRedundancy.Analyze([existing], [incoming]);
+
+		// Assert
+		warnings[0].Should().BeEmpty(because: "an empty owner narrows the rule beyond the negation of the other one");
+	}
+
+	[Test]
+	[Description("Keeps an is-filled-in check beside 'not-equal' in an AND group: 'not-equal v' is true on an empty value.")]
+	public void Analyze_WhenIsFilledInIsAndedWithNotEqual_ReturnsNoWarning() {
+		// Arrange — "Status not-equal v AND Status filled" skips an empty status, where "Status not-equal v" fires.
+		BusinessRule existing = Rule("Read-only when closed", "AND", ReadOnly("Amount"), Equal("Status", Commercial));
+		BusinessRule incoming = Rule("Editable when open and set", "AND", new MakeEditableBusinessRuleAction(["Amount"]),
+			NotEqual("Status", Commercial), IsFilledIn("Status"));
+
+		// Act
+		IReadOnlyList<IReadOnlyList<string>> warnings = PageBusinessRuleRedundancy.Analyze([existing], [incoming]);
+
+		// Assert
+		warnings[0].Should().BeEmpty(because: "the check narrows the rule, so it is not the plain negation of 'equal v'");
+	}
+
+	[Test]
+	[Description("Does not treat the strings \"true\" and \"false\" as opposite booleans.")]
+	public void Analyze_WhenOppositeValuesAreStrings_ReturnsNoWarning() {
+		// Arrange
+		BusinessRule existing = Rule("Required on true text", "AND", Required("Amount"), Equal("Code", "true"));
+		BusinessRule incoming = Rule("Optional on false text", "AND", Optional("Amount"), Equal("Code", "false"));
+
+		// Act
+		IReadOnlyList<IReadOnlyList<string>> warnings = PageBusinessRuleRedundancy.Analyze([existing], [incoming]);
+
+		// Assert
+		warnings[0].Should().BeEmpty(because: "a text column can hold values other than these two");
+	}
+
+	[Test]
+	[Description("Keeps an is-not-filled-in check on another attribute: it widens the condition beyond the negation.")]
+	public void Analyze_WhenIsNotFilledInTargetsOtherAttribute_ReturnsNoWarning() {
+		// Arrange
+		BusinessRule existing = Rule("Read-only when closed", "AND", ReadOnly("Amount"), Equal("Status", Commercial));
+		BusinessRule incoming = Rule("Editable when open or no owner", "OR", new MakeEditableBusinessRuleAction(["Amount"]),
+			NotEqual("Status", Commercial), IsNotFilledIn("Owner"));
+
+		// Act
+		IReadOnlyList<IReadOnlyList<string>> warnings = PageBusinessRuleRedundancy.Analyze([existing], [incoming]);
+
+		// Assert
+		warnings[0].Should().BeEmpty(because: "an empty owner makes the rule fire even when the status is closed");
+	}
+
+	[Test]
+	[Description("Keeps an is-not-filled-in check beside 'not-equal' with another attribute: that attribute can be empty too.")]
+	public void Analyze_WhenNotEqualComparesWithAttribute_KeepsNullCheck() {
+		// Arrange — both sides of "Status not-equal OtherStatus" can be empty, so the null check is not implied.
+		var otherStatus = new BusinessRuleExpression("AttributeValue", path: "OtherStatus");
+		BusinessRule existing = Rule("Read-only when same status", "AND", ReadOnly("Amount"),
+			new BusinessRuleCondition(new BusinessRuleExpression("AttributeValue", path: "Status"), "equal", otherStatus));
+		BusinessRule incoming = Rule("Editable when other status or empty", "OR",
+			new MakeEditableBusinessRuleAction(["Amount"]),
+			new BusinessRuleCondition(new BusinessRuleExpression("AttributeValue", path: "Status"), "not-equal", otherStatus),
+			IsNotFilledIn("Status"));
+
+		// Act
+		IReadOnlyList<IReadOnlyList<string>> warnings = PageBusinessRuleRedundancy.Analyze([existing], [incoming]);
+
+		// Assert
+		warnings[0].Should().BeEmpty(because: "only a constant on the right side settles the null check");
+	}
+
+	[Test]
+	[Description("Keeps an is-not-filled-in check beside 'equal': 'equal v' is false on an empty value, so the check widens the rule.")]
+	public void Analyze_WhenIsNotFilledInIsOredWithEqual_ReturnsNoWarning() {
+		// Arrange — "Status = v OR Status empty" also fires on an empty status, where "Status not-equal v" fires too.
+		BusinessRule existing = Rule("Editable when open", "AND", new MakeEditableBusinessRuleAction(["Amount"]),
+			NotEqual("Status", Commercial));
+		BusinessRule incoming = Rule("Read-only when closed or empty", "OR", ReadOnly("Amount"),
+			Equal("Status", Commercial), IsNotFilledIn("Status"));
+
+		// Act
+		IReadOnlyList<IReadOnlyList<string>> warnings = PageBusinessRuleRedundancy.Analyze([existing], [incoming]);
+
+		// Assert
+		warnings[0].Should().BeEmpty(because: "the two rules overlap on an empty status instead of negating each other");
+	}
+
+	[Test]
+	[Description("Keeps an is-filled-in check in an OR group: dropping it would change what the rule matches.")]
+	public void Analyze_WhenIsFilledInIsOredWithEqual_ReturnsNoWarning() {
+		// Arrange — "Status = v OR Status filled" is just "Status filled", not "Status = v".
+		BusinessRule existing = Rule("Editable when open", "AND", new MakeEditableBusinessRuleAction(["Amount"]),
+			NotEqual("Status", Commercial));
+		BusinessRule incoming = Rule("Read-only when closed or set", "OR", ReadOnly("Amount"),
+			Equal("Status", Commercial), IsFilledIn("Status"));
+
+		// Act
+		IReadOnlyList<IReadOnlyList<string>> warnings = PageBusinessRuleRedundancy.Analyze([existing], [incoming]);
+
+		// Assert
+		warnings[0].Should().BeEmpty(because: "the rule fires for every filled status, not only the negation of the other rule");
 	}
 
 	[Test]

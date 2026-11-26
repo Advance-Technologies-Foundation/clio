@@ -443,4 +443,231 @@ internal class PageBodyAstLinterQualityTests {
 
 	#endregion
 
+	#region handler-without-next
+
+	[TestCase("async (request) => { await request.$context.set(\"A\", 1); }", "takes no `next`")]
+	[TestCase("function (request) { return true; }", "takes no `next`")]
+	[TestCase("async (request, next) => { await request.$context.set(\"A\", 1); }", "never calls `next.handle(request)`")]
+	[TestCase("async (request, next) => { return helper(request, next); }", "never calls `next.handle(request)`")]
+	[TestCase("async (request, next) => { [1].forEach(() => next.handle(request)); return true; }", "never calls `next.handle(request)`")]
+	[TestCase("async (request, next) => { await next?.handle(request); }", "does not return its result")]
+	[TestCase("async (request, next) => { const result = await next?.handle(request); return true; }", "does not return its result")]
+	[TestCase("async (request, next) => { if (!request.value) { return; } return next?.handle(request); }", "does not return its result")]
+	[TestCase("async (request, next) => { if (request.value) { return true; } return next?.handle(request); }", "does not return its result")]
+	[TestCase("async (request, next) => { if (request.value) { return next?.handle(request); } }", "does not return its result")]
+	[TestCase("async (request, next) => { switch (request.mode) { case \"a\": return next.handle(request); } }", "does not return its result")]
+	[Description("A handler that takes no `next`, never calls `next.handle` in its own body, or drops that call's result raises a warning that says which")]
+	public void Lint_ShouldWarnHandlerWithoutNext_WhenNextIsNeverUsed(string handler, string problem) {
+		// Arrange
+		string body = Page("[{ request: \"usr.PostButtonClicked\", handler: " + handler + " }]");
+
+		// Act
+		List<PageBodyLintFinding> findings = Findings(body, PageBodyAstLinter.RuleHandlerWithoutNext);
+
+		// Assert
+		findings.Should().ContainSingle(because: "the handler skips every later handler of its request");
+		findings[0].Severity.Should().Be(LintSeverity.Warning, because: "code-quality rules never block a save");
+		findings[0].Message.Should().Contain("`usr.PostButtonClicked`", because: "the warning names the request whose chain stops");
+		findings[0].Message.Should().Contain(problem, because: "the warning says what the handler does wrong with the chain");
+	}
+
+	[TestCase("async (request, next) => { await request.$context.set(\"A\", 1); return next?.handle(request); }")]
+	[TestCase("async (request, next) => { const result = await next?.handle(request); return result; }")]
+	[TestCase("async (request, next) => next.handle(request)")]
+	[TestCase("async (request, next = null) => { return next?.handle(request); }")]
+	[TestCase("async (request, next) => { if (!request.value) { return next?.handle(request); } const r = await next?.handle(request); return r; }")]
+	[TestCase("async (request, next) => { try { return await next?.handle(request); } catch (e) { throw e; } }")]
+	[TestCase("async (request, next) => { try { await request.$context.save(); } finally { return next?.handle(request); } }")]
+	[TestCase("async (request, next) => { switch (request.mode) { case \"a\": await request.$context.save(); return next.handle(request); case \"b\": default: return next.handle(request); } }")]
+	[TestCase("async (request, next) => { return next.handle(request).then((result) => result); }")]
+	[TestCase("async (request, chain) => { return chain?.handle(request); }")]
+	[TestCase("async (request, next) => { let result; result = await next.handle(request); return result; }")]
+	[Description("A handler that returns `next.handle(request)`, directly or through a variable assigned from it, keeps the chain and raises no warning")]
+	public void Lint_ShouldNotWarnHandlerWithoutNext_WhenNextIsUsed(string handler) {
+		// Arrange
+		string body = Page("[{ request: \"crt.HandleViewModelAttributeChangeRequest\", handler: " + handler + " }]");
+
+		// Act
+		List<PageBodyLintFinding> findings = Findings(body, PageBodyAstLinter.RuleHandlerWithoutNext);
+
+		// Assert
+		findings.Should().BeEmpty(because: "the handler hands the request on through its second parameter");
+	}
+
+	[Test]
+	[Description("A returned call chain far deeper than MaxAstDepth is reported as not giving the chain's result, without overflowing the stack")]
+	public void Lint_ShouldReportHandlerWithoutNext_WhenReturnedChainIsDeeperThanMaxAstDepth() {
+		// Arrange
+		string chain = "x" + string.Concat(Enumerable.Repeat(".a()", 50_000));
+		string body = Page("[{ request: \"usr.PostButtonClicked\", handler: (request, next) => { next.handle(request); return "
+			+ chain + "; } }]");
+		PageBodySyntaxValidator.ValidateAndParse(body, out Script ast);
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = PageBodyAstLinter.Lint(ast);
+
+		// Assert
+		ast.Should().NotBeNull(because: "the parser reads a left-leaning call chain without recursing");
+		findings.Should().Contain(f => f.Rule == PageBodyAstLinter.RuleHandlerWithoutNext,
+			because: "the walk stops at MaxAstDepth and reports the handler instead of crashing the server process");
+	}
+
+	#endregion
+
+	#region client modules
+
+	private static bool TryLintModule(string body, out IReadOnlyList<PageBodyLintFinding> findings) {
+		PageBodySyntaxValidationResult result = PageBodySyntaxValidator.ValidateAndParse(body, out Script ast);
+		result.IsValid.Should().BeTrue(because: "module fixtures must be syntactically valid JavaScript");
+		return PageBodyAstLinter.TryLintClientModule(ast, out findings);
+	}
+
+	private static IReadOnlyList<PageBodyLintFinding> LintModule(string body) {
+		TryLintModule(body, out IReadOnlyList<PageBodyLintFinding> findings).Should().BeTrue(
+			because: "the fixture is a client module");
+		return findings;
+	}
+
+	private static string Module(string code) =>
+		"define(\"UsrTestModule\", [\"@creatio-devkit/common\"], function(sdk) {\n\"use strict\";\n" + code + "\nreturn {};\n});";
+
+	[Test]
+	[Description("A client module is linted with the code-quality rules that apply outside a page section")]
+	public void LintClientModule_ShouldReportQualityFindings_InModuleFunctions() {
+		// Arrange
+		string body = Module(
+			"async function save($context) { try { await $context.save(); } catch (e) { console.error(e); } }\n"
+			+ "const filter = { comparisonType: 3 };\n"
+			+ "async function loadAll() { const a = await m1.load(); const b = await m2.load(); const c = await m3.load(); return [a, b, c]; }\n"
+			+ "function longOne() {\n" + Lines(PageBodyAstLinter.MaxFunctionLines) + "}");
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintModule(body);
+
+		// Assert
+		findings.Select(f => f.Rule).Should().BeEquivalentTo(new[] {
+			PageBodyAstLinter.RuleCatchLogOnly, PageBodyAstLinter.RuleNumericComparisonType,
+			PageBodyAstLinter.RuleSequentialIndependentAwaits, PageBodyAstLinter.RuleFunctionTooLong
+		}, because: "each of these breaks a rule that holds for module code as it does for page code");
+		findings.Should().OnlyContain(f => f.Severity == LintSeverity.Warning, because: "code-quality rules never block a save");
+	}
+
+	[Test]
+	[Description("A record id declared in a client module is not reported, and the module's factory is not measured as one long function")]
+	public void LintClientModule_ShouldNotReportRecordIdsOrTheFactory() {
+		// Arrange
+		string body = Module("const STATUS = Object.freeze({ Closed: \"8dc41780-1234-4000-8000-000000000001\" });\n"
+			+ Lines(PageBodyAstLinter.MaxFunctionLines * 2));
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintModule(body);
+
+		// Assert
+		findings.Should().BeEmpty(
+			because: "a module is where a page's named record ids are declared, and the factory is the module itself");
+	}
+
+	[TestCase("function() { return { viewConfigDiff: [], handlers: [] }; }")]
+	[TestCase("() => ({ handlers: [], converters: {} })")]
+	[TestCase("function() { const schema = { viewConfigDiff: [], handlers: [], converters: {}, validators: {} }; return schema; }")]
+	[TestCase("function() { const schema = { modelConfigDiff: [] }; return schema; }")]
+	[Description("A define whose factory returns page sections is a page that lost its markers, not a client module")]
+	public void TryLintClientModule_ShouldReturnFalse_WhenFactoryReturnsPageSections(string factory) {
+		// Act
+		bool isModule = TryLintModule("define(\"UsrX_FormPage\", [], " + factory + ");",
+			out IReadOnlyList<PageBodyLintFinding> findings);
+
+		// Assert
+		isModule.Should().BeFalse(because: "a page body must be validated as a page, so its missing markers are reported");
+		findings.Should().NotBeNull().And.BeEmpty(because: "a body that is not a module gets an empty list, never null");
+	}
+
+	[TestCase("function(sdk) { return { handlers: [] }; }")]
+	[TestCase("function(sdk) { const shared = { converters: {} }; return shared; }")]
+	[TestCase("() => ({ validators: {}, format: () => 1 })")]
+	[Description("A module that exports one of handlers / converters / validators and no page config section is a shared client module, not a page")]
+	public void TryLintClientModule_ShouldLintModule_WhenFactoryExportsOneSharedSection(string factory) {
+		// Act
+		bool isModule = TryLintModule("define(\"UsrShared_Handlers\", [], " + factory + ");",
+			out IReadOnlyList<PageBodyLintFinding> findings);
+
+		// Assert
+		isModule.Should().BeTrue(because: "sharing handler entries, converters or validators through a module is a valid module");
+		findings.Should().BeEmpty(because: "the module breaks no code-quality rule");
+	}
+
+	[TestCase("async function load(model) { return model.load({ filters: { StatusId: \"8dc41780-1234-4000-8000-000000000001\" } }); }")]
+	[TestCase("let status = \"8dc41780-1234-4000-8000-000000000001\";")]
+	[TestCase("const ACTIONS = { close: (model) => model.set(\"StatusId\", \"8dc41780-1234-4000-8000-000000000001\") };")]
+	[TestCase("const load = (model) => model.load(\"8dc41780-1234-4000-8000-000000000001\");")]
+	[Description("A record id used in a module's code - not as the value of a const data declaration - is reported")]
+	public void LintClientModule_ShouldReportRecordId_WhenUsedOutsideConstantData(string code) {
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintModule(Module(code));
+
+		// Assert
+		findings.Should().ContainSingle(f => f.Rule == PageBodyAstLinter.RuleGuidLiteralDataReference,
+			because: "moving page logic into a module must not hide a hard-coded record id");
+	}
+
+	[TestCase("const CLOSED = \"8dc41780-1234-4000-8000-000000000001\";")]
+	[TestCase("const STATUS = { Closed: \"8dc41780-1234-4000-8000-000000000001\", Open: [\"8dc41780-1234-4000-8000-000000000002\"] };")]
+	[TestCase("const IDS = [\"8dc41780-1234-4000-8000-000000000001\"];")]
+	[Description("A record id held by a const data declaration is the named constant the rule asks for and is not reported")]
+	public void LintClientModule_ShouldNotReportRecordId_WhenDeclaredAsConstantData(string code) {
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintModule(Module(code));
+
+		// Assert
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleGuidLiteralDataReference,
+			because: "a named constant is where a record id belongs");
+	}
+
+	[Test]
+	[Description("A script without a top-level define() is not a client module")]
+	public void TryLintClientModule_ShouldReturnFalse_WhenScriptIsNotAModule() {
+		// Act
+		bool isModule = TryLintModule("const a = 1;", out IReadOnlyList<PageBodyLintFinding> findings);
+
+		// Assert
+		isModule.Should().BeFalse(because: "the caller lints such a script as a page body instead");
+		findings.Should().NotBeNull().And.BeEmpty(because: "a body that is not a module gets an empty list, never null");
+	}
+
+	#endregion
+
+	#region benchmark regression
+
+	private static string Fixture(string name) =>
+		System.IO.File.ReadAllText(System.IO.Path.Combine(TestContext.CurrentContext.TestDirectory, "Examples", "PageLintV2", name));
+
+	[TestCase("UsrDemoV2App_FormPageModule.js", 3, 1)]
+	[TestCase("UsrDemoV2App_ListPageModule.js", 1, 0)]
+	[TestCase("UsrDemoV2DocumentTotals.js", 1, 0)]
+	[Description("The client modules of the benchmark run that passed the page-only gate carry the findings the module lint reports")]
+	public void LintClientModule_ShouldReportBenchmarkModuleFindings(string fixture, int logOnlyCatches, int numericComparisons) {
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintModule(Fixture(fixture));
+
+		// Assert
+		findings.Count(f => f.Rule == PageBodyAstLinter.RuleCatchLogOnly).Should().Be(logOnlyCatches,
+			because: "each catch that only logs or ignores the error is reported; a catch that keeps a fallback value is not");
+		findings.Count(f => f.Rule == PageBodyAstLinter.RuleNumericComparisonType).Should().Be(numericComparisons,
+			because: "a filter built with a bare `comparisonType` number is reported");
+	}
+
+	[Test]
+	[Description("The benchmark page's Post handler that never calls next is reported; its attribute-change handler is not")]
+	public void Lint_ShouldReportBenchmarkPostHandlerWithoutNext() {
+		// Act
+		List<PageBodyLintFinding> findings = Findings(Fixture("UsrDemoV2App_DeliveryNoteFormPage.js"),
+			PageBodyAstLinter.RuleHandlerWithoutNext);
+
+		// Assert
+		findings.Should().ContainSingle(because: "only the Post button handler drops the chain");
+		findings[0].Message.Should().Contain("`usr.DemoPostButtonClicked`", because: "the warning names the request");
+	}
+
+	#endregion
+
 }

@@ -182,6 +182,55 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 		});
 	}
 
+	[TestCase(true)]
+	[TestCase(false)]
+	[Description("The real MCP transport validates a client-module body (define() without page markers) with the code-quality lint only, and says so in the first warning")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page lints a client module body")]
+	[AllureDescription("A module whose function has a log-only catch block validates with the client-module note and the catch-log-only warning; the same module that handles the error carries only the note.")]
+	public async Task PageValidateTool_ShouldLintClientModule_WhenBodyIsAModule(bool logOnlyCatch) {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string handling = logOnlyCatch ? "console.error(e);" : "throw e;";
+		string body = "define(\"UsrProbeModule\", [\"@creatio-devkit/common\"], function(sdk) { "
+			+ $"async function save($context) {{ try {{ await $context.save(); }} catch (e) {{ {handling} }} }} "
+			+ "return { save: save }; });";
+		// Act
+		PageValidateResponse response = await AllureApi.Step("Validate a client module body through stdio MCP",
+			async () => await CallAsync(context.Session, context.CancellationTokenSource.Token, body));
+		// Assert
+		AllureApi.Step("Verify the module validates and is reported as a module", () => {
+			response.Valid.Should().BeTrue(because: "code-quality findings are warnings and a module needs no page markers; errors: "
+				+ string.Join("; ", response.Validation.Errors ?? []));
+			response.Validation.Warnings.Should().NotBeNullOrEmpty(because: "a module result always carries the client-module note");
+			response.Validation.Warnings[0].Should().Be(PageValidateTool.ClientModuleNote,
+				because: "the caller must be able to tell a module result from a page result");
+		});
+		AllureApi.Step("Verify the catch-log-only warning appears only for the log-only catch", () =>
+			response.Validation.Warnings.Any(w => w.Contains(PageBodyAstLinter.RuleCatchLogOnly)).Should().Be(logOnlyCatch,
+				because: "the module lint reports a catch block that only logs and stays silent on one that rethrows"));
+	}
+
+	[Test]
+	[Description("A page body that lost its page-schema markers is not taken for a client module over the real MCP transport: it fails on the markers")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page reports a page that lost its markers")]
+	[AllureDescription("A define whose factory returns page sections but carries no SCHEMA_ markers is validated as a page and rejected.")]
+	public async Task PageValidateTool_ShouldRejectPageWithoutMarkers_InsteadOfLintingItAsAModule() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string body = "define(\"TestPage\", [], function() { return { viewConfigDiff: [], viewModelConfigDiff: [], "
+			+ "modelConfigDiff: [], handlers: [], converters: {}, validators: {} }; });";
+		// Act
+		PageValidateResponse response = await AllureApi.Step("Validate a marker-less page body through stdio MCP",
+			async () => await CallAsync(context.Session, context.CancellationTokenSource.Token, body));
+		// Assert
+		AllureApi.Step("Verify the missing markers are reported", () => {
+			response.Valid.Should().BeFalse(because: "a page body without its SCHEMA_ markers cannot be saved");
+			response.Validation.MarkersOk.Should().BeFalse(because: "the page path reports the lost markers");
+		});
+	}
+
 	[Test]
 	[Description("Advertises validate-page MCP tool in the server tool list so callers can discover and invoke it.")]
 	[AllureTag(ToolName)]
@@ -1718,10 +1767,10 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("ENG-101924: a Designer-written binding in a property the mobile registry does not declare for the type (crt.List.selectionState) is not reported as undeclared.")]
+	[Description("ENG-101924: a binding in a property the mobile registry does not declare for the type is not reported as undeclared. The property name is made up so that no registry release can declare it (crt.List.selectionState, used before, is declared since the multi-select release, ENG-107609).")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-page skips a binding in a property the mobile registry does not declare")]
-	[AllureDescription("Sends a mobile body whose crt.List binds selectionState to an undeclared attribute, the shape the Mobile Designer saves, and verifies validate-page does not report that binding.")]
+	[AllureDescription("Sends a mobile body whose crt.List binds a property the registry does not declare to an undeclared attribute, and verifies validate-page does not report that binding.")]
 	public async Task PageValidateTool_Should_Skip_Binding_In_Property_The_Registry_Does_Not_Declare() {
 		// Arrange
 		await using var context = Arrange(TimeSpan.FromMinutes(3));
@@ -1729,7 +1778,7 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 			{
 			  "viewConfigDiff": [
 			    { "operation": "insert", "name": "LeadList", "parentName": "MainContainer", "propertyName": "items",
-			      "values": { "type": "crt.List", "selectionState": "$LeadList_SelectionState" } }
+			      "values": { "type": "crt.List", "usrNotARuntimeInput": "$LeadList_NotARuntimeInput" } }
 			  ],
 			  "viewModelConfigDiff": [
 			    { "operation": "merge", "path": ["attributes"], "values": { "UsrName": {} } }
@@ -1745,8 +1794,8 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 		response.Validation.Should().NotBeNull(
 			because: "validation details are always included in the response");
 		(response.Validation!.Errors ?? []).Should().NotContain(
-			e => e.Contains("LeadList_SelectionState"),
-			because: "the mobile runtime never reads crt.List.selectionState, so a binding there cannot break the page");
+			e => e.Contains("LeadList_NotARuntimeInput"),
+			because: "the mobile runtime never reads a property its registry does not declare, so a binding there cannot break the page");
 	}
 
 	[Test]

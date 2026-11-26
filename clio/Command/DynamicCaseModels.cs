@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Clio.Command;
@@ -115,6 +116,12 @@ public sealed record DynamicCaseStageItem(string Value) {
 
 	/// <summary>False for a final stage that ends the case unsuccessfully; <see langword="null"/> when not named.</summary>
 	public bool? Successful { get; init; }
+
+	/// <summary>The stage's whole step list as JSON, sent as it is; <see langword="null"/> keeps the steps.</summary>
+	public string Steps { get; init; }
+
+	/// <summary><c>none</c>, <c>afterRequired</c> or <c>afterAll</c>; <see langword="null"/> keeps the stored one.</summary>
+	public string TransitionType { get; init; }
 }
 
 /// <summary>
@@ -254,9 +261,17 @@ public sealed class DynamicCaseStage {
 	[JsonPropertyName("isFinal")]
 	public bool? IsFinal { get; init; }
 
-	/// <summary>The stage holds steps (process elements), so removing it is refused.</summary>
+	/// <summary>The stage holds steps; a removed stage takes its steps with it.</summary>
 	[JsonPropertyName("hasSteps")]
 	public bool? HasSteps { get; init; }
+
+	/// <summary>The stage's steps as the package describes them; absent from an older package.</summary>
+	[JsonPropertyName("steps")]
+	public JsonElement? Steps { get; init; }
+
+	/// <summary>When the case moves on from the stage by itself; absent from an older package.</summary>
+	[JsonPropertyName("transitionType")]
+	public string TransitionType { get; init; }
 
 	/// <summary>A step condition moves the case to this stage, so removing it is refused.</summary>
 	[JsonPropertyName("isConditionTarget")]
