@@ -518,7 +518,7 @@ public sealed class ModifyDynamicCaseAsNewVersionToolTests {
 		description.Should().Contain("dry-run=true").And.Contain("ask before writing",
 			because: "the user sees the planned diff before a version is written");
 		description.Should().Contain("saved INACTIVE: the active case stays the one new records its filter fits start "
-			+ "(every record when it has none), and its running cases go on as they are; only a confirmed stage value "
+			+ "while the family is enabled (every record when it has none), and its running cases go on as they are; only a confirmed stage value "
 			+ "rename (below) reaches them at once",
 			because: "the active case stays in force, for the records its filter fits, except for a value rename")
 			.And.NotContain("untouched", because: "a confirmed value rename reaches the active case and every record");

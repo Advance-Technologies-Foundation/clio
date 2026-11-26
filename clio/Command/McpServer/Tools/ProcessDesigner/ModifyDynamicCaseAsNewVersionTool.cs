@@ -64,7 +64,8 @@ public class ModifyDynamicCaseAsNewVersionTool(
 		 Idempotent = false, OpenWorld = false),
 	 Description("Saves a case change as a version. The dynamic case (DCM) designer's \"Save new version\": the "
 		 + "family's ACTIVE case is copied, the change is applied to the copy, and the copy is saved INACTIVE: the "
-		 + "active case stays the one new records its filter fits start (every record when it has none), and its "
+		 + "active case stays the one new records its filter fits start while the family is enabled (every record "
+		 + "when it has none), and its "
 		 + "running cases go on as they are; only a confirmed stage value rename (below) reaches them at once. Read "
 		 + "get-guidance name=process-dynamic-case-versions first. Call describe-dynamic-case, then this tool with "
 		 + "dry-run=true, show "

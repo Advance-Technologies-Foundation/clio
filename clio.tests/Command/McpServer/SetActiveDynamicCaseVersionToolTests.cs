@@ -318,8 +318,11 @@ public sealed class SetActiveDynamicCaseVersionToolTests {
 		description.Should().Contain("Run it with dry-run=true first", because: "every switch is planned before it is made")
 			.And.Contain("A user who asked for this switch has given the yes",
 				because: "a request to switch is the consent when the dry run carries notes only")
-			.And.Contain("switch and relay every note in full with the result",
-				because: "a note condensed by the agent loses the sentence the user needs (as the guide says)")
+			.And.Contain("switch; with the result, relay every note sentence about the user's records as written, none "
+				+ "dropped or merged (a tool call in a note is for you: offer it as the user's next step in plain words)",
+				because: "a note condensed by the agent loses the sentence the user needs, and a tool call in a note is "
+				+ "the agent's, offered to the user in plain words (as the guide says)")
+			.And.NotContain("relay every note in full", because: "the old rule would put tool syntax into the answer")
 			.And.Contain("with warnings (package position), show them and wait for their yes",
 				because: "a warning may change the user's mind, so it needs its own yes")
 			.And.Contain("Never call it on your own after modify-dynamic-case-as-new-version: ask the user whether to activate",
