@@ -31,8 +31,11 @@ public static class DynamicCaseChangeRequirement {
 	/// creation about a pinned member ranked below the version, a warning the new-version tool relays. 1.6.6.199 splits
 	/// the records in a removed stage by whether their case still runs and gates disabling on the family's running
 	/// cases, which the tool descriptions and the verdicts now defer to. 1.6.6.207 leaves the uIds out of a new-version
-	/// dry run, which the new-version description and its E2E rely on, and words every note the stand measured. 1.6.6.208
-	/// carries main's steps inside stages: a stage with steps can be removed, and a new version refuses steps sent with it.
+	/// dry run, which the new-version description and its E2E rely on, and words every note the stand measured. 1.6.6.204
+	/// is the cut with the steps inside stages (ENG-107646): its stage item takes <c>steps</c> and <c>transitionType</c>
+	/// and its describe reports them; an older package refuses a stage's steps and shows a stage with steps as one without
+	/// them. 1.6.6.208 carries both: a stage with steps can be removed with them, and a new version refuses steps sent
+	/// with it.
 	/// </remarks>
 	public const string MinimumProcessBuilderVersion = "1.6.6.208";
 }
@@ -159,6 +162,12 @@ public sealed record CaseStageEditRequest {
 
 	/// <summary>False for a final stage that ends the case unsuccessfully.</summary>
 	public bool? Successful { get; init; }
+
+	/// <summary>The stage's whole step list as JSON, sent as it is; <see langword="null"/> keeps the steps.</summary>
+	public string Steps { get; init; }
+
+	/// <summary>When the case moves on from the stage by itself; <see langword="null"/> keeps the stored one.</summary>
+	public string TransitionType { get; init; }
 }
 
 /// <summary>
@@ -190,6 +199,13 @@ public sealed class CaseStageEditRequestJsonConverter : JsonConverter<CaseStageE
 		}
 		if (value.Successful.HasValue) {
 			writer.WriteBoolean("successful", value.Successful.Value);
+		}
+		if (value.Steps is not null) {
+			writer.WritePropertyName("steps");
+			writer.WriteRawValue(value.Steps);
+		}
+		if (value.TransitionType is not null) {
+			writer.WriteString("transitionType", value.TransitionType);
 		}
 		writer.WriteEndObject();
 	}
@@ -335,6 +351,14 @@ public sealed class DynamicCaseDiff {
 	/// <summary>The case filter change in words, when there is one; <c>none</c> for no filter.</summary>
 	[JsonPropertyName("filter")]
 	public DynamicCaseStageChange Filter { get; init; }
+
+	/// <summary>The steps the change adds, removes or changes, as the package lists them; absent when none.</summary>
+	[JsonPropertyName("steps")]
+	public JsonElement? Steps { get; init; }
+
+	/// <summary>The stages whose transitionType changes; absent when none.</summary>
+	[JsonPropertyName("transitionTypes")]
+	public List<DynamicCaseStageChange> TransitionTypes { get; init; }
 }
 
 /// <summary>Running cases that sit in one stage.</summary>

@@ -463,6 +463,104 @@ public sealed class CreateDynamicCaseToolE2ETests {
 	}
 
 	[Test]
+	[Description("Steps inside a stage (ENG-107646): a dry run with a stage's steps and transitionType answers planned and writes nothing; the write stores two Perform task steps, the second after the first and with a hint, and the stage's transitionType, read back by describe-dynamic-case; the same call again, hint included, answers unchanged, and so does the stage's steps sent back as describe returns them.")]
+	[AllureName("modify-dynamic-case plans, writes and describes the steps of a stage")]
+	public async Task ModifyDynamicCase_ShouldPlanThenWriteTheStepsOfAStage() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync(CaseChangePackageVersion);
+		JsonObject? created = null;
+		try {
+			CallToolResult createCall = await CallAsync(context, WithoutBar());
+			IgnoreWhenProcessBuilderIsBehind(ToolText(createCall), MinimumPackageVersion);
+			created = ResultOf(createCall);
+			ShouldHaveLanded(createCall, "the seeded object takes a case");
+			List<string> stored = StageValues(created["case"]!.AsObject());
+			object[] withSteps = WithSteps(stored, stored[1], "afterRequired",
+				Step("Check the order", required: true), Step("Send contract", after: "Check the order", hint: "Attach the price list"));
+
+			// Act
+			CallToolResult dryRun = await ModifyAsync(context, created,
+				new Dictionary<string, object?> { ["stages"] = withSteps, ["dry-run"] = true });
+			JsonObject afterDryRun = await DescribeCaseAsync(context, created);
+			CallToolResult write = await ModifyAsync(context, created, new Dictionary<string, object?> { ["stages"] = withSteps });
+			JsonObject after = await DescribeCaseAsync(context, created);
+			CallToolResult again = await ModifyAsync(context, created, new Dictionary<string, object?> { ["stages"] = withSteps });
+			JsonNode described = StageOf(after, stored[1])["steps"]!.DeepClone();
+			CallToolResult echo = await ModifyAsync(context, created, new Dictionary<string, object?> {
+				["stages"] = WithDescribedSteps(stored, stored[1], described)
+			});
+
+			// Assert
+			IgnoreWhenProcessBuilderIsBehind(ToolText(dryRun), CaseChangePackageVersion);
+			ShouldHaveLanded(dryRun, "a Perform task step is a valid change");
+			Text(ResultOf(dryRun), "outcome").Should().Be("planned", because: "a dry run only plans");
+			StepsOf(StageOf(afterDryRun, stored[1])).Should().BeEmpty(because: "the dry run wrote nothing");
+			ShouldHaveLanded(write, "the planned steps can be written");
+			Text(ResultOf(write), "outcome").Should().Be("modified", because: "the steps were written");
+			JsonObject stage = StageOf(after, stored[1]);
+			Text(stage, "transitionType").Should().Be("afterRequired", because: "the stage moves on after its required steps");
+			List<JsonObject> steps = StepsOf(stage);
+			steps.Select(step => Text(step, "caption")).Should().Equal(["Check the order", "Send contract"],
+				because: "the steps are stored in the order sent");
+			steps.Should().OnlyContain(step => Text(step, "type") == "performTask", because: "both steps are Perform tasks");
+			steps[0]["required"]!.GetValue<bool>().Should().BeTrue(because: "the first step was sent as required");
+			steps[1]["required"]!.GetValue<bool>().Should().BeFalse(because: "a Perform task is optional by default");
+			Text(steps[1], "after").Should().Be("Check the order", because: "the second step waits for the first");
+			Text(steps[1], "hint").Should().Be("Attach the price list", because: "a Perform task's block is written");
+			ShouldHaveLanded(again, "the same call again is a success");
+			Text(ResultOf(again), "outcome").Should().Be("unchanged",
+				because: "the steps are stored as sent, and a block equal to the stored one changes nothing");
+			ShouldHaveLanded(echo, "describe's steps sent back are taken as they are");
+			Text(ResultOf(echo), "outcome").Should().Be("unchanged",
+				because: "what only describe reports is ignored, and every block is what the step stores");
+		} finally {
+			await CleanUpAsync(context, created, null, null, string.Empty);
+		}
+	}
+
+	[Test]
+	[Description("Steps inside a stage (ENG-107646): a change that names another stage's steps leaves the steps of a stage it does not name as they are, and a stage's whole list without a stored step removes that step.")]
+	[AllureName("modify-dynamic-case keeps the steps of a stage it does not name")]
+	public async Task ModifyDynamicCase_ShouldKeepTheStepsOfAStageItDoesNotName() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync(CaseChangePackageVersion);
+		JsonObject? created = null;
+		try {
+			CallToolResult createCall = await CallAsync(context, WithoutBar());
+			IgnoreWhenProcessBuilderIsBehind(ToolText(createCall), MinimumPackageVersion);
+			created = ResultOf(createCall);
+			ShouldHaveLanded(createCall, "the seeded object takes a case");
+			List<string> stored = StageValues(created["case"]!.AsObject());
+			CallToolResult first = await ModifyAsync(context, created, new Dictionary<string, object?> {
+				["stages"] = WithSteps(stored, stored[0], null, Step("Review the order"), Step("Call the client"))
+			});
+			IgnoreWhenProcessBuilderIsBehind(ToolText(first), CaseChangePackageVersion);
+			ShouldHaveLanded(first, "the first stage takes two steps");
+
+			// Act
+			CallToolResult second = await ModifyAsync(context, created, new Dictionary<string, object?> {
+				["stages"] = WithSteps(stored, stored[2], null, Step("Ship it"))
+			});
+			CallToolResult third = await ModifyAsync(context, created, new Dictionary<string, object?> {
+				["stages"] = WithSteps(stored, stored[0], null, Step("Review the order"))
+			});
+			JsonObject after = await DescribeCaseAsync(context, created);
+
+			// Assert
+			ShouldHaveLanded(second, "another stage's steps can be written");
+			ShouldHaveLanded(third, "a step left out of its stage's list is removed");
+			StepsOf(StageOf(after, stored[0])).Select(step => Text(step, "caption")).Should().Equal(["Review the order"],
+				because: "the second call did not name this stage, and the third left one step out");
+			StepsOf(StageOf(after, stored[2])).Select(step => Text(step, "caption")).Should().Equal(["Ship it"],
+				because: "the third call did not name this stage");
+			ResultOf(third)["diff"]!["steps"]!.AsArray().Select(change => Text(change!.AsObject(), "change"))
+				.Should().Equal(["removed"], because: "only the step left out changes");
+		} finally {
+			await CleanUpAsync(context, created, null, null, string.Empty);
+		}
+	}
+
+	[Test]
 	[Description("successful=false on a stage outside the final group is refused as stage-group-invalid with nothing written; grouping the last two stages, the second unsuccessful, stores the group and the flag, read back by describe-dynamic-case from the saved case.")]
 	[AllureName("modify-dynamic-case groups the final stages and refuses an unsuccessful non-final stage")]
 	public async Task ModifyDynamicCase_ShouldGroupTheFinalStages_AndRefuseAnUnsuccessfulNonFinalStage() {
@@ -907,6 +1005,46 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			log[0].Value.Should().NotContain("in the result: show", because: "a dry run without warnings counts none");
 		}
 	}
+
+	/// <summary>A Perform task step item as the package takes it.</summary>
+	private static Dictionary<string, object?> Step(string caption, bool? required = null, string? after = null,
+		string? hint = null) {
+		Dictionary<string, object?> step = new() { ["type"] = "performTask", ["caption"] = caption };
+		if (hint is not null) {
+			step["hint"] = hint;
+		}
+		if (required.HasValue) {
+			step["required"] = required.Value;
+		}
+		if (after is not null) {
+			step["after"] = after;
+		}
+		return step;
+	}
+
+	/// <summary>The stored stages in order, the one named carrying its whole step list and a transition type.</summary>
+	private static object[] WithSteps(List<string> values, string value, string? transitionType,
+		params Dictionary<string, object?>[] steps) =>
+		[.. values.Select<string, object>(stored => {
+			if (stored != value) {
+				return stored;
+			}
+			Dictionary<string, object?> item = new() { ["value"] = stored, ["steps"] = steps };
+			if (transitionType is not null) {
+				item["transitionType"] = transitionType;
+			}
+			return item;
+		})];
+
+	/// <summary>The stage list with <paramref name="value"/> carrying the steps exactly as describe returned them.</summary>
+	private static object[] WithDescribedSteps(List<string> values, string value, JsonNode steps) =>
+		[.. values.Select<string, object>(stored => stored != value
+			? stored
+			: new Dictionary<string, object?> { ["value"] = stored, ["steps"] = steps })];
+
+	/// <summary>A described stage's steps; none when the stage has none.</summary>
+	private static List<JsonObject> StepsOf(JsonObject stage) =>
+		stage["steps"] is JsonArray steps ? [.. steps.Select(step => step!.AsObject())] : [];
 
 	/// <summary>The result document: the one execution-log message that is a JSON object carrying an outcome.</summary>
 	private static JsonObject ResultOf(CallToolResult result) => ResultOf(result, "outcome");

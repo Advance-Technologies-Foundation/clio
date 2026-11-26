@@ -578,14 +578,17 @@ Three consequences worth knowing:
 The same `appendProjection` is returned on a real append save, for the caller who skipped the dry
 run.
 
-`appendProjection` speaks for `viewConfigDiff` only. The sibling `*_DIFF` arrays are merged by
-appending and never lose an entry silently: a non-empty section the stored body has no marker pair
-for is rejected with an error (use `--mode replace`), so they have no loss to report. Handlers are **not**
-covered: they are matched by their top-level `request`, and your handler takes the place of the first
+The operation counts and lists of `appendProjection` speak for `viewConfigDiff` only. The sibling
+`*_DIFF` arrays are merged by appending and never lose an entry silently: a non-empty section the stored
+body has no marker pair for is rejected with an error (use `--mode replace`), so they have no loss to
+report. Handlers are matched by their top-level `request`, and your handler takes the place of the first
 current handler with that `request` — so a current body that carries one `request` twice keeps neither
 copy and your fragment contributes one. Only a fragment that is not a valid JavaScript array falls back
-to matching every `request` in its text, and is appended at the end. Check the handlers section by hand
-when that shape is possible.
+to matching every `request` in its text, and is appended at the end. Either way,
+`appendProjection.removedHandlers` lists each `request` whose current handlers were removed, with
+`removedCount` and `hadDuplicates`. One removed handler is the usual re-save of that handler.
+`hadDuplicates: true` is a real loss: several handlers for one request are legal and all of them run, so
+re-add the ones you still need.
 
 Append requires the **diff form**. A full-config body — the `SCHEMA_VIEW_MODEL_CONFIG` /
 `SCHEMA_MODEL_CONFIG` markers (mobile: top-level `viewModelConfig` / `modelConfig`) instead

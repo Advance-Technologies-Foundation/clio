@@ -79,7 +79,7 @@ public class CreateDynamicCaseTool(
 		 + "outcome created-page-failed keeps the case; page.retry is the exact update-page call. "
 		 + "A case is interpreted: no compile-creatio or restart; open pages of the object need a reload "
 		 + "(F5). Needs a CrtProcessBuilder with case filters (install-process-builder, after "
-		 + "user approval). Steps inside stages are not supported.")]
+		 + "user approval). Steps: add them with modify-dynamic-case.")]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.PerCall,

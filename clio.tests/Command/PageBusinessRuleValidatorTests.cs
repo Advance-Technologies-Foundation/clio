@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json;
 using Clio.Command.BusinessRules;
 using FluentAssertions;
 using NSubstitute;
@@ -132,6 +133,87 @@ public sealed class PageBusinessRuleValidatorTests {
 		act.Should().Throw<ArgumentException>()
 			.WithMessage("Unknown or unsupported datasource-bound page attribute 'MissingAttribute' in rule.condition.conditions[*].leftExpression.path. Available condition attributes: PDS_Name, PDS_Status.",
 				because: "validation errors should help callers choose a supported datasource-bound page attribute");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Explains a rejected page condition attribute with the provider's reason, or as not declared when the provider never saw it, redirects to an entity rule or a page handler, and keeps the candidate list.")]
+	[TestCase("UsrVirtualFlag", "'UsrVirtualFlag' is a virtual view-model attribute.")]
+	[TestCase("UsrMissing", "'UsrMissing' is not declared in bundle.viewModelConfig.attributes.")]
+	[TestCase("PDS.MissingColumn", "'PDS.MissingColumn' is not a readable '<data source>.<column>' path: 'PDS' is not a page data source or page parameter scope, or 'MissingColumn' is not a column or parameter page business rules can read.")]
+	[TestCase("PDS.Account.Owner", "'PDS.Account.Owner' is a lookup path: page business rules read only direct columns of a page data source, never a column of a related object.")]
+	public void Validate_Should_Explain_Rejected_Condition_Attribute(string path, string expectedReason) {
+		// Arrange
+		BusinessRule rule = CreatePageRule(leftPath: path);
+		Dictionary<string, string> rejected = new(StringComparer.Ordinal) {
+			["UsrVirtualFlag"] = "'UsrVirtualFlag' is a virtual view-model attribute."
+		};
+
+		// Act
+		Action act = () => CreateValidator().Validate(
+			rule, CreateAttributeMap(), CreateElementNames(), rejectedAttributes: rejected);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage($"Unknown or unsupported datasource-bound page attribute '{path}' in rule.condition.conditions[*].leftExpression.path. {expectedReason} {PageBusinessRuleValidator.UnsupportedAttributeRedirect} Available condition attributes: PDS_Name, PDS_Status.",
+				because: "the agent must learn why the attribute is not a condition source and where the condition belongs, instead of falling back to a view-config binding");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the message without a reason or redirect when no rejected-attribute map is supplied.")]
+	public void Validate_Should_Not_Explain_Rejected_Attribute_Without_Rejections() {
+		// Arrange
+		BusinessRule rule = CreatePageRule(leftPath: "UsrVirtualFlag");
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, CreateAttributeMap(), CreateElementNames());
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("Unknown or unsupported datasource-bound page attribute 'UsrVirtualFlag' in rule.condition.conditions[*].leftExpression.path. Available condition attributes: PDS_Name, PDS_Status.",
+				because: "without the provider's rejections there is nothing to explain the attribute by");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects an apply-static-filter action on a page with a redirect to create-entity-business-rules.")]
+	public void Validate_Should_Redirect_Page_Apply_Static_Filter_To_Entity_Rule() {
+		// Arrange
+		BusinessRule rule = new(
+			"Filter owners",
+			new BusinessRuleConditionGroup("AND", []),
+			[new ApplyStaticFilterBusinessRuleAction("UsrOwner", JsonDocument.Parse("{}").RootElement)]);
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, CreateAttributeMap(), CreateElementNames());
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage($"Unsupported rule.actions[*].type 'apply-static-filter'. Supported values: hide-element, show-element, make-editable, make-read-only, make-required, make-optional. {PageBusinessRuleValidator.EntityOnlyLookupFilterRedirect}",
+				because: "Freedom UI page rules have no lookup-filter action, so the agent is sent to the entity rule tool and offered no page elements to retry with");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Redirects an apply-static-filter mixed with a page action to create-entity-business-rules instead of the shared single-action rule.")]
+	public void Validate_Should_Redirect_Apply_Static_Filter_Mixed_With_Page_Action() {
+		// Arrange
+		BusinessRule rule = new(
+			"Filter owners",
+			new BusinessRuleConditionGroup("AND", []),
+			[
+				new MakeRequiredBusinessRuleAction(["NameInput"]),
+				new ApplyStaticFilterBusinessRuleAction("UsrOwner", JsonDocument.Parse("{}").RootElement)
+			]);
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, CreateAttributeMap(), CreateElementNames());
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage($"*{PageBusinessRuleValidator.EntityOnlyLookupFilterRedirect}",
+				because: "the redirect must answer before the shared rule that a lookup filter takes exactly one action");
 	}
 
 	private static BusinessRule CreatePageRule(

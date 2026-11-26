@@ -3373,7 +3373,9 @@ internal static class ToolContractCatalog {
 					.. BusinessRuleConditionValidators(),
 					.. EntityBusinessRuleActionValidators()
 				]),
-			BusinessRuleBatchOutput(),
+			BusinessRuleBatchOutput(
+				"Per-rule outcomes in input order; each item has name, success, ruleName, and error. " +
+				StaticFilterResultFields),
 			CommonErrorContract,
 			[
 			],
@@ -3613,6 +3615,7 @@ internal static class ToolContractCatalog {
 			[
 				"Call get-guidance with name business-rules before calling create-entity-business-rules.",
 				"For an apply-static-filter action, also call get-guidance with name business-rule-filters to load the full filter contract.",
+				"clio runs the filter it builds for an apply-static-filter action on the environment before saving (a one-row count on the target lookup's reference schema). When the server rejects the filter, that rule fails with the server's message and nothing is saved. Otherwise the result's filterMatchCount says how many lookup records the filter keeps, so check it against what the user asked for instead of re-typing the filter for execute-esq; when the filter could not be run (rights, timeout), the rule is saved and the result carries a warning.",
 				"Call get-tool-contract for create-entity-business-rules before building the final payload.",
 				"When any lookup condition or lookup set-values constant is needed, resolve it with odata-read or execute-esq first and use an existing record Id."
 			]);
@@ -3629,7 +3632,7 @@ internal static class ToolContractCatalog {
 					Field(PackageNameFieldName, StringType, "Target package name where the page BusinessRule add-on will be saved."),
 					Field(PageSchemaNameFieldName, StringType, PageSchemaNameWithAliasDescription),
 					Field(SchemaNameFieldName, StringType, SchemaNameAliasDescription),
-					Field(RulesFieldName, ArrayType, "Array of one or more page business-rule definitions saved together in a single batch (one configuration rebuild for the whole array; prefer one call over many). A failed rule does not abort the others. Each item is a rule with caption, one top-level condition group, and one or more page actions. AttributeValue paths must be declared page attribute names from get-page bundle.viewModelConfig.attributes, not datasource paths like PDS.Priority. EITHER side of a condition may be a page attribute (type AttributeValue), a constant (type Const), a system variable (type SysValue with sysValueName such as CurrentDate, CurrentDateTime, CurrentTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles), or a system setting (type SysSetting with sysSettingName set to the setting code, for example DisableEquipmentDelivery; the setting's value type is resolved from the environment, and Binary/SecureText settings are not supported). A common visibility pattern is hiding a control when a Boolean system setting is enabled: SysSetting equal a Const true. For role-based or current-user visibility (e.g. 'show field only for administrators / for the supervisor') put CurrentUserRoles (left) comparisonType contain/not-contain a Const SysAdminUnit role id, or compare CurrentUser/CurrentUserContact/CurrentUserAccount to a Const id — use this instead of a HandleViewModelInitRequest handler. Action items must be page element names from recursive get-page bundle.viewConfig. Lookup constants are supported when supplied as stable GUID strings.")
+					Field(RulesFieldName, ArrayType, "Array of one or more page business-rule definitions saved together in a single batch (one configuration rebuild for the whole array; prefer one call over many). A failed rule does not abort the others. Each item is a rule with caption, one top-level condition group, and one or more page actions. " + PageBusinessRuleContractText.ConditionAttributes + " EITHER side of a condition may be a page attribute (type AttributeValue), a constant (type Const), a system variable (type SysValue with sysValueName such as CurrentDate, CurrentDateTime, CurrentTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles), or a system setting (type SysSetting with sysSettingName set to the setting code, for example DisableEquipmentDelivery; the setting's value type is resolved from the environment, and Binary/SecureText settings are not supported). A common visibility pattern is hiding a control when a Boolean system setting is enabled: SysSetting equal a Const true. For role-based or current-user visibility (e.g. 'show field only for administrators / for the supervisor') put CurrentUserRoles (left) comparisonType contain/not-contain a Const SysAdminUnit role id, or compare CurrentUser/CurrentUserContact/CurrentUserAccount to a Const id — use this instead of a HandleViewModelInitRequest handler. Action items must be page element names from recursive get-page bundle.viewConfig. Lookup constants are supported when supplied as stable GUID strings.")
 				],
 				AnyOf: [
 					new[] { PageSchemaNameFieldName },
@@ -3639,7 +3642,7 @@ internal static class ToolContractCatalog {
 					.. BusinessRuleConditionValidators(),
 					.. PageBusinessRuleActionValidators()
 				]),
-			BusinessRuleBatchOutput(),
+			BusinessRuleBatchOutput(warningsDescription: PageBusinessRuleWarningsDescription),
 			CommonErrorContract,
 			[
 				Alias(ParameterScope, PageSchemaNameFieldName, SchemaNameFieldName, AcceptedStatus,
@@ -3745,8 +3748,8 @@ internal static class ToolContractCatalog {
 			[],
 			[
 				new ToolAntiPattern(
-					"Using datasource paths like PDS.Priority in rule.condition.conditions[*].leftExpression.path.",
-					"Page business rules use declared view-model attribute names from bundle.viewModelConfig.attributes so the generated metadata and triggers match the page runtime.")
+					"Using a virtual view-model attribute, a lookup path (PDS.Account.Owner) or a forward reference in rule.condition.conditions[*].leftExpression.path.",
+					"Page business rules read only direct columns of a page data source, page parameters and component state; the rejection says which kind the path is. Put a data condition in an entity business rule and view-model state in a page handler, never in a view-config binding the Freedom UI Designer can overwrite.")
 			],
 			[
 				"Call get-guidance with name business-rules before calling create-page-business-rules.",
@@ -3781,11 +3784,11 @@ internal static class ToolContractCatalog {
 	private static ToolContractValidator[] PageBusinessRuleActionValidators() =>
 		[
 			new ToolContractValidator("page-attribute", "unsupported-condition-attribute", "rules[*].condition.conditions[*].leftExpression.path",
-				Context: "leftExpression.path accepts: (1) a declared page attribute name from bundle.viewModelConfig.attributes (e.g. PDS_Priority); (2) a data source column NOT surfaced on the page, addressed as '<dataSource>.<column>' (e.g. ContactDS.Account) with data source names from bundle.modelConfig.dataSources; (3) a page parameter, addressed as 'PageParameters.<ParameterName>' (parameter list from bundle.parameters[]); (4) the active step of a named crt.Stepper in the page view config (compare it with a step name): the attribute its activeStep binds when bound to a plain '$Attr' ('$RentalStep' gives 'RentalStep') that the page declares in bundle.viewModelConfig.attributes without a data source, or the generated '<StepperName>_ActiveStep' when activeStep is unbound or a constant step name (a '.' in the stepper name becomes '_', so 'Quote.Stepper' gives 'Quote_Stepper_ActiveStep'); any other activeStep binding (a nested path, a converter, a property binding such as '$Attr:prop', an undeclared attribute or one bound to a record column) gives the stepper no active-step attribute. See guidance business-rules."),
+				Context: "leftExpression.path accepts: (1) a declared page attribute name from bundle.viewModelConfig.attributes (e.g. PDS_Priority); (2) a data source column NOT surfaced on the page, addressed as '<dataSource>.<column>' (e.g. ContactDS.Account) with data source names from bundle.modelConfig.dataSources; (3) a page parameter, addressed as 'PageParameters.<ParameterName>' (parameter list from bundle.parameters[]); (4) the active step of a named crt.Stepper in the page view config (compare it with a step name): the attribute its activeStep binds when bound to a plain '$Attr' ('$RentalStep' gives 'RentalStep') that the page declares in bundle.viewModelConfig.attributes without a data source, or the generated '<StepperName>_ActiveStep' when activeStep is unbound or a constant step name (a '.' in the stepper name becomes '_', so 'Quote.Stepper' gives 'Quote_Stepper_ActiveStep'); any other activeStep binding (a nested path, a converter, a property binding such as '$Attr:prop', an undeclared attribute or one bound to a record column) gives the stepper no active-step attribute. See guidance business-rules." + " " + PageBusinessRuleContractText.RejectedConditionAttributes),
 			new ToolContractValidator("page-attribute", "unsupported-right-attribute", "rules[*].condition.conditions[*].rightExpression.path",
 				Context: "Right-side AttributeValue accepts the same path forms as leftExpression.path (a declared page attribute name, a '<dataSource>.<column>' path, 'PageParameters.<ParameterName>', or a stepper's active step: its bound attribute or '<StepperName>_ActiveStep', a '.' in the stepper name becoming '_') and must resolve to the same data value type as the left attribute."),
 			new ToolContractValidator("enum", "unsupported-action", "rules[*].actions[*].type",
-				Context: $"Supported values: {BusinessRuleConstants.SupportedPageActionTypesDescription}."),
+				Context: $"Supported values: {BusinessRuleConstants.SupportedPageActionTypesDescription}. {PageBusinessRuleValidator.EntityOnlyLookupFilterRedirect}"),
 			new ToolContractValidator("page-element", "unknown-page-element", "rules[*].actions[*].items",
 				Context: "Use any named element from recursive get-page bundle.viewConfig.")
 		];
@@ -3922,7 +3925,8 @@ internal static class ToolContractCatalog {
 					.. EntityBusinessRuleActionValidators()
 				]),
 			BusinessRuleBatchOutput(
-				"Per-rule outcomes in input order; each item has name (the match key), success, ruleName, and error."),
+				"Per-rule outcomes in input order; each item has name (the match key), success, ruleName, and error. " +
+				StaticFilterResultFields),
 			CommonErrorContract,
 			[],
 			[],
@@ -4064,7 +4068,8 @@ internal static class ToolContractCatalog {
 					.. PageBusinessRuleActionValidators()
 				]),
 			BusinessRuleBatchOutput(
-				"Per-rule outcomes in input order; each item has name (the match key), success, ruleName, and error."),
+				"Per-rule outcomes in input order; each item has name (the match key), success, ruleName, and error.",
+				PageBusinessRuleWarningsDescription),
 			CommonErrorContract,
 			[
 				Alias(ParameterScope, PageSchemaNameFieldName, SchemaNameFieldName, AcceptedStatus,
@@ -6293,7 +6298,7 @@ internal static class ToolContractCatalog {
 				Field(CamelCaseSchemaNameFieldName, StringType, "Page schema name."),
 				Field("bodyLength", NumberType, "Saved body length."),
 				Field("dryRun", BooleanType, "Whether the call ran in validation mode."),
-				Field("appendProjection", ObjectType, "What the append merge did (dry run: WOULD do) to viewConfigDiff; absent for `replace`. Counts: `currentOperationCount`, `incomingOperationCount`, `projectedOperationCount`, `addedOperationCount`, `incoming{Model,ViewModel}ConfigDiffOperationCount`. THREE DISTINCT LOSS CHANNELS: `droppedOperations`/`droppedOperationCount` = SERVER-body entries the merge drops (see `mode`), each also a `warnings` entry; `collapsedIncomingOperations`/`collapsedIncomingOperationCount` = entries of YOUR fragment that a later entry in it supersedes, data only, no warning; `viewConfigDiffApplied` = false: the web body lacks the SCHEMA_VIEW_CONFIG_DIFF marker pair, so none is written - use `mode: replace`. `replacedOperations`/`replacedOperationCount` is NOT a loss: the operation keeps your values. Lists are capped; counts are exact. Covers viewConfigDiff ONLY: a non-empty sibling `*_DIFF` section with no stored marker pair, or an all-empty fragment, is rejected (use `mode: replace`). Handlers are NOT covered: the merge drops every current handler whose `request` your fragment carries (a `request` held twice keeps neither)."),
+				Field("appendProjection", ObjectType, "What the append merge did (dry run: WOULD do) to viewConfigDiff; absent for `replace`. Counts: `currentOperationCount`, `incomingOperationCount`, `projectedOperationCount`, `addedOperationCount`, `incoming{Model,ViewModel}ConfigDiffOperationCount`. THREE DISTINCT LOSS CHANNELS: `droppedOperations`/`droppedOperationCount` = SERVER-body entries the merge drops (see `mode`), each also a `warnings` entry; `collapsedIncomingOperations`/`collapsedIncomingOperationCount` = entries of YOUR fragment that a later entry in it supersedes, data only, no warning; `viewConfigDiffApplied` = false: no SCHEMA_VIEW_CONFIG_DIFF marker pair, nothing written - use `mode: replace`. `replacedOperations`/`replacedOperationCount` is NOT a loss. Lists are capped; counts are exact. Covers viewConfigDiff ONLY: a non-empty sibling `*_DIFF` section with no stored marker pair, or an all-empty fragment, is rejected (use `mode: replace`). `removedHandlers`: per `request`, how many CURRENT handlers your fragment replaced (`removedCount`); `hadDuplicates: true` = several chained handlers, all gone - re-add the ones you need."),
 				Field("resourcesRegistered", NumberType, "New resource keys this save added."),
 				Field("resourcesUpdated", NumberType, "Existing keys whose en-US value this save changed."),
 				Field("digest", ObjectType, "Real save: written `components`, `otherSections`, post-save `checksum`; confirm the save from it."),
@@ -7528,8 +7533,20 @@ internal static class ToolContractCatalog {
 			]);
 	}
 
+	private const string StaticFilterResultFields =
+		"An apply-static-filter rule also carries filterMatchCount (how many records of the target lookup its filter " +
+		"matched on the environment) and, when the filter could not be run, warning.";
+
+	private const string PageBusinessRuleWarningsDescription =
+		" A saved item may also carry `warnings` (absent when none): advisory findings, the rule IS saved. "
+		+ "`subsumed` = another rule already applies the same state action to the same elements on a wider condition; "
+		+ "`inverse-redundant` = the rule only undoes another one (negated condition, opposite state action). "
+		+ "Page state rules undo themselves when their condition turns false, so delete the redundant rule unless "
+		+ "the element is read-only, required or hidden by default.";
+
 	private static ToolOutputContract BusinessRuleBatchOutput(string resultsDescription =
-		"Per-rule outcomes in input order; each item has name, success, ruleName, and error.") {
+		"Per-rule outcomes in input order; each item has name, success, ruleName, and error.",
+		string warningsDescription = "") {
 		return new ToolOutputContract(
 			"business-rule-batch-result",
 			null,
@@ -7540,7 +7557,7 @@ internal static class ToolContractCatalog {
 			[
 				Field("succeeded", NumberType, "Number of items that succeeded."),
 				Field("failed", NumberType, "Number of items that failed."),
-				Field(ResultsFieldName, ArrayType, resultsDescription),
+				Field(ResultsFieldName, ArrayType, resultsDescription + warningsDescription),
 				Field(ErrorFieldName, StringType, "Request-level error that prevented the whole batch from running. Note: when the requested environment cannot be resolved (unknown/unreachable), the tool instead returns the standard command-execution envelope (exit-code 1 with execution-log-messages referencing the environment) rather than this batch shape.")
 			]);
 	}

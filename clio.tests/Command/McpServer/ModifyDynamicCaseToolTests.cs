@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Clio.Command;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
@@ -183,17 +184,42 @@ public sealed class ModifyDynamicCaseToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("A stage carrying steps is refused as steps-not-supported and the command is never resolved.")]
-	public void ModifyDynamicCase_ShouldRefuseSteps() {
+	[Description("A stage's steps travel to the package as sent (the package owns their rules), with transitionType; a stage without them keeps its steps.")]
+	public void ModifyDynamicCase_ShouldForwardStepsAndTransitionType() {
 		// Arrange
-		ModifyDynamicCaseArgs args = Args("{" + Identity + ",\"stages\":[{\"value\":\"New\",\"steps\":[]}]}");
+		ModifyDynamicCaseArgs args = Args("{" + Identity + ",\"stages\":[{\"value\":\"New\",\"transitionType\":"
+			+ "\"afterRequired\",\"steps\":[{\"type\":\"performTask\",\"caption\":\"Check\",\"required\":true,"
+			+ "\"future\":1}]},{\"value\":\"Done\"}]}");
 
 		// Act
 		CommandExecutionResult result = _tool.ModifyDynamicCase(args);
 
 		// Assert
-		result.ExitCode.Should().Be(1, because: "a stage with steps cannot be changed yet");
-		TextOf(result).Should().Contain("[steps-not-supported]", because: "the stable code is named");
+		result.ExitCode.Should().Be(0, because: "steps and transitionType are declared stage members");
+		DynamicCaseStageItem stage = _resolved.Captured!.Stages[0];
+		stage.TransitionType.Should().Be("afterRequired", because: "transitionType is forwarded");
+		JsonNode.Parse(stage.Steps!)!.ToJsonString().Should().Be(
+			"[{\"type\":\"performTask\",\"caption\":\"Check\",\"required\":true,\"future\":1}]",
+			because: "the step items reach the package as sent, an undeclared step key included, which the package names");
+		_resolved.Captured.Stages[1].Steps.Should().BeNull(because: "a stage without steps keeps its stored steps");
+		_resolved.Captured.Stages[1].TransitionType.Should().BeNull(because: "an absent transitionType keeps the stored one");
+	}
+
+	[TestCase("{}")]
+	[TestCase("[1]")]
+	[TestCase("\"step\"")]
+	[Category("Unit")]
+	[Description("A stage's steps must be an array of step objects; anything else is refused as invalid-request and the command is never resolved.")]
+	public void ModifyDynamicCase_ShouldRefuseStepsThatAreNotAStepList(string stepsJson) {
+		// Arrange
+		ModifyDynamicCaseArgs args = Args("{" + Identity + ",\"stages\":[{\"value\":\"New\",\"steps\":" + stepsJson + "}]}");
+
+		// Act
+		CommandExecutionResult result = _tool.ModifyDynamicCase(args);
+
+		// Assert
+		result.ExitCode.Should().Be(1, because: "the stage's steps cannot be read as a step list");
+		TextOf(result).Should().Contain("[invalid-request]", because: "the stable code is named");
 		_resolver.DidNotReceiveWithAnyArgs().Resolve<ModifyDynamicCaseCommand>(default!);
 	}
 

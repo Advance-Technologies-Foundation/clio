@@ -30,8 +30,12 @@ namespace Clio.Command.McpServer.Tools;
 /// intentionally NOT migrated by this class — they ship side-by-side. The
 /// linter complements them with AST-precise checks for anti-patterns regexes
 /// cannot reliably express.
+///
+/// The code-quality rules (function length, nested and duplicated helpers, log-only catch blocks,
+/// numeric comparison types, sequential independent awaits, GUID literals) live in
+/// <c>PageBodyAstLinter.Quality.cs</c>.
 /// </summary>
-internal static class PageBodyAstLinter {
+internal static partial class PageBodyAstLinter {
 
 	#region Rule identifiers
 
@@ -89,7 +93,12 @@ internal static class PageBodyAstLinter {
 		}
 		LintFindingBudget budget = new();
 		Visit(ast, default, depth: 0, budget);
-		CheckUndefinedSectionCalls(ast, budget);
+		HashSet<Node> factories = new(NodeReferenceComparer.Instance);
+		CollectFactoryFunctions(ast, factories, depth: 0);
+		HashSet<Node> sections = new(NodeReferenceComparer.Instance);
+		CollectSectionProperties(ast, factories, sections, depth: 0);
+		CheckUndefinedSectionCalls(ast, factories, sections, budget);
+		CheckCodeQuality(sections, budget);
 		budget.AppendSummaries();
 		return budget.Findings;
 	}
@@ -669,7 +678,8 @@ internal static class PageBodyAstLinter {
 	// when it is a direct property of the object the factory returns - see CollectSectionProperties.
 	private static readonly string[] SectionPropertyNames = ["handlers", "converters", "validators"];
 
-	private static void CheckUndefinedSectionCalls(Script ast, LintFindingBudget budget) {
+	private static void CheckUndefinedSectionCalls(Script ast, HashSet<Node> factories, HashSet<Node> sections,
+		LintFindingBudget budget) {
 		//Two roots, not one. Seeding script-level user declarations into the single root the AMD
 		//factory inherits let a helper declared OUTSIDE `define(...)` satisfy a handler call - the
 		//exact shape this rule exists to catch, because Page Designer can keep the handler entry and
@@ -683,11 +693,7 @@ internal static class PageBodyAstLinter {
 		DeclareHoistedNames(ast, scriptScope, depth: 0, strict, atStatementLevel: true,
 			unconditional: true);
 		DeclareBlockNames(ast.Body, scriptScope, depth: 0, assignmentsAlwaysRun: true);
-		HashSet<Node> factories = new(NodeReferenceComparer.Instance);
-		CollectFactoryFunctions(ast, factories, depth: 0);
 		CheckDesignerUnsafeFactoryStatements(factories, budget);
-		HashSet<Node> sections = new(NodeReferenceComparer.Instance);
-		CollectSectionProperties(ast, factories, sections, depth: 0);
 		SectionScanState state = new(globalScope, factories, sections, budget, new UndefinedCallBudget());
 		ScanForUndefinedSectionCalls(ast, scriptScope, insideSection: false, depth: 0, strict,
 			unconditional: true, state);
@@ -772,14 +778,22 @@ internal static class PageBodyAstLinter {
 	}
 
 	private static void CollectReturnedSectionProperties(IFunction function, HashSet<Node> sections) {
-		//An arrow with an expression body - `() => ({ handlers: [...] })` - returns its object literal
-		//without a `return` statement at all, and is a shape Page Designer emits.
+		foreach (ObjectExpression returned in ReturnedObjectLiterals(function)) {
+			AddSectionProperties(returned, sections);
+		}
+	}
+
+	/// <summary>
+	/// The object literals a factory returns from its own top-level block: `return { ... }`, `return schema` after
+	/// `const schema = { ... }`, or an arrow's expression body `() => ({ ... })` (a shape Page Designer emits).
+	/// </summary>
+	internal static IEnumerable<ObjectExpression> ReturnedObjectLiterals(IFunction function) {
 		if (function.Body is ObjectExpression conciseBody) {
-			AddSectionProperties(conciseBody, sections);
-			return;
+			yield return conciseBody;
+			yield break;
 		}
 		if (function.Body is not BlockStatement body) {
-			return;
+			yield break;
 		}
 		foreach (Statement statement in body.Body) {
 			if (statement is not ReturnStatement {Argument: not null} returnStatement) {
@@ -790,7 +804,7 @@ internal static class PageBodyAstLinter {
 					? FindObjectLiteralDeclaration(body, returnedName.Name)
 					: null);
 			if (returned is not null) {
-				AddSectionProperties(returned, sections);
+				yield return returned;
 			}
 		}
 	}
@@ -1023,31 +1037,38 @@ internal static class PageBodyAstLinter {
 	/// `beta` alone; counting `alpha` as declared is what let a later `alpha()` through unchecked.
 	/// </summary>
 	private static void DeclareBindings(Node node, LexicalScope scope, int depth,
-		bool definitelyInitialized) {
+		bool definitelyInitialized) =>
+		VisitBindingNames(node, name => scope.Declare(name, definitelyInitialized), depth);
+
+	/// <summary>
+	/// Every name a binding pattern binds - `a`, `{ a, b: c }` (binds `a` and `c`, never the key `b`),
+	/// `[a, ...b]`, `a = 1` - handed to <paramref name="bind"/> one by one.
+	/// </summary>
+	private static void VisitBindingNames(Node node, Action<string> bind, int depth) {
 		if (node is null || depth > MaxAstDepth) {
 			return;
 		}
 		switch (node) {
 			case Identifier identifier:
-				scope.Declare(identifier.Name, definitelyInitialized);
+				bind(identifier.Name);
 				break;
 			case ObjectPattern objectPattern:
 				foreach (Node property in objectPattern.Properties) {
 					//Property.Value is the binding target; a RestElement carries its own.
-					DeclareBindings(property is Property {Value: not null} keyed ? keyed.Value : property,
-						scope, depth + 1, definitelyInitialized);
+					VisitBindingNames(property is Property {Value: not null} keyed ? keyed.Value : property,
+						bind, depth + 1);
 				}
 				break;
 			case ArrayPattern arrayPattern:
 				foreach (Node element in arrayPattern.Elements) {
-					DeclareBindings(element, scope, depth + 1, definitelyInitialized);
+					VisitBindingNames(element, bind, depth + 1);
 				}
 				break;
 			case AssignmentPattern assignmentPattern:
-				DeclareBindings(assignmentPattern.Left, scope, depth + 1, definitelyInitialized);
+				VisitBindingNames(assignmentPattern.Left, bind, depth + 1);
 				break;
 			case RestElement restElement:
-				DeclareBindings(restElement.Argument, scope, depth + 1, definitelyInitialized);
+				VisitBindingNames(restElement.Argument, bind, depth + 1);
 				break;
 		}
 	}

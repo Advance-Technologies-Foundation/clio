@@ -10,7 +10,7 @@ namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 
 /// <summary>
 /// MCP tool that changes an existing dynamic case (DCM) in place: its stage list, stage groups, captions and colours,
-/// its caption, or whether it is enabled.
+/// the steps inside its stages and when a stage moves on, its caption, or whether it is enabled.
 /// </summary>
 public class ModifyDynamicCaseTool(
 	ModifyDynamicCaseCommand command,
@@ -42,11 +42,13 @@ public class ModifyDynamicCaseTool(
 	/// <summary>The stage item shape named back when an item carries an undeclared key.</summary>
 	internal const string StageShape =
 		"{\"value\": \"<lookup value Id or exact display value>\", \"caption\"?: \"...\", \"color\"?: \"#RRGGBB\", "
-		+ "\"group\"?: \"<parent stage value>\" | null, \"successful\"?: false}";
+		+ "\"group\"?: \"<parent stage value>\" | null, \"successful\"?: false, \"steps\"?: [...], "
+		+ "\"transitionType\"?: \"none\" | \"afterRequired\" | \"afterAll\"}";
 
 	private static readonly string[] StageKeys = [
 		DynamicCaseStageArguments.ValueKey, DynamicCaseStageArguments.CaptionKey, DynamicCaseStageArguments.ColorKey,
-		DynamicCaseStageArguments.GroupKey, DynamicCaseStageArguments.SuccessfulKey
+		DynamicCaseStageArguments.GroupKey, DynamicCaseStageArguments.SuccessfulKey, DynamicCaseStageArguments.StepsKey,
+		DynamicCaseStageArguments.TransitionTypeKey
 	];
 
 	/// <summary>
@@ -76,8 +78,11 @@ public class ModifyDynamicCaseTool(
 		 + "show: running cases (confirm-running-instances), records in a removed stage (confirm-stage-records), a "
 		 + "stage value rename (confirm-value-rename). Every refusal answers outcome refused with a stable errorCode "
 		 + "and writes nothing; the same call again answers unchanged. A case is interpreted: no compile-creatio and "
-		 + $"no restart, but open pages of the object need a reload (F5). Requires CrtProcessBuilder {DynamicCaseChangeRequirement.MinimumProcessBuilderVersion} or later "
-		 + "(install-process-builder, after user approval). Steps inside stages are not supported.")]
+		 + "no restart, but open pages of the object need a reload (F5). A stage item's steps are the WHOLE step list "
+		 + "of that stage (the guide has the step shape) and transitionType says when it moves on by itself; steps "
+		 + "start on real records, so ask the user first. Requires CrtProcessBuilder "
+		 + DynamicCaseChangeRequirement.MinimumProcessBuilderVersion
+		 + " or later (install-process-builder, after user approval).")]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.PerCall,
@@ -206,7 +211,9 @@ public sealed record ModifyDynamicCaseArgs(
 		+ "parent stage's value, a stage of the list in no group itself (one level); \"group\": null takes the stage out "
 		+ "of its group. successful: false for a stage of the final group (the last top-level stage and its members) "
 		+ "that ends the case unsuccessfully. caption renames the stage's lookup value for every record "
-		+ "(a stage shows its value's name), only with confirm-value-rename. Omit to keep the stages.")]
+		+ "(a stage shows its value's name), only with confirm-value-rename. steps: the stage's whole ordered step list "
+		+ "(a stored step left out is removed; omit to keep them); transitionType: none, afterRequired or afterAll. Omit "
+		+ "to keep the stages.")]
 	JsonElement? Stages = null,
 
 	[property: JsonPropertyName("caption")]

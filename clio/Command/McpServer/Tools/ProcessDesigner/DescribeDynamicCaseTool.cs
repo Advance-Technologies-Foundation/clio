@@ -41,7 +41,8 @@ public class DescribeDynamicCaseTool(
 	[McpServerTool(Name = DescribeDynamicCaseToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		 OpenWorld = false),
 	 Description("Reads a dynamic case (DCM). Read-only: one case, or every case of an object. Answers the "
-		 + "stages in order with their groups, the final stages, which stages hold steps, the running cases per stage, "
+		 + "stages in order with their groups, the final stages, each stage's steps and transitionType, the running "
+		 + "cases per stage and per step, "
 		 + "the records per stage (finished cases included), "
 		 + "whether the case is enabled, its filter ({column, values}, {column, empty: true}, or {unreadable: true} for a "
 		 + "designer-built filter clio cannot change), and the object's case settings rows with their filterColumnName, "

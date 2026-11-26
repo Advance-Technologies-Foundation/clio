@@ -687,7 +687,7 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 		string path,
 		string fieldName) {
 		if (!attributeMap.TryGetValue(path, out BusinessRuleAttributeDescriptor? descriptor)) {
-			throw new ArgumentException($"Unknown attribute '{path}' in {fieldName}.");
+			throw new UnknownBusinessRuleAttributeException(path, fieldName);
 		}
 
 		return descriptor;
