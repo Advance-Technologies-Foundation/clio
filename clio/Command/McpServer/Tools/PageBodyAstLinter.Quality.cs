@@ -327,15 +327,17 @@ internal static partial class PageBodyAstLinter {
 	private const string NoReturnOfNext = "calls `next.handle(request)` but no `return` gives its result";
 	private const string ReturnAfterNext =
 		"calls `next.handle(request)` but a `return` reached after that call does not give its result";
+	private const string EndWithoutReturn =
+		"can reach its end without a `return`, which ends the chain on that path without handing the request on";
 	private const string EndAfterNext =
 		"calls `next.handle(request)` but can reach its end after that call without a `return`, which drops the result";
 
 	// Null when the handler hands the request on: it takes `next` (a defaulted parameter counts), its own body (not a
 	// callback inside it) calls `next.handle(...)`, and the result reaches the caller - an arrow's expression body
-	// gives it, or a block body returns it (directly or through a variable assigned from it) and, on every path where
-	// the call may already have run, every `return` gives it and the body does not run off its end. A path that ends
+	// gives it, or a block body returns it (directly or through a variable assigned from it), never runs off its end,
+	// and on every path where the call may already have run every `return` gives it. A `return` (or `throw`) reached
 	// before the call runs is a deliberate stop (`if (child) { return openChild(request, child); }
-	// return next?.handle(request);`).
+	// return next?.handle(request);`); running off the end is not.
 	private static string NextProblem(IFunction handler) {
 		string next = handler.Params.Count > 1 ? handler.Params[1] switch {
 			Identifier identifier => identifier.Name,
@@ -369,37 +371,48 @@ internal static partial class PageBodyAstLinter {
 		}
 		NextPathWalk walk = new(next, fromNext);
 		PathState end = walk.Walk(block, called: false, depth: 0);
-		return walk.Problem ?? (end is {Ends: false, Called: true} ? EndAfterNext : null);
+		return walk.Problem ?? (end.Normal ? (end.Called ? EndAfterNext : EndWithoutReturn) : null);
 	}
 
-	// Where a walk stands after a statement: whether `next.handle(...)` may have run on a path that goes on past it, and
-	// whether every path through it ends in a `return` or a `throw`.
-	internal readonly record struct PathState(bool Called, bool Ends);
+	// Where a walk stands after a statement. `Normal`: some path completes it and goes on to the next statement, and
+	// `Called` says whether `next.handle(...)` may have run on such a path. `Break`: the state of the paths that leave
+	// it through `break` / `continue` (null when none does), which the enclosing switch or loop takes over. A path that
+	// ends in a `return` or a `throw` is in neither.
+	internal readonly record struct PathState(bool Normal, bool Called, bool? Break);
 
 	// Follows a handler body path by path, so a `return` is judged by whether the call may have run before it on its own
-	// path, not by where it is written. A loop body counts as run after itself; a statement past MaxAstDepth is reported.
+	// path, not by where it is written. A switch case starts from the switch's entry and from the case that falls into
+	// it; a loop body counts as run after itself. A statement past MaxAstDepth is reported.
 	private sealed class NextPathWalk(string next, HashSet<string> fromNext) {
 
 		internal string Problem { get; private set; }
 
 		internal PathState Walk(Statement statement, bool called, int depth) {
-			if (Problem is not null || statement is null) {
-				return new PathState(called, Ends: Problem is not null);
+			if (Problem is not null) {
+				return new PathState(false, called, null);
+			}
+			if (statement is null) {
+				return new PathState(true, called, null);
 			}
 			if (depth > MaxAstDepth) {
 				Problem = EndAfterNext;
-				return new PathState(called, Ends: true);
+				return new PathState(false, called, null);
 			}
 			switch (statement) {
 				case ReturnStatement exit:
 					if (!Gives(exit.Argument) && (called || CallsNext(exit.Argument))) {
 						Problem = ReturnAfterNext;
 					}
-					return new PathState(called, Ends: true);
+					return new PathState(false, called, null);
 				case ThrowStatement:
-					return new PathState(called, Ends: true);
+					return new PathState(false, called, null);
+				case BreakStatement or ContinueStatement:
+					return new PathState(false, called, called);
 				case BlockStatement block:
 					return WalkAll(block.Body, called, depth + 1);
+				case LabeledStatement labeled:
+					PathState inner = Walk(labeled.Body, called, depth + 1);
+					return inner.Break is { } broke ? Join(inner with {Break = null}, new PathState(true, broke, null)) : inner;
 				case IfStatement branch:
 					bool afterTest = called || CallsNext(branch.Test);
 					return Join(Walk(branch.Consequent, afterTest, depth + 1), Walk(branch.Alternate, afterTest, depth + 1));
@@ -410,24 +423,23 @@ internal static partial class PageBodyAstLinter {
 				case ForStatement or ForInStatement or ForOfStatement or WhileStatement or DoWhileStatement:
 					bool inLoop = called || CallsNext(statement);
 					Walk(LoopBody(statement), inLoop, depth + 1);
-					return new PathState(inLoop, Ends: false);
+					return new PathState(true, inLoop, null);
 				default:
-					return new PathState(called || CallsNext(statement), Ends: false);
+					return new PathState(true, called || CallsNext(statement), null);
 			}
 		}
 
 		private PathState WalkAll(IEnumerable<Statement> statements, bool called, int depth) {
+			bool? leaving = null;
 			foreach (Statement statement in statements) {
-				if (statement is BreakStatement or ContinueStatement) {
-					return new PathState(called, Ends: false);
-				}
 				PathState state = Walk(statement, called, depth);
-				if (state.Ends) {
-					return state;
+				leaving = Or(leaving, state.Break);
+				if (!state.Normal) {
+					return new PathState(false, called, leaving);
 				}
 				called = state.Called;
 			}
-			return new PathState(called, Ends: false);
+			return new PathState(true, called, leaving);
 		}
 
 		private PathState WalkTry(TryStatement attempt, bool called, int depth) {
@@ -438,28 +450,31 @@ internal static partial class PageBodyAstLinter {
 				return handled;
 			}
 			PathState final = Walk(attempt.Finalizer, mayHaveRun || CallsNext(attempt.Handler?.Body), depth + 1);
-			return final.Ends ? final : new PathState(handled.Called || final.Called, handled.Ends);
+			return final.Normal
+				? new PathState(handled.Normal, handled.Called || final.Called, Or(handled.Break, final.Break))
+				: final;
 		}
 
-		// Each case is walked from the switch's entry; one that does not end goes on past the switch (or falls through,
-		// which ends where the next case ends). Without a `default` a value no case matches goes on past it too.
+		// Cases in order: each starts from the switch's entry, or from the case before it when that one falls through.
+		// A `break`, the last case running off its end and, without a `default`, a value no case matches all leave
+		// the switch.
 		private PathState WalkSwitch(SwitchStatement choice, bool called, int depth) {
 			bool entry = called || CallsNext(choice.Discriminant);
-			bool goesOn = !choice.Cases.Any(c => c.Test is null);
-			bool calledOnward = goesOn && entry;
-			foreach (SwitchCase option in choice.Cases.Where(c => c.Consequent.Count > 0)) {
-				PathState state = WalkAll(option.Consequent, entry, depth + 1);
-				if (!state.Ends) {
-					goesOn = true;
-					calledOnward |= state.Called;
-				}
+			bool? leaving = choice.Cases.Any(c => c.Test is null) ? null : entry;
+			bool? fallsThrough = null;
+			foreach (SwitchCase option in choice.Cases) {
+				PathState state = WalkAll(option.Consequent, entry || fallsThrough == true, depth + 1);
+				leaving = Or(leaving, state.Break);
+				fallsThrough = state.Normal ? state.Called : null;
 			}
-			goesOn |= choice.Cases.Count == 0 || choice.Cases[^1].Consequent.Count == 0;
-			return new PathState(calledOnward || (goesOn && entry), Ends: !goesOn);
+			leaving = Or(leaving, fallsThrough);
+			return leaving is { } onward ? new PathState(true, onward, null) : new PathState(false, entry, null);
 		}
 
 		private static PathState Join(PathState a, PathState b) =>
-			new((!a.Ends && a.Called) || (!b.Ends && b.Called), a.Ends && b.Ends);
+			new(a.Normal || b.Normal, (a.Normal && a.Called) || (b.Normal && b.Called), Or(a.Break, b.Break));
+
+		private static bool? Or(bool? a, bool? b) => a is null ? b : b is null ? a : a.Value || b.Value;
 
 		private static Statement LoopBody(Statement loop) =>
 			loop switch {

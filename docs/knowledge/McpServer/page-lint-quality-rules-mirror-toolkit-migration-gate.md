@@ -26,12 +26,14 @@ A `define` is a page, not a module, when the object its factory returns (directl
 has a view/model config section, or two or more of `handlers` / `converters` / `validators`; a module that
 exports one of those three alone is a shared client module.
 `handler-without-next` follows a block handler path by path. It accepts the handler when some `return`
-gives the result of `next.handle(request)` and, on every path where that call may already have run, every
-`return` gives the result and the body does not run off its end. A path that ends before the call runs is
-a deliberate stop (`if (child) { return openChild(request, child); } return next?.handle(request);`),
-whichever branch it is written in; inside a loop the call counts as run for the whole body. Both sides
-report the same three cases: no `return` gives the result, a `return` reached after the call does not
-give it, and the body can reach its end after the call without a `return`.
+gives the result of `next.handle(request)`, the body never runs off its end, and on every path where that
+call may already have run every `return` gives the result. A `return` (or `throw`) reached before the call
+runs is a deliberate stop (`if (child) { return openChild(request, child); } return next?.handle(request);`),
+whichever branch it is written in; a path that runs off the end is not (a forgotten `else`). A switch case
+starts from the switch's entry and from the case that falls into it; `break` leaves the switch or loop;
+inside a loop the call counts as run for the whole body. Both sides word the findings the same: no
+`return` gives the result, a `return` reached after the call does not give it, and the body can reach its
+end without a `return` (before or after the call).
 Nothing shares code between the two: the toolkit engine parses the built page itself with its own
 vendored acorn.
 

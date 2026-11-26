@@ -152,6 +152,22 @@ internal class ClientUnitSchemaUpdateCommandTests : BaseCommandTests<ClientUnitS
 		(_saveRequestBody is not null).Should().Be(!dryRun, because: "the lint changes nothing about whether the body is saved");
 	}
 
+	[TestCase(true)]
+	[TestCase(false)]
+	[Description("The MCP response (System.Text.Json) carries `warnings` only when there are findings.")]
+	public void ClientUnitSchemaUpdateResponse_ShouldSerializeWarnings_OnlyWhenPresent(bool withWarnings) {
+		// Arrange
+		var response = new ClientUnitSchemaUpdateResponse {
+			Success = true, SchemaName = "UsrHelper", Warnings = withWarnings ? ["numeric-comparison-type: line 20"] : null
+		};
+
+		// Act
+		string json = System.Text.Json.JsonSerializer.Serialize(response);
+
+		// Assert
+		json.Contains("\"warnings\"").Should().Be(withWarnings, because: "the key is omitted when there is nothing to report");
+	}
+
 	[TestCase("define('new');")]
 	[TestCase("define(\"UsrHelper\", [], function() { return { save: function() { return 1; } }; });")]
 	[TestCase("Terrasoft.configuration.Structures.UsrHelper = {};")]
