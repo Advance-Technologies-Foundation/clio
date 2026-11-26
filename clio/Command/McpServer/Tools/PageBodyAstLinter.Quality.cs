@@ -310,8 +310,10 @@ internal static partial class PageBodyAstLinter {
 
 	// Null when the handler hands the request on: it takes `next` (a defaulted parameter counts), its own body (not a
 	// callback inside it) calls `next.handle(...)`, and the result reaches the caller - an arrow's expression body
-	// gives it, or a block body returns it (directly or through a variable assigned from it) and never runs off its
-	// end. Another `return` of the block is a deliberate stop on that path (`if (child) { return openChild(); }`).
+	// gives it, or a block body returns it (directly or through a variable assigned from it), every `return` written
+	// after the first `next.handle(...)` call gives it too, and the body never runs off its end. A `return` written
+	// before that call is a deliberate stop, taken before the request is handed on
+	// (`if (child) { return openChild(request, child); } return next?.handle(request);`).
 	private static string NextProblem(IFunction handler) {
 		string next = handler.Params.Count > 1 ? handler.Params[1] switch {
 			Identifier identifier => identifier.Name,
@@ -323,7 +325,8 @@ internal static partial class PageBodyAstLinter {
 		}
 		List<Node> own = new();
 		CollectOwnNodes((Node)handler.Body, own, depth: 0);
-		if (!own.Any(node => IsNextHandleCall(node, next))) {
+		Node firstNextCall = own.Where(node => IsNextHandleCall(node, next)).MinBy(node => node.Start);
+		if (firstNextCall is null) {
 			return "never calls `next.handle(request)`";
 		}
 		HashSet<string> fromNext = new(StringComparer.Ordinal);
@@ -340,8 +343,13 @@ internal static partial class PageBodyAstLinter {
 		if (handler.Body is not BlockStatement block) {
 			return GivesNextResult((Node)handler.Body, next, fromNext, depth: 0) ? null : NoReturnOfNext;
 		}
-		if (!own.OfType<ReturnStatement>().Any(r => r.Argument is not null && GivesNextResult(r.Argument, next, fromNext, depth: 0))) {
+		List<ReturnStatement> returns = own.OfType<ReturnStatement>().ToList();
+		bool Gives(ReturnStatement r) => r.Argument is not null && GivesNextResult(r.Argument, next, fromNext, depth: 0);
+		if (!returns.Any(Gives)) {
 			return NoReturnOfNext;
+		}
+		if (returns.Any(r => r.Start > firstNextCall.Start && !Gives(r))) {
+			return "calls `next.handle(request)` but a `return` after that call does not give its result";
 		}
 		return EndsInReturn(block, depth: 0) ? null
 			: "calls `next.handle(request)` but can reach its end without a `return`, which drops the result on that path";

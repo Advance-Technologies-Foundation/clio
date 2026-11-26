@@ -455,6 +455,8 @@ internal class PageBodyAstLinterQualityTests {
 	[TestCase("async (request, next) => { next.handle(request); if (request.value) { return true; } return false; }", "no `return` gives its result")]
 	[TestCase("async (request, next) => next.handle(request) && true", "no `return` gives its result")]
 	[TestCase("async (request, next) => { if (request.value) { return next?.handle(request); } }", "can reach its end without a `return`")]
+	[TestCase("async (request, next) => { const r = await next.handle(request); if (r) { return; } return r; }", "a `return` after that call does not give its result")]
+	[TestCase("async (request, next) => { const r = await next.handle(request); if (!r) { return false; } return r; }", "a `return` after that call does not give its result")]
 	[TestCase("async (request, next) => { switch (request.mode) { case \"a\": return next.handle(request); } }", "can reach its end without a `return`")]
 	[Description("A handler that takes no `next`, never calls `next.handle` in its own body, or drops that call's result raises a warning that says which")]
 	public void Lint_ShouldWarnHandlerWithoutNext_WhenNextIsNeverUsed(string handler, string problem) {
