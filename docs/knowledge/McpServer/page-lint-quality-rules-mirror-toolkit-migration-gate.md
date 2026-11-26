@@ -14,7 +14,8 @@ functions, 2 sequential independent awaits) also exist, under the same ids and w
 the `classic-to-freedom-migration` engine of `creatio-ai-app-development-toolkit`. There they are a
 BLOCKING `--verify` gate on the pages the migration builds; here they are save-time warnings only.
 Both sides also lint the client modules a page imports (`TryLintClientModule`, reached through
-`validate-page` with a module body) with the single-node and per-function rules: function length,
+`validate-page` with a module body and on every `update-client-unit-schema` save, which returns the
+findings as `warnings`) with the single-node and per-function rules: function length,
 log-only catches, bare numeric `comparisonType`, sequential independent loads and record ids. A record id
 held by a module's `const` data declaration (a literal, an object or array literal, `Object.freeze` of one)
 is the named constant the rule asks for and is not reported; one used in module code is. The toolkit
@@ -24,6 +25,10 @@ rules driven by a page's `handlers` section (`handler-too-many-nested-functions`
 A `define` is a page, not a module, when the object its factory returns (directly or through a `const`)
 has a view/model config section, or two or more of `handlers` / `converters` / `validators`; a module that
 exports one of those three alone is a shared client module.
+`handler-without-next` accepts a block handler that returns the result of `next.handle(request)` on at
+least one path and never runs off its end: any other `return` is a deliberate stop on its own path
+(`if (child) { return openChild(request, child); } return next?.handle(request);`). Both sides report
+"no `return` gives its result" and "can reach its end without a `return`" with the same wording.
 Nothing shares code between the two: the toolkit engine parses the built page itself with its own
 vendored acorn.
 

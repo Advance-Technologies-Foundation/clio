@@ -1,6 +1,10 @@
 namespace Clio.Command;
 
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using Acornima.Ast;
+using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using CommandLine;
 using Newtonsoft.Json;
@@ -78,8 +82,9 @@ public class ClientUnitSchemaUpdateCommand : Command<ClientUnitSchemaUpdateOptio
 			if (!TryResolveSchemaUId(options.SchemaName, out string schemaUId, out response)) {
 				return false;
 			}
+			List<string> warnings = ClientModuleLintWarnings(options.Body);
 			if (options.DryRun) {
-				response = CreateSuccessResponse(options, dryRun: true);
+				response = CreateSuccessResponse(options, dryRun: true, warnings);
 				return true;
 			}
 			if (!TryLoadSchemaForSave(options.SchemaName, schemaUId, out JObject schemaToSave, out response)) {
@@ -89,7 +94,7 @@ public class ClientUnitSchemaUpdateCommand : Command<ClientUnitSchemaUpdateOptio
 			if (!TrySaveSchema(schemaToSave, out response)) {
 				return false;
 			}
-			response = CreateSuccessResponse(options, dryRun: false);
+			response = CreateSuccessResponse(options, dryRun: false, warnings);
 			return true;
 		}
 		catch (Exception ex) {
@@ -186,14 +191,31 @@ public class ClientUnitSchemaUpdateCommand : Command<ClientUnitSchemaUpdateOptio
 		return false;
 	}
 
+	/// <summary>
+	/// The code-quality warnings of a client-module body (<c>define("Name", [deps], function(...) { ... })</c>), formatted
+	/// the way a page save returns them, so a module saved through this command is linted like the page that imports
+	/// it. Null when the body is not a client module (or does not parse) or breaks no rule; the lint never blocks the
+	/// save.
+	/// </summary>
+	internal static List<string> ClientModuleLintWarnings(string body) {
+		if (!PageBodySyntaxValidator.ValidateAndParse(body, out Script ast).IsValid
+			|| !PageBodyAstLinter.TryLintClientModule(ast, out IReadOnlyList<PageBodyLintFinding> findings)
+			|| findings.Count == 0) {
+			return null;
+		}
+		return findings.Select(PageBodyAstLinter.FormatFinding).ToList();
+	}
+
 	private static ClientUnitSchemaUpdateResponse CreateSuccessResponse(
 		ClientUnitSchemaUpdateOptions options,
-		bool dryRun) {
+		bool dryRun,
+		List<string> warnings) {
 		return new ClientUnitSchemaUpdateResponse {
 			Success = true,
 			SchemaName = options.SchemaName,
 			BodyLength = options.Body.Length,
-			DryRun = dryRun
+			DryRun = dryRun,
+			Warnings = warnings
 		};
 	}
 }
@@ -220,4 +242,13 @@ public sealed class ClientUnitSchemaUpdateResponse {
 	[JsonProperty("error")]
 	[System.Text.Json.Serialization.JsonPropertyName("error")]
 	public string Error { get; set; }
+
+	/// <summary>
+	/// Code-quality warnings of a client-module body (the module lint of <c>validate-page</c>). They never block the
+	/// save; omitted when there are none or the body is not a client module.
+	/// </summary>
+	[JsonProperty("warnings", NullValueHandling = NullValueHandling.Ignore)]
+	[System.Text.Json.Serialization.JsonPropertyName("warnings")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public List<string> Warnings { get; set; }
 }

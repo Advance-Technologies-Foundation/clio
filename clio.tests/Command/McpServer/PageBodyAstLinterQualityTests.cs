@@ -450,12 +450,12 @@ internal class PageBodyAstLinterQualityTests {
 	[TestCase("async (request, next) => { await request.$context.set(\"A\", 1); }", "never calls `next.handle(request)`")]
 	[TestCase("async (request, next) => { return helper(request, next); }", "never calls `next.handle(request)`")]
 	[TestCase("async (request, next) => { [1].forEach(() => next.handle(request)); return true; }", "never calls `next.handle(request)`")]
-	[TestCase("async (request, next) => { await next?.handle(request); }", "does not return its result")]
-	[TestCase("async (request, next) => { const result = await next?.handle(request); return true; }", "does not return its result")]
-	[TestCase("async (request, next) => { if (!request.value) { return; } return next?.handle(request); }", "does not return its result")]
-	[TestCase("async (request, next) => { if (request.value) { return true; } return next?.handle(request); }", "does not return its result")]
-	[TestCase("async (request, next) => { if (request.value) { return next?.handle(request); } }", "does not return its result")]
-	[TestCase("async (request, next) => { switch (request.mode) { case \"a\": return next.handle(request); } }", "does not return its result")]
+	[TestCase("async (request, next) => { await next?.handle(request); }", "no `return` gives its result")]
+	[TestCase("async (request, next) => { const result = await next?.handle(request); return true; }", "no `return` gives its result")]
+	[TestCase("async (request, next) => { next.handle(request); if (request.value) { return true; } return false; }", "no `return` gives its result")]
+	[TestCase("async (request, next) => next.handle(request) && true", "no `return` gives its result")]
+	[TestCase("async (request, next) => { if (request.value) { return next?.handle(request); } }", "can reach its end without a `return`")]
+	[TestCase("async (request, next) => { switch (request.mode) { case \"a\": return next.handle(request); } }", "can reach its end without a `return`")]
 	[Description("A handler that takes no `next`, never calls `next.handle` in its own body, or drops that call's result raises a warning that says which")]
 	public void Lint_ShouldWarnHandlerWithoutNext_WhenNextIsNeverUsed(string handler, string problem) {
 		// Arrange
@@ -482,7 +482,11 @@ internal class PageBodyAstLinterQualityTests {
 	[TestCase("async (request, next) => { return next.handle(request).then((result) => result); }")]
 	[TestCase("async (request, chain) => { return chain?.handle(request); }")]
 	[TestCase("async (request, next) => { let result; result = await next.handle(request); return result; }")]
-	[Description("A handler that returns `next.handle(request)`, directly or through a variable assigned from it, keeps the chain and raises no warning")]
+	[TestCase("async (request, next) => { if (!request.value) { return; } return next?.handle(request); }")]
+	[TestCase("async (request, next) => { if (request.value) { return true; } return next?.handle(request); }")]
+	[TestCase("async (request, next) => { const child = page.childOf(request); if (child) { return page.openChild(request, child); } return next?.handle(request); }")]
+	[TestCase("async (request, next) => { if (request.value) { return page.open(request); } else { return next?.handle(request); } }")]
+	[Description("A handler that returns `next.handle(request)`, directly or through a variable assigned from it, keeps the chain and raises no warning; another return on an early path is a deliberate stop")]
 	public void Lint_ShouldNotWarnHandlerWithoutNext_WhenNextIsUsed(string handler) {
 		// Arrange
 		string body = Page("[{ request: \"crt.HandleViewModelAttributeChangeRequest\", handler: " + handler + " }]");
@@ -667,6 +671,33 @@ internal class PageBodyAstLinterQualityTests {
 		findings.Should().ContainSingle(because: "only the Post button handler drops the chain");
 		findings[0].Message.Should().Contain("`usr.DemoPostButtonClicked`", because: "the warning names the request");
 	}
+
+	[TestCase("UsrDemoV3App_FormPage.js")]
+	[TestCase("UsrDemoV3App_ListPage.js")]
+	[Description("The v3 benchmark pages' UpdateRecordRequest handlers, which stop the chain on purpose on one path and return next.handle(request) on every other, are not reported")]
+	public void Lint_ShouldNotReportBenchmarkV3EarlyReturnHandlers(string fixture) {
+		// Act
+		List<PageBodyLintFinding> findings = Findings(FixtureV3(fixture), PageBodyAstLinter.RuleHandlerWithoutNext);
+
+		// Assert
+		findings.Should().BeEmpty(because: "an early return that opens the record's own page is a deliberate stop, not a lost result");
+	}
+
+	[Test]
+	[Description("The v3 benchmark module saved with a bare numeric comparisonType carries the finding the module lint reports")]
+	public void LintClientModule_ShouldReportBenchmarkV3ModuleFindings() {
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintModule(FixtureV3("UsrDemoV3App_ReturnNoteFormPageModule.js"));
+
+		// Assert
+		findings.Should().ContainSingle(f => f.Rule == PageBodyAstLinter.RuleNumericComparisonType,
+			because: "the filter in markPosted uses a bare `comparisonType: 3`");
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleCatchLogOnly,
+			because: "both catches return a fallback value");
+	}
+
+	private static string FixtureV3(string name) =>
+		System.IO.File.ReadAllText(System.IO.Path.Combine(TestContext.CurrentContext.TestDirectory, "Examples", "PageLintV3", name));
 
 	#endregion
 

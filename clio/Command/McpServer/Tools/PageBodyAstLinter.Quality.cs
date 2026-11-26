@@ -306,10 +306,12 @@ internal static partial class PageBodyAstLinter {
 				+ "chain is the point.");
 	}
 
+	private const string NoReturnOfNext = "calls `next.handle(request)` but no `return` gives its result";
+
 	// Null when the handler hands the request on: it takes `next` (a defaulted parameter counts), its own body (not a
 	// callback inside it) calls `next.handle(...)`, and the result reaches the caller - an arrow's expression body
-	// gives it, or every `return` of a block body does (directly or through a variable assigned from it) and the body
-	// does not run off its end.
+	// gives it, or a block body returns it (directly or through a variable assigned from it) and never runs off its
+	// end. Another `return` of the block is a deliberate stop on that path (`if (child) { return openChild(); }`).
 	private static string NextProblem(IFunction handler) {
 		string next = handler.Params.Count > 1 ? handler.Params[1] switch {
 			Identifier identifier => identifier.Name,
@@ -335,12 +337,14 @@ internal static partial class PageBodyAstLinter {
 					break;
 			}
 		}
-		bool returned = handler.Body switch {
-			BlockStatement block => EndsInReturn(block, depth: 0)
-				&& own.OfType<ReturnStatement>().All(r => r.Argument is not null && GivesNextResult(r.Argument, next, fromNext, depth: 0)),
-			Node expressionBody => GivesNextResult(expressionBody, next, fromNext, depth: 0)
-		};
-		return returned ? null : "calls `next.handle(request)` but does not return its result";
+		if (handler.Body is not BlockStatement block) {
+			return GivesNextResult((Node)handler.Body, next, fromNext, depth: 0) ? null : NoReturnOfNext;
+		}
+		if (!own.OfType<ReturnStatement>().Any(r => r.Argument is not null && GivesNextResult(r.Argument, next, fromNext, depth: 0))) {
+			return NoReturnOfNext;
+		}
+		return EndsInReturn(block, depth: 0) ? null
+			: "calls `next.handle(request)` but can reach its end without a `return`, which drops the result on that path";
 	}
 
 	// Every path through the statement ends in a `return` or a `throw`.
