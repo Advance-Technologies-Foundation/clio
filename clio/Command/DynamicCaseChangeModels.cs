@@ -36,6 +36,9 @@ public static class DynamicCaseChangeRequirement {
 	/// and its describe reports them; an older package refuses a stage's steps and shows a stage with steps as one without
 	/// them. 1.6.6.208 carries both: a stage with steps can be removed with them, and a new version refuses steps sent
 	/// with it. 1.6.6.209 also drops what a removed stage's steps leave in the version (transitions, mappings).
+	/// A step's <c>conditions</c> (ENG-107647) arrived on <c>main</c> in 1.6.6.206: an older package refuses a step's
+	/// conditions, and its describe would show a step with conditions as one without them. 1.6.6.209 does not carry
+	/// them, so the re-cut that carries the versions and the conditions together raises the floor above it.
 	/// </remarks>
 	public const string MinimumProcessBuilderVersion = "1.6.6.209";
 }
