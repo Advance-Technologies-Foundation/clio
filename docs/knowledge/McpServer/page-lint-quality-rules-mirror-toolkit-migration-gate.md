@@ -13,7 +13,7 @@ date: 2026-11-25
 functions, 2 sequential independent awaits) also exist, under the same ids and with the same numbers, in
 the `classic-to-freedom-migration` engine of `creatio-ai-app-development-toolkit`. There they are a
 BLOCKING `--verify` gate on the pages the migration builds; here they are save-time warnings only.
-Both sides also lint the client modules a page imports (`LintClientModule`, reached through
+Both sides also lint the client modules a page imports (`TryLintClientModule`, reached through
 `validate-page` with a module body) with the single-node and per-function rules: function length,
 log-only catches, bare numeric `comparisonType`, sequential independent loads and record ids. A record id
 held by a module's `const` data declaration (a literal, an object or array literal, `Object.freeze` of one)

@@ -9,7 +9,7 @@ namespace Clio.Command.McpServer.Tools;
 /// <summary>
 /// Code-quality rules of the page-body lint pass. They read the page-schema sections (<c>handlers</c>,
 /// <c>converters</c>, <c>validators</c>) of the object the page factory returns, and - through
-/// <see cref="LintClientModule"/> - a client module's body, where a page's logic lives (validate-page lints one module
+/// <see cref="TryLintClientModule"/> - a client module's body, where a page's logic lives (validate-page lints one module
 /// body per call; the toolkit gate follows a page's imports to every module). Every one of them is a
 /// <see cref="LintSeverity.Warning"/>: the page works, it is just hard to maintain.
 ///
@@ -74,17 +74,20 @@ internal static partial class PageBodyAstLinter {
 	/// apply outside a page section: function length, log-only catch blocks, bare numeric comparison types and
 	/// sequential independent loads, and record ids. A record id held by a `const` whose value is data (a literal, an
 	/// object or array literal, or <c>Object.freeze(...)</c> of one) is not reported: that is the named constant the
-	/// rule asks for. Returns null when the script is not a client module, so the caller can lint it as a page instead.
+	/// rule asks for. Returns false, with no findings, when the script is not a client module, so the caller can lint it
+	/// as a page instead.
 	/// </summary>
-	public static IReadOnlyList<PageBodyLintFinding> LintClientModule(Script ast) {
+	public static bool TryLintClientModule(Script ast, out IReadOnlyList<PageBodyLintFinding> findings) {
 		if (ast is null || FindModuleFactory(ast) is not { } factory) {
-			return null;
+			findings = [];
+			return false;
 		}
 		LintFindingBudget budget = new();
 		CheckSectionNode(factory.Body, new QualityScope(IsElementId: false, InModule: true, InConstantData: false), depth: 0, budget);
 		CheckSequentialAwaits(factory.Body, depth: 0, budget);
 		budget.AppendSummaries();
-		return budget.Findings;
+		findings = budget.Findings;
+		return true;
 	}
 
 	// The config sections only a page factory returns. `handlers`, `converters` and `validators` (SectionPropertyNames)
@@ -371,10 +374,8 @@ internal static partial class PageBodyAstLinter {
 			return;
 		}
 		into.Add(node);
-		foreach (Node child in node.ChildNodes) {
-			if (child is not IFunction) {
-				CollectOwnNodes(child, into, depth + 1);
-			}
+		foreach (Node child in node.ChildNodes.Where(child => child is not IFunction)) {
+			CollectOwnNodes(child, into, depth + 1);
 		}
 	}
 
@@ -401,7 +402,7 @@ internal static partial class PageBodyAstLinter {
 	// The expression under `await` and `?.` wrappers; past MaxAstDepth the node is returned as it is.
 	private static Node Unwrap(Node node, int depth) =>
 		depth > MaxAstDepth ? node : node switch {
-			AwaitExpression await => Unwrap(await.Argument, depth + 1),
+			AwaitExpression awaited => Unwrap(awaited.Argument, depth + 1),
 			ChainExpression chain => Unwrap(chain.Expression, depth + 1),
 			_ => node
 		};

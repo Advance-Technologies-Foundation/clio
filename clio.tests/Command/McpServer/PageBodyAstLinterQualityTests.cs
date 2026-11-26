@@ -516,10 +516,16 @@ internal class PageBodyAstLinterQualityTests {
 
 	#region client modules
 
-	private static IReadOnlyList<PageBodyLintFinding> LintModule(string body) {
+	private static bool TryLintModule(string body, out IReadOnlyList<PageBodyLintFinding> findings) {
 		PageBodySyntaxValidationResult result = PageBodySyntaxValidator.ValidateAndParse(body, out Script ast);
 		result.IsValid.Should().BeTrue(because: "module fixtures must be syntactically valid JavaScript");
-		return PageBodyAstLinter.LintClientModule(ast);
+		return PageBodyAstLinter.TryLintClientModule(ast, out findings);
+	}
+
+	private static IReadOnlyList<PageBodyLintFinding> LintModule(string body) {
+		TryLintModule(body, out IReadOnlyList<PageBodyLintFinding> findings).Should().BeTrue(
+			because: "the fixture is a client module");
+		return findings;
 	}
 
 	private static string Module(string code) =>
@@ -566,24 +572,28 @@ internal class PageBodyAstLinterQualityTests {
 	[TestCase("function() { const schema = { viewConfigDiff: [], handlers: [], converters: {}, validators: {} }; return schema; }")]
 	[TestCase("function() { const schema = { modelConfigDiff: [] }; return schema; }")]
 	[Description("A define whose factory returns page sections is a page that lost its markers, not a client module")]
-	public void LintClientModule_ShouldReturnNull_WhenFactoryReturnsPageSections(string factory) {
+	public void TryLintClientModule_ShouldReturnFalse_WhenFactoryReturnsPageSections(string factory) {
 		// Act
-		IReadOnlyList<PageBodyLintFinding> findings = LintModule("define(\"UsrX_FormPage\", [], " + factory + ");");
+		bool isModule = TryLintModule("define(\"UsrX_FormPage\", [], " + factory + ");",
+			out IReadOnlyList<PageBodyLintFinding> findings);
 
 		// Assert
-		findings.Should().BeNull(because: "a page body must be validated as a page, so its missing markers are reported");
+		isModule.Should().BeFalse(because: "a page body must be validated as a page, so its missing markers are reported");
+		findings.Should().NotBeNull().And.BeEmpty(because: "a body that is not a module gets an empty list, never null");
 	}
 
 	[TestCase("function(sdk) { return { handlers: [] }; }")]
 	[TestCase("function(sdk) { const shared = { converters: {} }; return shared; }")]
 	[TestCase("() => ({ validators: {}, format: () => 1 })")]
 	[Description("A module that exports one of handlers / converters / validators and no page config section is a shared client module, not a page")]
-	public void LintClientModule_ShouldLintModule_WhenFactoryExportsOneSharedSection(string factory) {
+	public void TryLintClientModule_ShouldLintModule_WhenFactoryExportsOneSharedSection(string factory) {
 		// Act
-		IReadOnlyList<PageBodyLintFinding> findings = LintModule("define(\"UsrShared_Handlers\", [], " + factory + ");");
+		bool isModule = TryLintModule("define(\"UsrShared_Handlers\", [], " + factory + ");",
+			out IReadOnlyList<PageBodyLintFinding> findings);
 
 		// Assert
-		findings.Should().NotBeNull(because: "sharing handler entries, converters or validators through a module is a valid module");
+		isModule.Should().BeTrue(because: "sharing handler entries, converters or validators through a module is a valid module");
+		findings.Should().BeEmpty(because: "the module breaks no code-quality rule");
 	}
 
 	[TestCase("async function load(model) { return model.load({ filters: { StatusId: \"8dc41780-1234-4000-8000-000000000001\" } }); }")]
@@ -615,12 +625,13 @@ internal class PageBodyAstLinterQualityTests {
 
 	[Test]
 	[Description("A script without a top-level define() is not a client module")]
-	public void LintClientModule_ShouldReturnNull_WhenScriptIsNotAModule() {
+	public void TryLintClientModule_ShouldReturnFalse_WhenScriptIsNotAModule() {
 		// Act
-		IReadOnlyList<PageBodyLintFinding> findings = LintModule("const a = 1;");
+		bool isModule = TryLintModule("const a = 1;", out IReadOnlyList<PageBodyLintFinding> findings);
 
 		// Assert
-		findings.Should().BeNull(because: "the caller lints such a script as a page body instead");
+		isModule.Should().BeFalse(because: "the caller lints such a script as a page body instead");
+		findings.Should().NotBeNull().And.BeEmpty(because: "a body that is not a module gets an empty list, never null");
 	}
 
 	#endregion

@@ -231,7 +231,7 @@ public sealed class PageValidateTool(
 		response = null;
 		if (body.Contains("/**SCHEMA_", StringComparison.Ordinal)
 			|| !PageBodySyntaxValidator.ValidateAndParse(body, out Script ast).IsValid
-			|| PageBodyAstLinter.LintClientModule(ast) is not { } findings) {
+			|| !PageBodyAstLinter.TryLintClientModule(ast, out IReadOnlyList<PageBodyLintFinding> findings)) {
 			return false;
 		}
 		response = new PageValidateResponse {
