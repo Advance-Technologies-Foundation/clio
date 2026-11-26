@@ -36,11 +36,6 @@ public class ModifyDynamicCaseAsNewVersionTool(
 		"{\"environment-name\":\"<env>\",\"case-name\":\"UsrOrderCase\",\"stages\":[\"New\",\"In progress\",\"Done\"],"
 		+ "\"dry-run\":true}";
 
-	private static readonly string[] StageKeys = [
-		DynamicCaseStageArguments.ValueKey, DynamicCaseStageArguments.CaptionKey, DynamicCaseStageArguments.ColorKey,
-		DynamicCaseStageArguments.GroupKey, DynamicCaseStageArguments.SuccessfulKey
-	];
-
 	/// <summary>
 	/// Saves the change as a new version of the case, or plans it on a dry run, on the specified environment.
 	/// </summary>
@@ -65,7 +60,9 @@ public class ModifyDynamicCaseAsNewVersionTool(
 		 + "case-uid, or by entity-schema-name when the object has one case. package-name: where the version is saved; "
 		 + "left out, the active case's package, refused package-name-required when that package does not accept "
 		 + "changes. stages, caption, filter and remove-filter work as on modify-dynamic-case, for the version only; "
-		 + "setting the object's first filter column is refused (not-in-version). A stage caption renames the stage's "
+		 + "setting the object's first filter column is refused (not-in-version). The version copies the active "
+		 + "case's steps as they are: steps or transitionType sent with a stage are refused steps-not-supported; change "
+		 + "them on the version afterwards with modify-dynamic-case. A stage caption renames the stage's "
 		 + "lookup value AT ONCE, for the active case and every record too, not at activation (confirm-value-rename). "
 		 + "Removing a stage that records hold needs confirm-stage-records. Never activates: after the user has "
 		 + "checked the version and said yes, activate it with set-active-dynamic-case-version. Not idempotent: each "
@@ -122,7 +119,10 @@ public class ModifyDynamicCaseAsNewVersionTool(
 				"package-name cannot be empty: leave it out to save the version in the active case's package.",
 				DynamicCaseStageArguments.InvalidRequestCode);
 		}
-		if (!DynamicCaseStageArguments.TryRead(args.Stages ?? default, StageKeys, ModifyDynamicCaseTool.StageShape,
+		// The stage keys of modify-dynamic-case: steps and transitionType travel to the package, whose own
+		// steps-not-supported refusal says what a version does with them, rather than being answered unknown-keys here.
+		if (!DynamicCaseStageArguments.TryRead(args.Stages ?? default, ModifyDynamicCaseTool.StageKeys,
+				ModifyDynamicCaseTool.StageShape,
 				out List<DynamicCaseStageItem> stages, out CommandExecutionResult stagesRefusal)) {
 			return stagesRefusal;
 		}
@@ -214,7 +214,8 @@ public sealed record ModifyDynamicCaseAsNewVersionArgs(
 	[property: JsonPropertyName("stages")]
 	[property: Description("Optional WHOLE desired stage list of the version in order, as on modify-dynamic-case: "
 		+ "an array of {\"value\": \"<lookup value Id or exact display value>\", \"caption\"?, \"color\"?: "
-		+ "\"#RRGGBB\", \"group\"?, \"successful\"?} (a bare string is {\"value\"}). A stage left out is not in the "
+		+ "\"#RRGGBB\", \"group\"?, \"successful\"?} (a bare string is {\"value\"}). steps and transitionType "
+		+ "are refused steps-not-supported: the version copies the active case's steps. A stage left out is not in the "
 		+ "version; a member left out keeps the active case's value. caption renames the stage's lookup value AT "
 		+ "ONCE for every record, only with confirm-value-rename. Omit to keep the stages.")]
 	JsonElement? Stages = null,

@@ -834,6 +834,49 @@ public sealed class CreateDynamicCaseToolE2ETests {
 		}
 	}
 
+	[Test]
+	[Description("A new version copies the active case's steps as they are: steps or a transitionType sent with a stage reach the package through the shared stage keys and are refused steps-not-supported, not unknown-keys, and no version is written.")]
+	[AllureName("modify-dynamic-case-as-new-version refuses steps and transitionType as steps-not-supported")]
+	public async Task DynamicCaseVersion_ShouldRefuseStepsAndTransitionType_AsStepsNotSupported() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync(CaseChangePackageVersion);
+		JsonObject? created = null;
+		try {
+			CallToolResult createCall = await CallAsync(context, WithoutBar());
+			IgnoreWhenProcessBuilderIsBehind(ToolText(createCall), MinimumPackageVersion);
+			created = ResultOf(createCall);
+			ShouldHaveLanded(createCall, "the seeded object takes a case");
+			List<string> stored = StageValues(created["case"]!.AsObject());
+			Dictionary<string, object?> withSteps = new() {
+				["stages"] = WithSteps(stored, stored[0], null, Step("Call the client"))
+			};
+			Dictionary<string, object?> withTransition = new() {
+				["stages"] = stored.Select<string, object>(value => value != stored[0]
+					? value
+					: new Dictionary<string, object?> { ["value"] = value, ["transitionType"] = "afterAll" }).ToArray()
+			};
+
+			// Act
+			CallToolResult stepsCall = await NewVersionAsync(context, created, withSteps, dryRun: false);
+			CallToolResult transitionCall = await NewVersionAsync(context, created, withTransition, dryRun: false);
+			JsonObject afterCalls = await DescribeCaseAsync(context, created);
+
+			// Assert
+			IgnoreWhenProcessBuilderIsBehind(ToolText(stepsCall), CaseChangePackageVersion);
+			ShouldBeRefused(stepsCall, "a version copies the active case's steps as they are");
+			Text(ResultOf(stepsCall), "errorCode").Should().Be("steps-not-supported",
+				because: "the package's own refusal reaches the agent, not a clio unknown-keys answer");
+			Text(ResultOf(stepsCall), "errorMessage").Should().Contain("modify-dynamic-case",
+				because: "the refusal says where the version's steps are changed");
+			ShouldBeRefused(transitionCall, "a version copies the active case's transition types too");
+			Text(ResultOf(transitionCall), "errorCode").Should().Be("steps-not-supported",
+				because: "transitionType is a declared stage key the package answers for itself");
+			afterCalls["versions"].Should().BeNull(because: "a refused call writes no version");
+		} finally {
+			await CleanUpAsync(context, created, null, null, string.Empty);
+		}
+	}
+
 	#region Methods: Arrange and calls
 
 	private static async Task<ProcessDesignerArrangeContext> StartAsync(

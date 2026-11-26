@@ -270,6 +270,46 @@ public sealed class ModifyDynamicCaseAsNewVersionToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("A stage's steps and transitionType are the stage keys of modify-dynamic-case: they reach the command as sent, so the package answers them with its own steps-not-supported refusal instead of clio calling them unknown keys.")]
+	public void ModifyDynamicCaseAsNewVersion_ShouldForwardStepsAndTransitionType_ToThePackage() {
+		// Arrange
+		ModifyDynamicCaseAsNewVersionArgs args = Args("{" + Identity + ",\"stages\":[{\"value\":\"New\","
+			+ "\"steps\":[{\"type\":\"performTask\",\"caption\":\"Call\"}],\"transitionType\":\"afterAll\"},\"Done\"]}");
+
+		// Act
+		CommandExecutionResult result = _tool.ModifyDynamicCaseAsNewVersion(args);
+
+		// Assert
+		result.ExitCode.Should().Be(0, because: "steps and transitionType are declared stage keys, not unknown ones");
+		TextOf(result).Should().NotContain("[unknown-keys]",
+			because: "the package's steps-not-supported refusal is the answer the agent must see");
+		DynamicCaseStageItem stage = _resolved.Captured!.Stages![0];
+		stage.Steps.Should().Contain("\"caption\":\"Call\"", because: "the step list travels to the package as sent");
+		stage.TransitionType.Should().Be("afterAll", because: "the transition type travels to the package as sent");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The description and the stages argument say that a version copies the active case's steps and that steps or transitionType sent with it are refused steps-not-supported.")]
+	public void Description_ShouldSayAVersionCopiesTheSteps() {
+		// Arrange
+		string description = Description();
+		string stages = ParameterDescription("stages");
+
+		// Act
+		string[] texts = [description, stages];
+
+		// Assert
+		foreach (string text in texts) {
+			text.Should().Contain("steps-not-supported",
+				because: "the agent learns before the call that the package refuses steps sent with a version");
+		}
+		description.Should().Contain("change them on the version afterwards with modify-dynamic-case",
+			because: "the description names where the version's steps are changed");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("An undeclared top-level key is refused through the overflow bag, naming the key and the valid keys.")]
 	public void ModifyDynamicCaseAsNewVersion_ShouldRefuseAnUnknownArgument() {
 		// Arrange

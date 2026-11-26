@@ -45,7 +45,9 @@ public class ModifyDynamicCaseTool(
 		+ "\"group\"?: \"<parent stage value>\" | null, \"successful\"?: false, \"steps\"?: [...], "
 		+ "\"transitionType\"?: \"none\" | \"afterRequired\" | \"afterAll\"}";
 
-	private static readonly string[] StageKeys = [
+	/// <summary>The stage item keys modify-dynamic-case declares; modify-dynamic-case-as-new-version reads the same
+	/// list, so a key the package answers for itself (steps, transitionType) is never refused as unknown-keys.</summary>
+	internal static readonly string[] StageKeys = [
 		DynamicCaseStageArguments.ValueKey, DynamicCaseStageArguments.CaptionKey, DynamicCaseStageArguments.ColorKey,
 		DynamicCaseStageArguments.GroupKey, DynamicCaseStageArguments.SuccessfulKey, DynamicCaseStageArguments.StepsKey,
 		DynamicCaseStageArguments.TransitionTypeKey
