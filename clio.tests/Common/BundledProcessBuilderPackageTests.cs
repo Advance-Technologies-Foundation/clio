@@ -72,13 +72,13 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>2b48e07e</c>, the
-	/// compile-marker restamp on the ENG-107648 branch after the second review round of its package PR;
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>04de52de</c>, the
+	/// compile-marker restamp on the ENG-107648 branch after the third review round of its package PR;
 	/// the branch's feature commit <c>f1d8e139</c> sits on <c>main</c> <c>fdde18c4</c>, the ENG-107647 squash that
 	/// <c>main</c> carries as the 1.6.6.206 cut). The cut carries everything 1.6.6.206 carries (the steps inside a case's
 	/// stages, ENG-107646, and their conditions, ENG-107647) plus the other step types and <c>confirmAllRecords</c>
 	/// (ENG-107648). This cut is a SCRIPT cut (<c>rebundle-process-builder.ps1</c>): the script stamped the package
-	/// descriptor to 1.6.6.214 and packed the producing commit with it overlaid, and the stamp was committed after it as
+	/// descriptor to 1.6.6.215 and packed the producing commit with it overlaid, and the stamp was committed after it as
 	/// its child. Whichever package branch lands after this one restamps above it.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
@@ -185,7 +185,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"6EE63DC95FB586BA359F65B487BDAA2D90DDD2D28A8B0887B8163AB3710E3A6B";
+		"793A8BC208A128A7AB32749C2B5238EA0B1B1A70321BFB793F2B6A4982010FDD";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -213,7 +213,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.214";
+	private const string ExpectedArchiveVersion = "1.6.6.215";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
@@ -226,7 +226,7 @@ public class BundledProcessBuilderPackageTests {
 	/// commit, and the version and stamp come from the descriptor restamp the script wrote, committed right after.
 	/// 1.6.6.171 is a hand cut from the stamp commit again, and 1.6.6.172, 1.6.6.173, 1.6.6.179, 1.6.6.180, 1.6.6.184,
 	/// 1.6.6.185 and 1.6.6.186 are script cuts. 1.6.6.188 (<c>7510a0dd</c>), 1.6.6.189 (<c>ddba99a8</c>) and 1.6.6.190 (<c>1f5cc5a4</c>),
-	/// which reached only a test stand, 1.6.6.191, 1.6.6.192, 1.6.6.200, 1.6.6.201, 1.6.6.202, 1.6.6.204, 1.6.6.205, 1.6.6.206 and 1.6.6.212 are script cuts naming the marker restamp; 1.6.6.213 is a script cut naming the review fixes on top of it, and 1.6.6.214 a script cut naming the marker restamp after the second review round. 1.6.6.187 is a hand cut from the stamp commit, re-cut at the same
+	/// which reached only a test stand, 1.6.6.191, 1.6.6.192, 1.6.6.200, 1.6.6.201, 1.6.6.202, 1.6.6.204, 1.6.6.205, 1.6.6.206 and 1.6.6.212 are script cuts naming the marker restamp; 1.6.6.213 is a script cut naming the review fixes on top of it, 1.6.6.214 a script cut naming the marker restamp after the second review round, and 1.6.6.215 one after the third. 1.6.6.187 is a hand cut from the stamp commit, re-cut at the same
 	/// number from the package's restamp <c>632e1f22</c> (after the gate-1 fixes, the noJob and misfire follow-ups,
 	/// the check of kept timers before a modify save or an activation, the gate-3 fixes and the core-reuse changes, stored dates read as the scheduler reads them and the fixes of their review, the leading-zero nW / L-nW refusal, and the second review round (the held-trigger kept-timer check, an echoed once start, the shifted year step); both <c>ModifiedOnUtc</c> values moved). The earlier cuts,
 	/// <c>50784731</c>, <c>b282c77d</c>, <c>a1b02353</c>, <c>7c14a526</c>, <c>24e2dfbb</c>, <c>4f338365</c>, <c>1313a72c</c>, <c>6ed95468</c>, <c>41aa113f</c>, <c>13ab3dc4</c> and <c>e0e6d48c</c>, reached only the author's own test stands.
@@ -237,7 +237,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "2b48e07ed291a3f9e1c6f1faa388a8d51263d24d";
+	private const string ExpectedProducingCommit = "04de52de52ded8e0b990a27ca4fc00f617b15c2d";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -263,7 +263,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1795702578000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1795704689000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -278,7 +278,7 @@ public class BundledProcessBuilderPackageTests {
 	/// fixed, but nothing re-stamps a descriptor written before the fix — so the field with the worst record
 	/// was the only one with no guard.
 	/// </remarks>
-	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1795702562000)/";
+	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1795704670000)/";
 
 	/// <summary>
 	/// The authorization gate inside the shipped package. See

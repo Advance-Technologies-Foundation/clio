@@ -418,6 +418,19 @@ public sealed class ModifyDynamicCaseToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("confirm-all-records, the widest of the consents (rights on every record of an object), tells the agent to leave it out unless the user said yes separately, as the other confirmations do.")]
+	public void ConfirmAllRecords_ShouldBeDescribedAsTheUsersSeparateYesOnly() {
+		// Arrange & Act
+		string description = ParameterDescription("confirm-all-records");
+
+		// Assert
+		description.Should().StartWith("LEAVE IT OUT unless the user said yes, SEPARATELY, to an access-rights step",
+			because: "the flag stands for the user's separate consent, not the agent's");
+		description.Should().Contain("never set it on your own", because: "an agent must not consent for the user");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The tool carries no [FeatureToggle]: it ships enabled like the other process-designer tools.")]
 	public void ModifyDynamicCase_ShouldNotBeFeatureGated() {
 		// Arrange
