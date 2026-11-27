@@ -1010,6 +1010,7 @@ public sealed class DynamicCaseServiceTests {
 		options.ConfirmRunningInstances = true;
 		options.ConfirmStageRecords = true;
 		options.ConfirmValueRename = true;
+		options.ConfirmAllRecords = true;
 
 		// Act
 		_service.Modify(options);
@@ -1019,7 +1020,7 @@ public sealed class DynamicCaseServiceTests {
 			request.CaseName == "UsrOrderCase" && request.EntitySchemaName == null
 			&& request.ValidateOnly && request.ConfirmRunningInstances && request.Enabled == null
 			&& request.ConfirmStageRecords == true && request.ConfirmValueRename == true
-			&& request.Caption == "Order flow"
+			&& request.ConfirmAllRecords == true && request.Caption == "Order flow"
 			&& request.Stages.Count == 2
 			&& request.Stages[0].GroupSent && request.Stages[0].Group == null
 			&& !request.Stages[1].GroupSent && request.Stages[1].Caption == "Closed"
@@ -1039,7 +1040,8 @@ public sealed class DynamicCaseServiceTests {
 
 		// Assert
 		_session.Received(1).Modify(Arg.Is<ModifyCaseRequest>(request =>
-			request.ConfirmStageRecords == null && request.ConfirmValueRename == null));
+			request.ConfirmStageRecords == null && request.ConfirmValueRename == null
+			&& request.ConfirmAllRecords == null));
 	}
 
 	[Test]

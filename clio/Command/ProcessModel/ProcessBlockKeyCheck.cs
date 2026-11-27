@@ -278,7 +278,7 @@ internal static class ProcessBlockKeyCheck {
 		.With(new KeySet("LogActivityDescriptor", "logActivity", "DescribeOpenEditPageLogActivityInfo",
 				"enabled startIn duration remindIn showInCalendar priority", "priorityId")
 			.With("startIn duration remindIn", new KeySet("ActivityIntervalDescriptor", "interval",
-				"DescribeActivityIntervalInfo", "value unit", "period")))
+				"DescribeActivityIntervalInfo", "value expression unit", "period")))
 		.With(new KeySet("OpenEditPageResultsByColumnDescriptor", "resultsByColumn",
 			"DescribeOpenEditPageResultsByColumnInfo", "enabled column", "columnUId"))
 		.With(new KeySet("OpenEditPageCompletionDescriptor", "completion", null, "mode"));

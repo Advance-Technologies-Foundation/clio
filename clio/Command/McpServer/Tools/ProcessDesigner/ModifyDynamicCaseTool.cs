@@ -22,7 +22,7 @@ public class ModifyDynamicCaseTool(
 	/// <summary>The canonical field list echoed back when an unknown argument key is refused.</summary>
 	internal const string ValidArgsHint = "Valid: environment-name, case-name, case-uid, entity-schema-name, stages, "
 		+ "caption, filter, remove-filter, enabled, confirm-running-instances, confirm-stage-records, "
-		+ "confirm-value-rename, dry-run.";
+		+ "confirm-value-rename, confirm-all-records, dry-run.";
 
 	/// <summary>Refusal for a call whose whole argument object is absent.</summary>
 	/// <remarks>
@@ -76,12 +76,14 @@ public class ModifyDynamicCaseTool(
 		 + "(invalid-request on an inactive one). Disabled, its running cases "
 		 + "continue only when no other case of the object is enabled; otherwise they are cancelled at their record's "
 		 + "next change of an enabled case's stage or filter column, and the record then starts the enabled case it "
-		 + "fits, if any. Three writes need the user's yes first, each refused until then with the counts to "
-		 + "show: running cases (confirm-running-instances), records in a removed stage (confirm-stage-records), a "
-		 + "stage value rename (confirm-value-rename). Every refusal answers outcome refused with a stable errorCode "
+		 + "fits, if any. Four writes need the user's yes first, each refused until then with what to show: "
+		 + "running cases (confirm-running-instances), records in a removed stage (confirm-stage-records), a "
+		 + "stage value rename (confirm-value-rename), an access-rights step with no filter, which changes EVERY "
+		 + "record of its object (confirm-all-records, a separate yes). Every refusal answers outcome refused with a stable errorCode "
 		 + "and writes nothing; the same call again answers unchanged. A case is interpreted: no compile-creatio and "
 		 + "no restart, but open pages of the object need a reload (F5). A stage item's steps are the WHOLE step list "
-		 + "of that stage (the guide has the step shape) and transitionType says when it moves on by itself; steps "
+		 + "of that stage (a step type is performTask, approval, openEditPage, subProcess, sendEmail or "
+		 + "changeAccessRights; the guide has each shape) and transitionType says when it moves on by itself; steps "
 		 + "start on real records, so ask the user first. Requires CrtProcessBuilder "
 		 + DynamicCaseChangeRequirement.MinimumProcessBuilderVersion
 		 + " or later (install-process-builder, after user approval).")]
@@ -146,6 +148,7 @@ public class ModifyDynamicCaseTool(
 			ConfirmRunningInstances = args.ConfirmRunningInstances ?? false,
 			ConfirmStageRecords = args.ConfirmStageRecords ?? false,
 			ConfirmValueRename = args.ConfirmValueRename ?? false,
+			ConfirmAllRecords = args.ConfirmAllRecords ?? false,
 			DryRun = args.DryRun ?? false
 		};
 		// A case is interpreted, so the deterministic note can never contradict the response; it rides success only,
@@ -163,7 +166,7 @@ public class ModifyDynamicCaseTool(
 			"environment-name (registered environment)",
 			"case-name, case-uid or entity-schema-name (the case, or its object when the object has one case)",
 			"optional: stages, caption, filter, remove-filter, enabled, confirm-running-instances, "
-				+ "confirm-stage-records, confirm-value-rename, dry-run (see the tool description)"
+				+ "confirm-stage-records, confirm-value-rename, confirm-all-records, dry-run (see the tool description)"
 		],
 		MinimalExample);
 
@@ -216,7 +219,8 @@ public sealed record ModifyDynamicCaseArgs(
 		+ "of its group. successful: false for a stage of the final group (the last top-level stage and its members) "
 		+ "that ends the case unsuccessfully. caption renames the stage's lookup value for every record "
 		+ "(a stage shows its value's name), only with confirm-value-rename. steps: the stage's whole ordered step list "
-		+ "(a stored step left out is removed; omit to keep them); transitionType: none, afterRequired or afterAll. Omit "
+		+ "(type performTask, approval, openEditPage, subProcess, sendEmail or changeAccessRights; a stored step left out "
+		+ "is removed; omit to keep them); transitionType: none, afterRequired or afterAll. Omit "
 		+ "to keep the stages.")]
 	JsonElement? Stages = null,
 
@@ -259,6 +263,12 @@ public sealed record ModifyDynamicCaseArgs(
 		+ "record shares; never set it on your own. Without it a stage caption change is refused "
 		+ "(value-rename-confirmation-required).")]
 	bool? ConfirmValueRename = null,
+
+	[property: JsonPropertyName("confirm-all-records")]
+	[property: Description("LEAVE IT OUT unless the user said yes, SEPARATELY, to an access-rights step with no "
+		+ "filter, which changes the rights on EVERY record of its object each time a record enters the stage; never "
+		+ "set it on your own. Without it such a step is refused (step-acts-on-all-records).")]
+	bool? ConfirmAllRecords = null,
 
 	[property: JsonPropertyName("dry-run")]
 	[property: Description("Run every check and return the planned diff without writing anything; default false.")]

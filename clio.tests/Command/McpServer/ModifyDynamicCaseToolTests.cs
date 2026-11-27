@@ -113,17 +113,18 @@ public sealed class ModifyDynamicCaseToolTests {
 		options.ConfirmRunningInstances.Should().BeFalse(because: "the user's yes is never assumed");
 		options.ConfirmStageRecords.Should().BeFalse(because: "the user's yes is never assumed");
 		options.ConfirmValueRename.Should().BeFalse(because: "the user's yes is never assumed");
+		options.ConfirmAllRecords.Should().BeFalse(because: "the user's yes is never assumed");
 		options.DryRun.Should().BeFalse(because: "a call writes unless it asks for a dry run");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("dry-run, the three confirmations, enabled and caption map onto the options the service sends (dry-run becomes validateOnly there).")]
+	[Description("dry-run, the four confirmations, enabled and caption map onto the options the service sends (dry-run becomes validateOnly there).")]
 	public void ModifyDynamicCase_ShouldMapTheFlags() {
 		// Arrange
 		ModifyDynamicCaseArgs args = Args("{" + Identity
 			+ ",\"dry-run\":true,\"confirm-running-instances\":true,\"confirm-stage-records\":true,"
-			+ "\"confirm-value-rename\":true,\"enabled\":false,\"caption\":\" Orders \"}");
+			+ "\"confirm-value-rename\":true,\"confirm-all-records\":true,\"enabled\":false,\"caption\":\" Orders \"}");
 
 		// Act
 		_tool.ModifyDynamicCase(args);
@@ -133,6 +134,7 @@ public sealed class ModifyDynamicCaseToolTests {
 		_resolved.Captured.ConfirmRunningInstances.Should().BeTrue(because: "the user's yes is passed through");
 		_resolved.Captured.ConfirmStageRecords.Should().BeTrue(because: "the user's yes is passed through");
 		_resolved.Captured.ConfirmValueRename.Should().BeTrue(because: "the user's yes is passed through");
+		_resolved.Captured.ConfirmAllRecords.Should().BeTrue(because: "the user's yes is passed through");
 		_resolved.Captured.Enabled.Should().BeFalse(because: "enabled=false disables the case");
 		_resolved.Captured.Caption.Should().Be("Orders", because: "the caption is forwarded trimmed");
 	}
@@ -392,6 +394,26 @@ public sealed class ModifyDynamicCaseToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The tool description and the stages argument name every step type token the bundled package takes, as one list, so an agent that has not read the guide yet still sends a type the package knows.")]
+	public void Descriptions_ShouldNameEveryStepType() {
+		// Arrange
+		// The whole list, not each token alone: "approval" also occurs in "after user approval", so a per-token check
+		// would pass for the tool description without the list.
+		const string stepTypes = "performTask, approval, openEditPage, subProcess, sendEmail or changeAccessRights";
+
+		// Act
+		string description = Description();
+		string stages = ParameterDescription("stages");
+
+		// Assert
+		description.Should().Contain(stepTypes,
+			because: "the tool description lists the step types, while the guide owns each type's shape");
+		stages.Should().Contain(stepTypes,
+			because: "the stages argument is where a step is written, so it names the type tokens too");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The stages argument says a stored stage left out is removed with its steps and their conditions, and that the removal is refused stage-is-condition-target while a kept step's condition still moves records to it.")]
 	public void Stages_ShouldSayARemovedConditionTargetIsRefused() {
 		// Arrange
@@ -431,6 +453,19 @@ public sealed class ModifyDynamicCaseToolTests {
 		// Assert
 		description.Should().StartWith($"LEAVE IT OUT unless the user said yes to {subject}",
 			because: "the flag stands for the user's consent, not the agent's");
+		description.Should().Contain("never set it on your own", because: "an agent must not consent for the user");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("confirm-all-records, the widest of the consents (rights on every record of an object), tells the agent to leave it out unless the user said yes separately, as the other confirmations do.")]
+	public void ConfirmAllRecords_ShouldBeDescribedAsTheUsersSeparateYesOnly() {
+		// Arrange & Act
+		string description = ParameterDescription("confirm-all-records");
+
+		// Assert
+		description.Should().StartWith("LEAVE IT OUT unless the user said yes, SEPARATELY, to an access-rights step",
+			because: "the flag stands for the user's separate consent, not the agent's");
 		description.Should().Contain("never set it on your own", because: "an agent must not consent for the user");
 	}
 
