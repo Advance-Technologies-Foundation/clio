@@ -1406,6 +1406,13 @@ public class BindingsModule {
 		services.AddTransient<RegenerateIdentitySigningKeyCommand>();
 		services.AddTransient<CheckAuthCodeFlowCommand>();
 		services.AddTransient<RegisterSsoProviderCommand>();
+		services.AddTransient<GetSsoSecurityEventsCommand>();
+		services.AddTransient<EnableSsoSecurityEventsCommand>();
+		services.AddTransient<DisableSsoSecurityEventsCommand>();
+		services.AddTransient<SendSsoSecurityTestEventCommand>();
+		services.AddTransient<SetSsoSecurityEventsAddressCommand>();
+		services.AddTransient<UpdateSsoProviderCommand>();
+		services.AddTransient<RemoveSsoProviderCommand>();
 		services.AddTransient<IMssql, Mssql>();
 		services.AddTransient<IPostgres, Postgres>();
 		services.AddSingleton<CommandHelpCatalog>();

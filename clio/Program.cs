@@ -310,6 +310,13 @@ internal class Program {
 		typeof(RegenerateIdentitySigningKeyOptions),
 		typeof(CheckAuthCodeFlowOptions),
 		typeof(RegisterSsoProviderOptions),
+		typeof(GetSsoSecurityEventsOptions),
+		typeof(EnableSsoSecurityEventsOptions),
+		typeof(DisableSsoSecurityEventsOptions),
+		typeof(SendSsoSecurityTestEventOptions),
+		typeof(SetSsoSecurityEventsAddressOptions),
+		typeof(UpdateSsoProviderOptions),
+		typeof(RemoveSsoProviderOptions),
 		typeof(DeleteDataBindingDbOptions),
 
 
@@ -806,6 +813,13 @@ internal class Program {
 			RegenerateIdentitySigningKeyOptions opts => Resolve<RegenerateIdentitySigningKeyCommand>(opts).Execute(opts),
 			CheckAuthCodeFlowOptions opts => Resolve<CheckAuthCodeFlowCommand>(opts).Execute(opts),
 			RegisterSsoProviderOptions opts => Resolve<RegisterSsoProviderCommand>(opts).Execute(opts),
+			GetSsoSecurityEventsOptions opts => Resolve<GetSsoSecurityEventsCommand>(opts).Execute(opts),
+			EnableSsoSecurityEventsOptions opts => Resolve<EnableSsoSecurityEventsCommand>(opts).Execute(opts),
+			DisableSsoSecurityEventsOptions opts => Resolve<DisableSsoSecurityEventsCommand>(opts).Execute(opts),
+			SendSsoSecurityTestEventOptions opts => Resolve<SendSsoSecurityTestEventCommand>(opts).Execute(opts),
+			SetSsoSecurityEventsAddressOptions opts => Resolve<SetSsoSecurityEventsAddressCommand>(opts).Execute(opts),
+			UpdateSsoProviderOptions opts => Resolve<UpdateSsoProviderCommand>(opts).Execute(opts),
+			RemoveSsoProviderOptions opts => Resolve<RemoveSsoProviderCommand>(opts).Execute(opts),
 			var _ => 1
 		};
 	};

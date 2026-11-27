@@ -1,0 +1,82 @@
+COMMAND TYPE
+    Identity commands
+
+NAME
+    set-sso-security-events-address - change the site address of an SSO provider's security events
+
+DESCRIPTION
+    Stores a new site address for the security events of one SSO provider through
+    SetSiteAddress, for a renamed site. With --move-stream the site first updates its
+    own stream at the provider to the new events address, but only when that stream
+    delivers to the stored address: a stream that delivers elsewhere (a copied site)
+    is never moved (ForeignAddress). A provider that refuses the new address answers
+    SiteAddressRefused with its error code. Nothing is stored in either case.
+
+    Every command of this family posts to one method of the site's settings service
+    SsoSecurityEventsSettingsService (rest/SsoSecurityEventsSettingsService/<Method>,
+    with the 0/ prefix on .NET Framework). The service comes with the
+    SsoSecurityEvents package of Creatio 10.2 and later and needs the CanManageSso
+    system operation. It answers every call with a reason code and never with a
+    failure: the command prints the reason ("none" on success) and exits 0 whatever
+    it is. It exits 1 only when the call itself failed: a refused option, no answer,
+    an answer that is not the service's, or a site without the service (HTTP 404,
+    reported as not supported). Read the reason before acting on the result.
+
+    Text output is one "name: value" line per member the site returned: reason,
+    reasonDetail, oauthError, providerId, isCreated, testResult, streamDeleted,
+    then the state the call left (providerExists, featureEnabled, enabled,
+    siteAddress, siteStatus, streamStatus, lastError, lastTestResult, lastTestOn,
+    changedByOperation, changedOn, isDisablePending). --format json prints the
+    site's whole answer. No answer carries a secret. Text from the site is printed
+    on one line, with anything that looks like a credential removed.
+
+    This command is experimental and hidden by default. Enable it before use:
+        clio experimental --name sso-security-events --enable
+
+    Before the call, clio reads the site's Creatio version and refuses the
+    command on a site below 10.2 with exit code 78 (version-too-old); no request
+    reaches the settings service.
+
+SYNOPSIS
+    set-sso-security-events-address --code <code> --site-address <url> [--move-stream] [options]
+
+OPTIONS
+    --code                              Code of the SSO provider (required)
+                                        Creatio ID is always identity-v3
+
+    --site-address                      New public https address of the site (required)
+
+    --move-stream                       Also move the site's own stream at the provider
+
+    --format                            Output format: text (default) or json
+                                        Default: text
+
+    --timeout                           Request timeout in milliseconds
+                                        Default: 100000
+
+    --uri                   -u          Application uri
+
+    --Password              -p          User password
+
+    --Login                 -l          User login (administrator permission required)
+
+    --Environment           -e          Environment name
+
+    --Maintainer            -m          Maintainer name
+
+    --clientId                          OAuth client id
+
+    --clientSecret                      OAuth client secret
+
+EXAMPLES
+    clio set-sso-security-events-address -e renamed-site --code identity-v3 \
+        --site-address https://new-name.creatio.com --move-stream
+        Store the new address and move the stream to it
+
+RETURN VALUES
+    0       The site answered; read the printed reason code
+    1       The call failed: refused option, no or foreign answer, service not found (404)
+    78      Refused before the call: the site runs Creatio below 10.2, or its version could not be read
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
