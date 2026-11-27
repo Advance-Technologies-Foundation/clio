@@ -50,9 +50,12 @@ public static class DynamicCaseChangeRequirement {
 	/// 1.6.6.218 carries the versions and the other step types together: approval, open edit page, sub-process, send
 	/// email and change access rights in a stage, and <c>confirmAllRecords</c> (ENG-107648); an older package refuses those
 	/// types as not supported and the flag as an unknown key. 1.6.6.212 to 1.6.6.215 were that branch's cuts without the
-	/// versions and before its review rounds, and reached no release.
+	/// versions and before its review rounds, and reached no release. 1.6.6.219 takes a column of the case's record
+	/// (the designer's "Main record") in every step field the designer offers it for - hints, a purpose, a subject, a
+	/// role, a new record's pre-filled values - and links open-page and email steps to the case's record; 1.6.6.218
+	/// reached no release.
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.218";
+	public const string MinimumProcessBuilderVersion = "1.6.6.219";
 }
 
 /// <summary>
