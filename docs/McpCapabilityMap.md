@@ -342,7 +342,7 @@ Nothing in `site-response` is unredacted site text: `message` and `code` are red
 number and `body` one of four fixed words. clio never copies `errorInfo.stackTrace`. A host that shows the
 text may apply its own redaction on top.
 
-**Absent** on success, when no HTTP response exists (timeout, DNS, TLS, connection refused), and when the
+**Absent** on success (except an `odata-create` row clio read back by its sent `Id` and found created, which keeps the failed answer), when no HTTP response exists (timeout, DNS, TLS, connection refused), and when the
 failure is clio's own (validation, a refused precondition). The field is optional, so a caller that ignores it
 sees the same envelope as before.
 
@@ -396,7 +396,9 @@ same object the odata tools already return: `operation`, `entity`, `item-index`,
 and `message` are null: the result's own fields name what failed and why.
 
 `side-effect` is `none` only when clio can prove the call applied nothing on the site. Everything else is
-`unknown`; clio never guesses `none`. The proof needs all three of these:
+`unknown`; clio never guesses `none`. (One exception the other way: an `odata-create` row that clio read back
+by the `Id` it sent and found is a created row, `acknowledged`, though its `site-response` shows the failed
+answer.) The proof needs all three of these:
 
 1. **One write.** The tool sends exactly one write per call (or per batch item), with only reads before it, and
    the tool says so in code. A command that some other tool runs inside a longer sequence proves nothing there,
@@ -422,7 +424,7 @@ and `message` are null: the result's own fields name what failed and why.
 | `update-page`; `sync-pages`, per page | one save (reads before it; cache reset and checksum read only after it succeeds) | `none` when the save is refused without processing |
 | `create-page` | one save (template, catalog and hierarchy reads before it) | `none` when the save is refused without processing |
 | `odata-update` | one PATCH (`$metadata` reads before it) | `none` when the PATCH is refused without processing |
-| `odata-create`, per row | one POST per row, never replayed | `none` (`record-created: false`) when the row is refused without processing or rejected while Creatio reads the body |
+| `odata-create`, per row | one POST per row, never replayed by clio (`$metadata` read before the first one when a row has no `Id`; a read-back GET by clio's `Id` after an unknown answer) | `none` (`record-created: false`) when the row is refused without processing or rejected while Creatio reads the body |
 | `create-business-process` | one BuildProcess | `none` when BuildProcess is refused without processing |
 | `delete-data-binding-db` | one binding delete | `none` when the delete is refused without processing |
 | `compile-creatio` | one build request | `none` when the build request is refused without processing |
@@ -432,6 +434,26 @@ and `message` are null: the result's own fields name what failed and why.
 | `install-application`, `push-workspace`, `install-process-builder` | package upload and backup, then the install request | always `unknown`, even when the install request was refused without processing: the text then says the package was not installed, but the upload had already written |
 | `odata-delete` | a DELETE per id, sent without a body (so the client can repeat it through a 307 or 308 unseen); with `ids`, a refused id sent again in a later pass; with cascade, owned rows first | always `unknown`, on the call and on each item |
 | `sync-schemas`, per operation | the entity-schema and data-binding writes above, with retries for transient faults | always `unknown` |
+
+**A write can be sent twice without clio seeing it.** creatio.client, the HTTP client clio uses, sends a request
+again after a 401, after a redirect to the sign-in page, and (cookie sessions) after a 403 when the sign-in changed
+while the request was in flight. It does so for every verb, signs in first, and shows clio only the second answer;
+it has no per-request way to turn this off. Usually the first send was refused before the handler ran, but not
+always: a handler that redirects or answers 401 after working, or a gateway that answers 403 after the backend ran,
+leaves a write that the second send repeats. This has not been seen on Creatio. What it means per tool:
+
+- `odata-create` sends its own `Id` with a row that has none, when `$metadata` declares the entity's `Id` a GUID
+  (a batch with such a row reads `$metadata` once). A second send of that row is expected to be refused as a duplicate key, and
+  a row whose result is then unknown is read back by that `Id`: found makes it a created row (`success` and
+  `record-created: true`; the failed answer stays in `site-response` when the site answered, and in
+  `retry-guidance`); otherwise it stays `null` and adds
+  `sent-id`, and a re-send of the row with that `Id` should not create it twice. A row with an `Id` the caller chose,
+  or an entity keyed on another type, is sent as written and keeps the risk. If Creatio answers a created row with
+  another `Id`, the later rows of the batch go without one, no row keeps `sent-id`, and the batch's `warnings`
+  say so. That Creatio keeps
+  a sent `Id` and refuses a repeated one as a duplicate key has not been measured on a stand yet.
+- `restart`, `create-business-process` (BuildProcess) and `odata-update` (update-time business processes) can
+  run twice; page and schema saves, `odata-delete` and binding deletes end in the same state.
 
 **Not covered:** a compile that outlives the MCP response deadline reports its verdict through
 `compile-status`, which carries no `site-response`; and the very first request of a process, when it is one of

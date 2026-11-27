@@ -1571,7 +1571,7 @@ public sealed class ODataCreateToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("A batch whose rows carry no date-time-shaped value does not download the service CSDL at all.")]
+	[Description("A batch whose rows bring their own Id and carry no date-time-shaped value does not download the service CSDL at all.")]
 	public void Create_Should_Not_Read_Metadata_Without_A_Date_Shaped_Value() {
 		// Arrange
 		(ODataCreateTool tool, IApplicationClient client) = CreateFixture(AccountCsdl);
@@ -1580,7 +1580,7 @@ public sealed class ODataCreateToolTests {
 		tool.Create(new ODataCreateArgs {
 			EnvironmentName = "dev",
 			Entity = "Account",
-			Rows = Arr("[{\"Name\":\"Acme\"},{\"Name\":\"Globex\"},{\"Name\":\"Initech\"}]")
+			Rows = Arr("[{\"Id\":\"aaaaaaaa-0000-0000-0000-000000000001\",\"Name\":\"Acme\"},{\"Id\":\"aaaaaaaa-0000-0000-0000-000000000002\",\"Name\":\"Globex\"},{\"Id\":\"aaaaaaaa-0000-0000-0000-000000000003\",\"Name\":\"Initech\"}]")
 		});
 
 		// Assert
@@ -1758,7 +1758,7 @@ public sealed class ODataCreateToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Regression: a server error that is not a model-binding rejection ('An error has occured.' with an inner message) keeps record-created unknown, because a post-insert handler can throw after the write.")]
+	[Description("Regression: a server error that is not a model-binding rejection ('An error has occured.' with an inner message) keeps record-created unknown, because a post-insert handler can throw after the write. The row brings its own Id, so clio reads nothing back: that Id may have existed before the call.")]
 	public void Create_Should_Keep_RecordCreated_Unknown_When_Server_Error_Is_Not_A_Model_Binding_Rejection() {
 		// Arrange
 		(ODataCreateTool tool, IApplicationClient client) = CreateFixture(AccountCsdl);
@@ -1767,7 +1767,7 @@ public sealed class ODataCreateToolTests {
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
-			EnvironmentName = "dev", Entity = "Account", Rows = Arr("[{\"Name\":\"Acme\"}]")
+			EnvironmentName = "dev", Entity = "Account", Rows = Arr("[{\"Id\":\"aaaaaaaa-0000-0000-0000-000000000001\",\"Name\":\"Acme\"}]")
 		});
 
 		// Assert
@@ -1791,7 +1791,7 @@ public sealed class ODataCreateToolTests {
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
-			EnvironmentName = "dev", Entity = "SysImage", Rows = Arr("[{\"Name\":\"logo.png\",\"Data\":\"iVBORw0KGgo=\"}]")
+			EnvironmentName = "dev", Entity = "SysImage", Rows = Arr("[{\"Id\":\"aaaaaaaa-0000-0000-0000-000000000001\",\"Name\":\"logo.png\",\"Data\":\"iVBORw0KGgo=\"}]")
 		});
 
 		// Assert
@@ -1806,7 +1806,7 @@ public sealed class ODataCreateToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Two rows rejected by Creatio in model binding read the service-root $metadata at most once for the whole batch.")]
+	[Description("Two rows that bring their own Id and are rejected by Creatio in model binding read the service-root $metadata at most once for the whole batch, after the first rejection.")]
 	public void Create_Should_Read_Metadata_Once_When_Several_Rows_Are_Rejected() {
 		// Arrange
 		(ODataCreateTool tool, IApplicationClient client) = CreateFixture(SysImageCsdl);
@@ -1816,7 +1816,7 @@ public sealed class ODataCreateToolTests {
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
 			EnvironmentName = "dev",
 			Entity = "SysImage",
-			Rows = Arr("[{\"Name\":\"a\",\"labNope\":\"x\"},{\"Name\":\"b\",\"labNope\":\"y\"}]")
+			Rows = Arr("[{\"Id\":\"aaaaaaaa-0000-0000-0000-000000000001\",\"Name\":\"a\",\"labNope\":\"x\"},{\"Id\":\"aaaaaaaa-0000-0000-0000-000000000002\",\"Name\":\"b\",\"labNope\":\"y\"}]")
 		});
 
 		// Assert
@@ -1841,7 +1841,7 @@ public sealed class ODataCreateToolTests {
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
 			EnvironmentName = "dev",
 			Entity = "SysImage",
-			Rows = Arr("[{\"Name\":\"a\",\"Data\":\"AAA=\"},{\"Name\":\"b\",\"Data\":\"BBB=\"}]")
+			Rows = Arr("[{\"Id\":\"aaaaaaaa-0000-0000-0000-000000000001\",\"Name\":\"a\",\"Data\":\"AAA=\"},{\"Id\":\"aaaaaaaa-0000-0000-0000-000000000002\",\"Name\":\"b\",\"Data\":\"BBB=\"}]")
 		});
 
 		// Assert
@@ -1858,14 +1858,14 @@ public sealed class ODataCreateToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("A batch where every row inserts and no row carries a date-time literal never reads $metadata.")]
+	[Description("A batch where every row brings its own Id, inserts and carries no date-time literal never reads $metadata.")]
 	public void Create_Should_Not_Read_Metadata_When_All_Rows_Insert_Without_Date_Literals() {
 		// Arrange
 		(ODataCreateTool tool, IApplicationClient client) = CreateFixture(SysImageCsdl);
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
-			EnvironmentName = "dev", Entity = "SysImage", Rows = Arr("[{\"Name\":\"a\"},{\"Name\":\"b\"}]")
+			EnvironmentName = "dev", Entity = "SysImage", Rows = Arr("[{\"Id\":\"aaaaaaaa-0000-0000-0000-000000000001\",\"Name\":\"a\"},{\"Id\":\"aaaaaaaa-0000-0000-0000-000000000002\",\"Name\":\"b\"}]")
 		});
 
 		// Assert

@@ -30,8 +30,8 @@ public sealed class ODataCreateModelValidationRejectionE2ETests {
 	[Test]
 	[AllureTag(ODataCreateTool.ToolName)]
 	[AllureName("odata-create reports a binary-column row that Creatio rejects in model binding as not inserted")]
-	[AllureDescription("Registers an environment against a stub whose $metadata declares Data as Edm.Stream and whose collection POST answers HTTP 400 'The input was not valid.'. Calls odata-create with a value for Data and verifies the row reports record-created=false, side-effect none, a 'Not inserted' retry-guidance, and an error that names 'Data' and upload-file. The stub must record exactly one POST and one $metadata read, in that order.")]
-	[Description("odata-create turns Creatio's model-binding rejection of a binary column into a confirmed no-write that names the column and points to upload-file, and reads $metadata once, after the POST.")]
+	[AllureDescription("Registers an environment against a stub whose $metadata declares Data as Edm.Stream and whose collection POST answers HTTP 400 'The input was not valid.'. Calls odata-create with a row that brings its own Id and a value for Data, and verifies the row reports record-created=false, side-effect none, a 'Not inserted' retry-guidance, and an error that names 'Data' and upload-file. The stub must record exactly one POST and one $metadata read, in that order.")]
+	[Description("odata-create turns Creatio's model-binding rejection of a binary column into a confirmed no-write that names the column and points to upload-file; a row that brings its own Id reads $metadata once, after the POST.")]
 	public async Task ODataCreate_Should_Report_Binary_Column_Rejection_As_Not_Inserted() {
 		// Arrange
 		await using ODataPreWriteStand stand = await ODataPreWriteStand.StartAsync(
@@ -39,6 +39,7 @@ public sealed class ODataCreateModelValidationRejectionE2ETests {
 
 		// Act
 		CallToolResult callResult = await stand.CreateAsync(Entity, new Dictionary<string, object?> {
+			["Id"] = "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
 			["Name"] = "e2e.txt",
 			["Data"] = "AQID"
 		});
@@ -78,7 +79,40 @@ public sealed class ODataCreateModelValidationRejectionE2ETests {
 		metadataIndexes.Should().ContainSingle(
 			because: "the multi-megabyte CSDL is read at most once per batch");
 		metadataIndexes[0].Should().BeGreaterThan(postIndexes[0],
-			because: "a row without a date-time literal must not pay for the CSDL before the POST; it is read only after the rejection, to name the column");
+			because: "a row with its own Id and no date-time literal must not pay for the CSDL before the POST; it is read only after the rejection, to name the column");
+	}
+
+	[Test]
+	[AllureTag(ODataCreateTool.ToolName)]
+	[AllureName("odata-create refuses a binary-column row without Id before any POST")]
+	[AllureDescription("Against the same stub, a row without Id makes odata-create read $metadata first, for the key type. That type map declares Data as Edm.Stream, so the row is refused locally: record-created=false, side-effect not-attempted, an error that names 'Data' and upload-file, one $metadata read and no POST.")]
+	[Description("A row without Id reads $metadata before its POST, for the key type, and the loaded type map refuses a binary column locally, so nothing is sent.")]
+	public async Task ODataCreate_Should_Refuse_A_Binary_Column_Before_The_Post_When_The_Row_Has_No_Id() {
+		// Arrange
+		await using ODataPreWriteStand stand = await ODataPreWriteStand.StartAsync(
+			RuntimeDetectionStubServer.ODataCreateModelValidationRejected, Entity);
+
+		// Act
+		CallToolResult callResult = await stand.CreateAsync(Entity, new Dictionary<string, object?> {
+			["Name"] = "e2e.txt",
+			["Data"] = "AQID"
+		});
+		ODataCreateBatchResponse response = EntitySchemaStructuredResultParser.Extract<ODataCreateBatchResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a row refused locally is a structured per-row failure, not a protocol error");
+		ODataRowResult row = response.Results.Should().ContainSingle().Subject;
+		row.RecordCreated.Should().BeFalse(because: "the row never left clio");
+		row.Diagnostic!.SideEffect.Should().Be("not-attempted",
+			because: "no request was sent for the row");
+		row.Error.Should().Contain("'Data'").And.Contain("upload-file");
+		IReadOnlyList<RecordedStubRequest> requests = await stand.GetRecordedRequestsAsync();
+		IndexesOf(requests, request =>
+				request.Method == "POST" && request.Url.EndsWith($"/odata/{Entity}", StringComparison.Ordinal))
+			.Should().BeEmpty(because: "the type map read for the key already shows the binary column");
+		IndexesOf(requests, request => request.Method == "GET" && request.Url.EndsWith("/odata/$metadata", StringComparison.Ordinal))
+			.Should().ContainSingle(because: "the CSDL is read once per batch");
 	}
 
 	private static List<int> IndexesOf(IReadOnlyList<RecordedStubRequest> requests,
