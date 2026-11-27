@@ -38,9 +38,9 @@ public sealed class ODataWriteToolsLiveIntegrationTests {
 	public void Create_Read_Update_Delete_RoundTrip() {
 		IToolCommandResolver resolver = BuildResolver();
 		ODataFileContract fileContract = new(new System.IO.Abstractions.FileSystem(), new Clio.Common.ConfinedFileAccess());
-		ODataCreateTool create = new(resolver, new OperationCorrelationIdProvider(), fileContract);
+		ODataCreateTool create = new(resolver, new OperationCorrelationIdProvider(), fileContract, new ODataWriteVerifier());
 		ODataReadTool read = new(resolver, new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
-		ODataUpdateTool update = new(resolver, new OperationCorrelationIdProvider(), fileContract);
+		ODataUpdateTool update = new(resolver, new OperationCorrelationIdProvider(), fileContract, new ODataWriteVerifier());
 		ODataDeleteTool delete = new(resolver, new OperationCorrelationIdProvider());
 		string name = $"clio-crud-it-{Guid.NewGuid():N}";
 		string? id = null;

@@ -51,6 +51,15 @@ internal static class ODataWriteArgumentAliases {
 				? Warning
 				: $"Argument '{Alias}' was read as '{Canonical}', but the call was refused (see error); "
 					+ $"use '{Canonical}' in future calls.";
+
+		/// <summary>The synonym warning (see <see cref="WarningFor"/>) followed by <paramref name="others"/>; null when both are empty.</summary>
+		/// <param name="refused">Whether the call was refused before anything was written.</param>
+		/// <param name="others">Warnings the tool produced itself, or null.</param>
+		internal IReadOnlyList<string>? MergeWarnings(bool refused, IReadOnlyList<string>? others) {
+			string[] warnings = [.. new[] { WarningFor(refused) }.Where(warning => warning is not null)!,
+				.. others ?? []];
+			return warnings.Length == 0 ? null : warnings;
+		}
 	}
 
 	/// <summary>Resolves synonyms of <paramref name="canonical"/> found in <paramref name="extensionData"/>.</summary>

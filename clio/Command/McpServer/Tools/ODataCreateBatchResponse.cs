@@ -38,6 +38,13 @@ public sealed record ODataCreateBatchResponse {
 		+ "batch must NOT be blindly re-sent: verify with odata-read first, a retry may duplicate.")]
 	public int Unverified { get; init; }
 
+	/// <summary>Gets the number of created rows with at least one field stored differently than sent; null when verify=false.</summary>
+	[JsonPropertyName("diverged")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[Description("Created rows whose read-back found at least one field stored with a different value than sent (see each row's "
+		+ "'diverged'). Absent when verify=false.")]
+	public int? Diverged { get; init; }
+
 	/// <summary>Gets the per-row outcomes for every attempted row, in input order.</summary>
 	[JsonPropertyName("results")]
 	[Description("Per-row outcomes for every attempted row, in input order.")]
@@ -89,6 +96,27 @@ public sealed record ODataRowResult {
 
 	[JsonIgnore]
 	internal bool ResponseReceived { get; init; }
+
+	/// <summary>Whether the created row was read back and compared; absent for a failed row or when verify=false.</summary>
+	[JsonPropertyName("verified")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[Description("Created rows only: true when the row was read back after the batch and at least one of its fields compared with what was sent; "
+		+ "false when the read-back failed, compared none of them or the batch budget ran out (the row is still created - see verification-note). "
+		+ "Absent for a failed row and when verify=false.")]
+	public bool? Verified { get; init; }
+
+	/// <summary>The sent fields Creatio stored with a different value for this row.</summary>
+	[JsonPropertyName("diverged")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[Description("Sent fields Creatio stored with a different value, typically replaced by an entity rule during the save. "
+		+ "Re-sending the row does not change them and creates a duplicate. Absent when every compared field matched.")]
+	public IReadOnlyList<ODataFieldDivergence>? Diverged { get; init; }
+
+	/// <summary>Why the row's read-back did not verify it, or which sent fields it did not compare.</summary>
+	[JsonPropertyName("verification-note")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[Description("Why the row's read-back did not verify it, or which sent fields it did not compare.")]
+	public string? VerificationNote { get; init; }
 
 	/// <summary>Gets the zero-based index of the row in the input array.</summary>
 	[JsonPropertyName("index")]

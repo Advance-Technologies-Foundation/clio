@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
@@ -37,7 +38,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -70,7 +71,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		MockFileSystem fileSystem = new();
 		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(),
-			new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+			new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -114,7 +115,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		MockFileSystem fileSystem = new();
 		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(),
-			new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+			new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -157,7 +158,8 @@ public sealed class ODataCreateToolTests {
 		ODataCreateTool tool = new(
 			resolver,
 			new OperationCorrelationIdProvider(),
-			new ODataFileContract(fileSystem, new GrowingConfinedFileAccess(ODataFileContract.MaxPayloadBytes + 1)));
+			new ODataFileContract(fileSystem, new GrowingConfinedFileAccess(ODataFileContract.MaxPayloadBytes + 1)),
+			new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -192,7 +194,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
 			.Returns((client, urlBuilder));
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -222,7 +224,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
 			.Returns((client, urlBuilder));
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)), new ODataWriteVerifier());
 		ODataCreateArgs args = JsonSerializer.Deserialize<ODataCreateArgs>(
 			"""{"environment-name":"dev","entity":"Account","rows":[{"Name":"Inline"}],"rows_file":"C:/payload.json"}""")!;
 
@@ -252,7 +254,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
 			.Returns((client, urlBuilder));
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)), new ODataWriteVerifier());
 		ODataCreateArgs args = JsonSerializer.Deserialize<ODataCreateArgs>(
 			"""{"environment-name":"dev","entity":"Account","rows":[{"Name":"Inline"}],"stopOnErrors":true}""")!;
 
@@ -283,7 +285,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
 			.Returns((client, urlBuilder));
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -313,7 +315,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
 			.Returns((client, urlBuilder));
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -344,7 +346,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
 			.Returns((client, urlBuilder));
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -375,7 +377,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
 			.Returns((client, urlBuilder));
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -403,7 +405,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
 			.Returns((client, urlBuilder));
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())), new ODataWriteVerifier());
 		string outsidePath = Path.Combine(
 			Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "clio-odata-confinement-probe.json");
 
@@ -442,7 +444,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -474,7 +476,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
 			.Returns((client, urlBuilder));
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -512,7 +514,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
 			.Returns((client, urlBuilder));
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -547,7 +549,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
 			.Returns((client, urlBuilder));
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -584,7 +586,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
 			.Returns((client, urlBuilder));
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -635,7 +637,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)), new ODataWriteVerifier());
 		return tool.Create(configure(new ODataCreateArgs { EnvironmentName = "dev", Entity = "Account" }));
 	}
 
@@ -690,13 +692,15 @@ public sealed class ODataCreateToolTests {
 			.Returns(
 				"{\"Id\":\"11111111-1111-1111-1111-111111111111\",\"Name\":\"Acme\"}",
 				"{\"Id\":\"22222222-2222-2222-2222-222222222222\",\"Name\":\"Globex\"}");
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
 			EnvironmentName = "dev",
 			Entity = "Account",
-			Rows = Arr("[{\"Name\":\"Acme\"},{\"Name\":\"Globex\"}]")
+			Rows = Arr("[{\"Name\":\"Acme\"},{\"Name\":\"Globex\"}]"),
+			// The read-back builds the collection URL again; this test pins the POST path alone.
+			Verify = false
 		});
 
 		// Assert
@@ -723,7 +727,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://env/odata/Account");
 		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())), new ODataWriteVerifier());
 
 		// Act
 		tool.Create(new ODataCreateArgs { EnvironmentName = "dev", Entity = "Account", Rows = Arr("[{\"Name\":\"A\"}]") });
@@ -743,7 +747,7 @@ public sealed class ODataCreateToolTests {
 	public void Create_Should_Fail_When_Entity_Missing() {
 		// Arrange
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -761,7 +765,7 @@ public sealed class ODataCreateToolTests {
 	public void Create_Should_Fail_When_Rows_Empty() {
 		// Arrange
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -786,7 +790,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"error\":{\"code\":\"\",\"message\":\"Column Name is required\"}}");
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -812,7 +816,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/AddressType");
 		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"An error has occurred.\",\"ExceptionMessage\":\"Object reference not set to an instance of an object.\",\"ExceptionType\":\"System.NullReferenceException\"}");
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -838,7 +842,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/0/odata/UsrCustomerStatus");
 		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"No HTTP resource was found that matches the request URI '.../0/odata/UsrCustomerStatus'.\",\"MessageDetail\":\"No type was found that matches the controller named 'UsrCustomerStatus'.\"}");
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -867,7 +871,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"Authorization has been denied for this request.\"}");
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -894,7 +898,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/EmailMessageData");
 		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"@odata.context\":\"http://creatio/odata/$metadata#EmailMessageData/$entity\",\"Id\":\"22222222-2222-2222-2222-222222222222\",\"Message\":\"Hello there\"}");
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -922,7 +926,7 @@ public sealed class ODataCreateToolTests {
 			.Returns("{\"@odata.context\":\"http://creatio/odata/$metadata#UsrIntegrationLog/$entity\","
 				+ "\"Id\":\"33333333-3333-3333-3333-333333333333\",\"Success\":false,"
 				+ "\"errorInfo\":null}");
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), StubFileContract());
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), StubFileContract(), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -950,7 +954,7 @@ public sealed class ODataCreateToolTests {
 		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Code\":-1,\"Exception\":\"Access to the entity is denied.\","
 				+ "\"Id\":\"44444444-4444-4444-4444-444444444444\"}");
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), StubFileContract());
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), StubFileContract(), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -977,7 +981,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/UsrThing");
 		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"@odata.context\":\"http://creatio/odata/$metadata#UsrThing/$entity\",\"Id\":\"33333333-3333-3333-3333-333333333333\",\"Code\":200,\"Message\":\"Created\"}");
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), StubFileContract());
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), StubFileContract(), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -1003,7 +1007,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://secret-host:88/prod-app/0/odata/UsrCustomerStatus");
 		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"No HTTP resource was found that matches the request URI 'http://secret-host:88/prod-app/0/odata/UsrCustomerStatus'.\"}");
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -1028,7 +1032,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"\",\"MessageDetail\":\"\"}");
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -1056,7 +1060,7 @@ public sealed class ODataCreateToolTests {
 		// not recognize it; with no Id it falls through to the id-missing fallback branch.
 		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Message\":\"The request is invalid.\",\"ModelState\":{\"row\":[\"failed calling http://secret-host:88/prod-app/0/odata/Account\"]}}");
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -1081,7 +1085,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/NumberKeyed");
 		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Id\":42,\"Name\":\"Office\"}");
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -1107,7 +1111,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/AddressType");
 		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Name\":\"Office\"}");
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -1134,7 +1138,7 @@ public sealed class ODataCreateToolTests {
 			.Returns(
 				"{\"error\":{\"code\":\"\",\"message\":\"bad row\"}}",
 				"{\"Id\":\"22222222-2222-2222-2222-222222222222\"}");
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -1161,7 +1165,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"error\":{\"code\":\"\",\"message\":\"bad row\"}}");
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -1196,7 +1200,7 @@ public sealed class ODataCreateToolTests {
 				cancellation.Cancel();
 				return "{\"Id\":\"11111111-1111-1111-1111-111111111111\"}";
 			});
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -1232,7 +1236,7 @@ public sealed class ODataCreateToolTests {
 		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
 		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())));
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(Substitute.For<System.IO.Abstractions.IFileSystem>(), new MockConfinedFileAccess(Substitute.For<System.IO.Abstractions.IFileSystem>())), new ODataWriteVerifier());
 
 		// Act
 		tool.Create(new ODataCreateArgs {
@@ -1280,7 +1284,7 @@ public sealed class ODataCreateToolTests {
 		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
 			.Returns((client, urlBuilder));
 		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
-		return new ODataCreateTool(resolver, new OperationCorrelationIdProvider(), StubFileContract());
+		return new ODataCreateTool(resolver, new OperationCorrelationIdProvider(), StubFileContract(), new ODataWriteVerifier());
 	}
 
 	[Test]
@@ -1497,7 +1501,7 @@ public sealed class ODataCreateToolTests {
 			.Returns(metadataBody);
 		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
-		return (new ODataCreateTool(resolver, new OperationCorrelationIdProvider(), StubFileContract()), client);
+		return (new ODataCreateTool(resolver, new OperationCorrelationIdProvider(), StubFileContract(), new ODataWriteVerifier()), client);
 	}
 
 	[Test]
@@ -1584,7 +1588,8 @@ public sealed class ODataCreateToolTests {
 		});
 
 		// Assert
-		client.DidNotReceiveWithAnyArgs().ExecuteGetRequest(null, 0, 0, 0);
+		client.DidNotReceive().ExecuteGetRequest(
+			Arg.Is<string>(url => url.Contains("$metadata", StringComparison.Ordinal)), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 		client.Received(3).ExecuteNonReplayablePostRequest(
 			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
@@ -1664,7 +1669,7 @@ public sealed class ODataCreateToolTests {
 	public void Create_Should_Carry_A_Correlation_Id_On_A_Request_Level_Refusal() {
 		// Arrange
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), StubFileContract());
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), StubFileContract(), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
@@ -1870,7 +1875,8 @@ public sealed class ODataCreateToolTests {
 
 		// Assert
 		response.Created.Should().Be(2, because: "both rows were accepted by the server");
-		client.DidNotReceiveWithAnyArgs().ExecuteGetRequest(null, 0, 0, 0);
+		client.DidNotReceive().ExecuteGetRequest(
+			Arg.Is<string>(url => url.Contains("$metadata", StringComparison.Ordinal)), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	[Test]
@@ -1953,5 +1959,132 @@ public sealed class ODataCreateToolTests {
 	}
 
 	#endregion
+
+	private const string FirstCreatedId = "11111111-1111-1111-1111-111111111111";
+	private const string SecondCreatedId = "22222222-2222-2222-2222-222222222222";
+
+	/// <summary>A tool whose two POSTs create two records and whose read-back GET answers <paramref name="readBack"/>.</summary>
+	private static (ODataCreateTool tool, IApplicationClient client) ReadBackFixture(Func<string, string> readBack) {
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
+		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Id\":\"" + FirstCreatedId + "\"}", "{\"Id\":\"" + SecondCreatedId + "\"}");
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(call => readBack(call.ArgAt<string>(0)));
+		return (new ODataCreateTool(resolver, new OperationCorrelationIdProvider(), StubFileContract(), new ODataWriteVerifier()), client);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Created rows are read back by Id; a row an entity rule changed carries diverged, the summary counts it and warns, and the row stays created (clio#1995).")]
+	public void Create_Should_Report_Rows_Stored_With_Another_Value() {
+		// Arrange
+		(ODataCreateTool tool, IApplicationClient client) = ReadBackFixture(_ =>
+			"{\"value\":[{\"Id\":\"" + FirstCreatedId + "\",\"RefColumnPath\":\"Contact\"},"
+			+ "{\"Id\":\"" + SecondCreatedId + "\",\"RefColumnPath\":\"Product\"}]}");
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev",
+			Entity = "ForecastColumn",
+			Rows = Arr("[{\"RefColumnPath\":\"Product\"},{\"RefColumnPath\":\"Product\"}]")
+		});
+
+		// Assert
+		response.Created.Should().Be(2, because: "both rows were created; a replaced value does not undo the insert");
+		response.Diverged.Should().Be(1, because: "one created row was stored differently");
+		response.Results[0].Diverged.Should().ContainSingle(because: "the first row's RefColumnPath was replaced")
+			.Which.Stored.GetString().Should().Be("Contact", because: "the caller sees what was stored");
+		response.Results[1].Verified.Should().BeTrue(because: "the second row was read back");
+		response.Results[1].Diverged.Should().BeNull(because: "the second row was stored as sent");
+		response.Warnings.Should().ContainSingle(warning => warning.Contains("1 created row", StringComparison.Ordinal),
+			because: "the batch calls the divergence out");
+		client.Received(1).ExecuteGetRequest(
+			Arg.Is<string>(url => url.StartsWith("http://creatio/odata/ForecastColumn?$filter=", StringComparison.Ordinal)),
+			Arg.Any<int>(), 1, Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A failed read-back leaves the created rows created and marks them unverified with a note.")]
+	public void Create_Should_Keep_Rows_Created_When_The_Read_Back_Fails() {
+		// Arrange
+		(ODataCreateTool tool, _) = ReadBackFixture(_ => string.Empty);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", Rows = Arr("[{\"Name\":\"a\"},{\"Name\":\"b\"}]")
+		});
+
+		// Assert
+		response.Created.Should().Be(2, because: "the inserts happened whatever the read-back answered");
+		response.Failed.Should().Be(0, because: "a read-back failure is not a row failure");
+		response.Results.Should().OnlyContain(row => row.Verified == false && row.VerificationNote != null,
+			because: "each row says it was not verified and why");
+		response.Diverged.Should().Be(0, because: "no divergence was found");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("verify=false sends no read-back and adds no verification members.")]
+	public void Create_Should_Not_Read_Back_When_Verify_Is_False() {
+		// Arrange
+		(ODataCreateTool tool, IApplicationClient client) = ReadBackFixture(_ => throw new InvalidOperationException("no read-back expected"));
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", Rows = Arr("[{\"Name\":\"a\"}]"), Verify = false
+		});
+
+		// Assert
+		response.Created.Should().Be(1, because: "the row was created");
+		response.Diverged.Should().BeNull(because: "no read-back ran");
+		response.Results[0].Verified.Should().BeNull(because: "no read-back ran");
+		client.DidNotReceiveWithAnyArgs().ExecuteGetRequest(null, 0, 0, 0);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Only created rows are read back: a row refused by Creatio and a row rejected locally get no verification members and are not in the read-back filter or the diverged count (AC-6).")]
+	public void Create_Should_Read_Back_Only_The_Rows_That_Were_Created() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
+		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Id\":\"" + FirstCreatedId + "\"}",
+				"{\"error\":{\"code\":\"\",\"message\":\"Refused by an event handler\"}}");
+		List<string> reads = [];
+		client.ExecuteGetRequest(Arg.Do<string>(reads.Add), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(call => call.ArgAt<string>(0).Contains("$metadata", StringComparison.Ordinal)
+				? AccountCsdl
+				: "{\"value\":[{\"Id\":\"" + FirstCreatedId + "\",\"Name\":\"Created\"}]}");
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), StubFileContract(), new ODataWriteVerifier());
+
+		// Act - created, refused by the server, rejected locally (zone-less date-time)
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev",
+			Entity = "Account",
+			Rows = Arr("[{\"Name\":\"Created\"},{\"Name\":\"Refused\"},{\"Name\":\"2024-01-01T04:00:00\"}]")
+		});
+
+		// Assert
+		response.Created.Should().Be(1, because: "only the first row was inserted");
+		List<string> readBacks = reads.Where(url => url.Contains("$filter=", StringComparison.Ordinal)).ToList();
+		readBacks.Should().ContainSingle(because: "the one created row is read back once")
+			.Which.Should().Contain(FirstCreatedId, because: "the created row's Id is in the filter");
+		response.Results[0].Verified.Should().BeTrue(because: "the created row was read back");
+		response.Results.Skip(1).Should().OnlyContain(
+			row => !row.Success && row.Verified == null && row.Diverged == null && row.VerificationNote == null,
+			because: "a row that was not created has nothing to verify");
+		response.Diverged.Should().Be(0, because: "only created rows can diverge");
+	}
 
 }

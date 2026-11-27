@@ -234,7 +234,7 @@ public sealed class ODataUpdateToolTests {
 			Resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(UrlBuilder);
 			Resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
 				.Returns((Client, UrlBuilder));
-			Tool = new ODataUpdateTool(Resolver, new OperationCorrelationIdProvider(), EmptyFileContract());
+			Tool = new ODataUpdateTool(Resolver, new OperationCorrelationIdProvider(), EmptyFileContract(), new ODataWriteVerifier());
 		}
 
 		/// <summary>
@@ -250,7 +250,7 @@ public sealed class ODataUpdateToolTests {
 			Resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(UrlBuilder);
 			Resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
 				.Returns((Client, UrlBuilder));
-			Tool = new ODataUpdateTool(Resolver, new OperationCorrelationIdProvider(), EmptyFileContract());
+			Tool = new ODataUpdateTool(Resolver, new OperationCorrelationIdProvider(), EmptyFileContract(), new ODataWriteVerifier());
 		}
 
 		public IApplicationClient Client { get; }
@@ -263,13 +263,14 @@ public sealed class ODataUpdateToolTests {
 	private static Fixture CsdLFixture() =>
 		new(CsdL(), _ => throw new System.InvalidOperationException("probe must not run: $metadata is authoritative"));
 
-	private static ODataWriteResponse Update(Fixture f, string data) =>
+	private static ODataWriteResponse Update(Fixture f, string data, bool verify = true) =>
 		f.Tool.Update(new ODataUpdateArgs {
 			EnvironmentName = "dev",
 			Entity = "Contact",
 			Id = Guid,
 			Data = Obj(data),
-			Confirm = true
+			Confirm = true,
+			Verify = verify
 		});
 
 	[Test]
@@ -362,8 +363,8 @@ public sealed class ODataUpdateToolTests {
 		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
 			.Returns(string.Empty);
 
-		// Act
-		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
+		// Act - the read-back after the PATCH also selects fields, so it is off here: this test pins the pre-write check
+		ODataWriteResponse response = Update(f, """{"Name":"New"}""", verify: false);
 
 		// Assert
 		response.Success.Should().BeTrue(because: response.Error);
@@ -567,8 +568,8 @@ public sealed class ODataUpdateToolTests {
 		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
 			.Returns(string.Empty);
 
-		// Act
-		ODataWriteResponse response = Update(f, """{"ModifiedOn":"2024-01-01T00:00:00Z"}""");
+		// Act - the read-back after the PATCH also selects fields, so it is off here: this test pins the pre-write check
+		ODataWriteResponse response = Update(f, """{"ModifiedOn":"2024-01-01T00:00:00Z"}""", verify: false);
 
 		// Assert
 		response.Success.Should().BeTrue(
@@ -1352,7 +1353,7 @@ public sealed class ODataUpdateToolTests {
 			.Returns(firstRoot, repointedRoot);
 		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
 			.Returns((client, firstRoot));
-		ODataUpdateTool tool = new(resolver, new OperationCorrelationIdProvider(), EmptyFileContract());
+		ODataUpdateTool tool = new(resolver, new OperationCorrelationIdProvider(), EmptyFileContract(), new ODataWriteVerifier());
 
 		// Act
 		ODataWriteResponse response = tool.Update(new ODataUpdateArgs {
@@ -1395,7 +1396,7 @@ public sealed class ODataUpdateToolTests {
 			.Returns((client, urlBuilder));
 
 		// Act
-		ODataWriteResponse response = new ODataUpdateTool(resolver, new OperationCorrelationIdProvider(), FileContract(fileSystem)).Update(new ODataUpdateArgs {
+		ODataWriteResponse response = new ODataUpdateTool(resolver, new OperationCorrelationIdProvider(), FileContract(fileSystem), new ODataWriteVerifier()).Update(new ODataUpdateArgs {
 			EnvironmentName = "dev", Entity = "Contact", Id = Guid, RowsFile = rowsFile, Confirm = true
 		});
 
@@ -1420,7 +1421,7 @@ public sealed class ODataUpdateToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 
 		// Act
-		ODataWriteResponse response = new ODataUpdateTool(resolver, new OperationCorrelationIdProvider(), FileContract(fileSystem)).Update(new ODataUpdateArgs {
+		ODataWriteResponse response = new ODataUpdateTool(resolver, new OperationCorrelationIdProvider(), FileContract(fileSystem), new ODataWriteVerifier()).Update(new ODataUpdateArgs {
 			EnvironmentName = "dev", Entity = "Contact", Id = Guid, RowsFile = rowsFile, Confirm = true
 		});
 
@@ -1447,7 +1448,7 @@ public sealed class ODataUpdateToolTests {
 			$$"""{"environment-name":"dev","entity":"Contact","id":"{{Guid}}","data":{"Name":"Inline"},"confirm":true,"rows_file":"C:/payload.json"}""")!;
 
 		// Act
-		ODataWriteResponse response = new ODataUpdateTool(resolver, new OperationCorrelationIdProvider(), FileContract(fileSystem)).Update(args);
+		ODataWriteResponse response = new ODataUpdateTool(resolver, new OperationCorrelationIdProvider(), FileContract(fileSystem), new ODataWriteVerifier()).Update(args);
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -1472,7 +1473,7 @@ public sealed class ODataUpdateToolTests {
 			$$"""{"environment-name":"dev","entity":"Contact","id":"{{Guid}}","data":{"Name":"Inline"},"confirm":true,"dryRun":true}""")!;
 
 		// Act
-		ODataWriteResponse response = new ODataUpdateTool(resolver, new OperationCorrelationIdProvider(), FileContract(fileSystem)).Update(args);
+		ODataWriteResponse response = new ODataUpdateTool(resolver, new OperationCorrelationIdProvider(), FileContract(fileSystem), new ODataWriteVerifier()).Update(args);
 
 		// Assert
 		response.Success.Should().BeFalse(
@@ -1496,7 +1497,7 @@ public sealed class ODataUpdateToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 
 		// Act
-		ODataWriteResponse response = new ODataUpdateTool(resolver, new OperationCorrelationIdProvider(), FileContract(fileSystem)).Update(new ODataUpdateArgs {
+		ODataWriteResponse response = new ODataUpdateTool(resolver, new OperationCorrelationIdProvider(), FileContract(fileSystem), new ODataWriteVerifier()).Update(new ODataUpdateArgs {
 			EnvironmentName = "dev", Entity = "Contact", Id = Guid,
 			Data = Obj("{\"Name\":\"Inline\"}"), RowsFile = rowsFile, Confirm = true
 		});
@@ -1522,7 +1523,7 @@ public sealed class ODataUpdateToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 
 		// Act
-		ODataWriteResponse response = new ODataUpdateTool(resolver, new OperationCorrelationIdProvider(), FileContract(fileSystem)).Update(new ODataUpdateArgs {
+		ODataWriteResponse response = new ODataUpdateTool(resolver, new OperationCorrelationIdProvider(), FileContract(fileSystem), new ODataWriteVerifier()).Update(new ODataUpdateArgs {
 			EnvironmentName = "dev", Entity = "Contact", Id = Guid, RowsFile = rowsFile, Confirm = false
 		});
 
@@ -1548,7 +1549,7 @@ public sealed class ODataUpdateToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 
 		// Act
-		ODataWriteResponse response = new ODataUpdateTool(resolver, new OperationCorrelationIdProvider(), FileContract(fileSystem)).Update(new ODataUpdateArgs {
+		ODataWriteResponse response = new ODataUpdateTool(resolver, new OperationCorrelationIdProvider(), FileContract(fileSystem), new ODataWriteVerifier()).Update(new ODataUpdateArgs {
 			EnvironmentName = "dev", Entity = "Contact", Id = Guid, RowsFile = rowsFile, Confirm = true
 		});
 
@@ -1574,7 +1575,7 @@ public sealed class ODataUpdateToolTests {
 		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
 
 		// Act
-		ODataWriteResponse response = new ODataUpdateTool(resolver, new OperationCorrelationIdProvider(), FileContract(fileSystem)).Update(new ODataUpdateArgs {
+		ODataWriteResponse response = new ODataUpdateTool(resolver, new OperationCorrelationIdProvider(), FileContract(fileSystem), new ODataWriteVerifier()).Update(new ODataUpdateArgs {
 			EnvironmentName = "dev", Entity = "Contact", Id = Guid, RowsFile = rowsFile, Confirm = true
 		});
 
@@ -1836,6 +1837,106 @@ public sealed class ODataUpdateToolTests {
 		// Assert
 		response.CorrelationId.Should().NotBeNullOrWhiteSpace(
 			because: "the id is minted before the work and stamped on the single exit, so a refusal that never reaches Creatio is traceable too");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("After the PATCH the written fields are read back; a field an entity rule replaced is reported in diverged with a warning, and success stays true (clio#1995).")]
+	public void Update_Should_Report_A_Field_Stored_With_Another_Value() {
+		// Arrange
+		const string stored = "16be3651-8fe2-4159-8dd0-a803d4683dd3";
+		Fixture f = new(CsdL(), _ => "{\"Id\":\"" + Guid + "\",\"AccountId\":\"" + stored + "\",\"Name\":\"New\"}");
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Returns(string.Empty);
+
+		// Act
+		ODataWriteResponse response = Update(f, """{"AccountId":"4c7a6ead-4eb8-4fc0-863e-98a664569fed","Name":"New"}""");
+
+		// Assert
+		response.Success.Should().BeTrue(because: "Creatio accepted the PATCH; a replaced value is not a failed write");
+		response.Verified.Should().BeTrue(because: "the read-back returned the record");
+		response.Diverged.Should().ContainSingle(because: "only AccountId was stored differently")
+			.Which.Field.Should().Be("AccountId", because: "the divergence names the field as sent");
+		response.Diverged![0].Stored.GetString().Should().Be(stored, because: "the caller sees what was stored");
+		response.Warnings.Should().ContainSingle(warning => warning.Contains("AccountId", StringComparison.Ordinal),
+			because: "the divergence is also called out as a warning an agent cannot overlook");
+		f.Client.Received(1).ExecuteGetRequest(KeyUrl + "?$select=AccountId%2CName", ODataWriteVerifier.ReadBackTimeoutMs, 1, 1);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A record stored as sent is verified with no diverged member and no warning.")]
+	public void Update_Should_Verify_A_Record_Stored_As_Sent() {
+		// Arrange
+		Fixture f = new(CsdL(), _ => "{\"Id\":\"" + Guid + "\",\"Name\":\"New\"}");
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Returns(string.Empty);
+
+		// Act
+		ODataWriteResponse response = Update(f, NameUpdate);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the PATCH was accepted");
+		response.Verified.Should().BeTrue(because: "the read-back returned the record");
+		response.Diverged.Should().BeNull(because: "the member is omitted when every compared field matched");
+		response.Warnings.Should().BeNull(because: "there is nothing to warn about");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A failed read-back never fails the write: success stays true, verified is false and the note says why.")]
+	public void Update_Should_Stay_Successful_When_The_Read_Back_Fails() {
+		// Arrange
+		Fixture f = new(CsdL(), _ => "{\"error\":{\"code\":\"\",\"message\":\"denied\"}}");
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Returns(string.Empty);
+
+		// Act
+		ODataWriteResponse response = Update(f, NameUpdate);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the PATCH already happened; a read-back failure must not invite a re-send");
+		response.Verified.Should().BeFalse(because: "the stored values were not read");
+		response.VerificationNote.Should().NotBeNullOrWhiteSpace(because: "the caller is told why the write is unverified");
+		response.Error.Should().BeNull(because: "the write itself did not fail");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("verify=false sends no read-back and leaves the response as it was before the read-back existed.")]
+	public void Update_Should_Not_Read_Back_When_Verify_Is_False() {
+		// Arrange
+		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Returns(string.Empty);
+
+		// Act
+		ODataWriteResponse response = Update(f, NameUpdate, verify: false);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the PATCH was accepted");
+		response.Verified.Should().BeNull(because: "no read-back ran");
+		f.Client.DidNotReceive().ExecuteGetRequest(
+			Arg.Is<string>(url => url.StartsWith(KeyUrl, StringComparison.Ordinal)), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A write that is not made - confirm=false or a refused PATCH - is not read back.")]
+	public void Update_Should_Not_Read_Back_A_Write_That_Was_Not_Made() {
+		// Arrange
+		Fixture f = new(CsdL(), _ => throw new InvalidOperationException("no read-back expected"));
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
+			.Returns("{\"error\":{\"code\":\"\",\"message\":\"Refused\"}}");
+
+		// Act
+		ODataWriteResponse refused = Update(f, NameUpdate);
+		ODataWriteResponse unconfirmed = f.Tool.Update(new ODataUpdateArgs {
+			EnvironmentName = "dev", Entity = "Contact", Id = Guid, Data = Obj(NameUpdate), Confirm = false
+		});
+
+		// Assert
+		refused.Success.Should().BeFalse(because: "Creatio refused the PATCH");
+		refused.Verified.Should().BeNull(because: "a refused write is not read back");
+		unconfirmed.Verified.Should().BeNull(because: "an unconfirmed call writes nothing");
+		f.Client.DidNotReceive().ExecuteGetRequest(
+			Arg.Is<string>(url => url.StartsWith(KeyUrl, StringComparison.Ordinal)), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 }

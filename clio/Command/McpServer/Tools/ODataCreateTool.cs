@@ -19,12 +19,16 @@ namespace Clio.Command.McpServer.Tools;
 public sealed class ODataCreateTool(
 	IToolCommandResolver commandResolver,
 	IOperationCorrelationIdProvider correlationIds,
-	IODataFileContract fileContract) {
+	IODataFileContract fileContract,
+	IODataWriteVerifier writeVerifier) {
 
 	//File I/O is behaviour, so it arrives through DI rather than being reached statically: that is what lets
 	//a failure-path test substitute a file-contract fake instead of driving the production write plumbing.
 	private readonly IODataFileContract _fileContract =
 		fileContract ?? throw new ArgumentNullException(nameof(fileContract));
+
+	private readonly IODataWriteVerifier _writeVerifier =
+		writeVerifier ?? throw new ArgumentNullException(nameof(writeVerifier));
 
 	internal const string ToolName = "odata-create";
 
@@ -77,7 +81,7 @@ public sealed class ODataCreateTool(
 		+ "wall-clock budget. Re-send the remaining rows as a smaller batch.";
 
 	private const string ValidArgumentsHint =
-		"Valid: entity, environment-name, rows, rows-file, stop-on-error.";
+		"Valid: entity, environment-name, rows, rows-file, stop-on-error, verify.";
 
 	/// <summary>
 	/// The camelCase / snake_case spellings an LLM emits for this tool's kebab-case fields. Without this map
@@ -168,6 +172,11 @@ public sealed class ODataCreateTool(
 		"The batch stops when it exceeds its wall-clock budget; the first row that was not attempted is then " +
 		"reported with record-created=false and the reason. " +
 		"Returns a created/failed summary and a per-row result array with each created record's Id. " +
+		"By default (verify=true) the created rows are then read back by Id (a few batched GETs within the same time budget) " +
+		"and compared with what was sent: a row's 'diverged' lists each field Creatio stored with a different value " +
+		"(field, sent, stored) - typically an entity rule that replaced it during the save; the row stays created and the " +
+		"summary's 'diverged' counts such rows. A failed read-back never fails a row: verified=false with verification-note. " +
+		"A value an asynchronous business process changes later is not seen. verify=false skips the read-back. " +
 		"Common synonyms of rows - payload, values, body or data (a single object is wrapped into one row) - are accepted and reported in warnings; sending one together with rows or rows-file is rejected as ambiguous. " +
 		"A date-time value without a UTC designator or offset (e.g. '2024-01-01T04:00:00') fails its row before any " +
 		"request - send '...Z' or '...+02:00' instead. " +
@@ -205,7 +214,7 @@ public sealed class ODataCreateTool(
 			? ODataCreateBatchResponse.RequestError(payloadAlias.Error)
 			: CreateCore(args, cancellationToken);
 		return result with {
-			Warnings = payloadAlias.WarningFor(result.Error is not null) is { } warning ? [warning] : null,
+			Warnings = payloadAlias.MergeWarnings(result.Error is not null, result.Warnings),
 			CorrelationId = correlationId,
 			Diagnostic = result.Error is null ? null : DataWriteDiagnostic.Create("insert", args.Entity, null, false, false, false, result.Error),
 			Results = result.Results.Select(row => row with {
@@ -285,8 +294,71 @@ public sealed class ODataCreateTool(
 		if (rows.EnumerateArray().Any(ODataDateTimeGuard.HasZoneLessCandidate)) {
 			_ = propertyTypes.Value;
 		}
-		return ODataCreateBatchResponse.From(
-			PostRows(client, url, rows, args.StopOnError, propertyTypes, cancellationToken));
+		//One budget for the POSTs and the read-back after them: the read-back must not stretch the batch past it.
+		Stopwatch elapsed = Stopwatch.StartNew();
+		int RemainingBudgetMs() => MaxBatchDurationMs - (int)Math.Min(elapsed.ElapsedMilliseconds, MaxBatchDurationMs);
+		List<ODataRowResult> results = PostRows(client, url, rows, args.StopOnError, propertyTypes, RemainingBudgetMs,
+			cancellationToken);
+		if (args.Verify == false) {
+			return ODataCreateBatchResponse.From(results);
+		}
+		results = VerifyCreatedRows(client, urlBuilder, entity, rows, results, propertyTypes, RemainingBudgetMs,
+			cancellationToken);
+		int divergedRows = results.Count(result => result.Diverged is not null);
+		return ODataCreateBatchResponse.From(results) with {
+			Diverged = divergedRows,
+			Warnings = divergedRows == 0 ? null : [ODataWriteVerification.BatchDivergenceWarning(divergedRows)]
+		};
+	}
+
+	/// <summary>
+	/// Reads the created rows back and adds each row's outcome. The rows are already created, so nothing here may
+	/// turn a created row into a failed one.
+	/// </summary>
+	/// <param name="client">Environment-scoped client the POSTs used.</param>
+	/// <param name="urlBuilder">URL builder of the same environment snapshot.</param>
+	/// <param name="entity">The OData entity set name.</param>
+	/// <param name="rows">The sent rows, indexed like the results.</param>
+	/// <param name="results">Per-row outcomes of the POSTs.</param>
+	/// <param name="propertyTypes">
+	/// The batch's entity type map. Used as is when the batch already loaded it; otherwise loaded only when a stored
+	/// value matches the sent one in a form only its type can confirm, and only while the budget still covers the
+	/// metadata read.
+	/// </param>
+	/// <param name="remainingBudgetMs">Milliseconds left of the batch budget.</param>
+	/// <param name="cancellationToken">Caller token; once cancelled, no further chunk is read back.</param>
+	private List<ODataRowResult> VerifyCreatedRows(IApplicationClient client, IServiceUrlBuilder urlBuilder,
+		string entity, JsonElement rows, List<ODataRowResult> results,
+		Lazy<IReadOnlyDictionary<string, string>> propertyTypes, Func<int> remainingBudgetMs,
+		CancellationToken cancellationToken) {
+		JsonElement[] sentRows = rows.EnumerateArray().ToArray();
+		List<ODataSentRecord> created = results
+			.Where(result => result.Success && !string.IsNullOrWhiteSpace(result.Id))
+			.Select(result => new ODataSentRecord(result.Id.Trim(), sentRows[result.Index]))
+			.ToList();
+		// The verifier never throws: a failed read-back comes back as an unverified outcome per row.
+		IReadOnlyDictionary<string, ODataWriteVerification> outcomes = created.Count == 0
+			? new Dictionary<string, ODataWriteVerification>()
+			: _writeVerifier.VerifyRecords(client, urlBuilder, entity, created,
+				propertyTypes.IsValueCreated ? propertyTypes.Value : null, remainingBudgetMs, cancellationToken,
+				() => remainingBudgetMs() >= ODataFieldValidation.OptionalMetadataTimeoutMs + ODataWriteVerifier.MinReadBudgetMs
+					? propertyTypes.Value
+					: null);
+		return results.Select(result => {
+			if (!result.Success) {
+				return result;
+			}
+			ODataWriteVerification verification =
+				!string.IsNullOrWhiteSpace(result.Id) && outcomes.TryGetValue(result.Id.Trim(), out ODataWriteVerification found)
+					? found
+					: ODataWriteVerification.Unverified(
+						"Creatio did not return the created record's Id, so the row could not be read back.");
+			return result with {
+				Verified = verification.Verified,
+				Diverged = verification.DivergedOrNull,
+				VerificationNote = verification.Note
+			};
+		}).ToList();
 	}
 
 	/// <summary>
@@ -300,6 +372,7 @@ public sealed class ODataCreateTool(
 	/// <param name="propertyTypes">
 	/// Entity property types, read on first use; the value is null when the metadata is unavailable.
 	/// </param>
+	/// <param name="remainingBudgetMs">Milliseconds left of the batch budget.</param>
 	/// <param name="cancellationToken">Caller token; the MCP host cancels it when it disconnects.</param>
 	/// <returns>Outcomes for every ATTEMPTED row, plus the first unattempted row when the batch stopped early.</returns>
 	private static List<ODataRowResult> PostRows(
@@ -308,6 +381,7 @@ public sealed class ODataCreateTool(
 		JsonElement rows,
 		bool stopOnError,
 		Lazy<IReadOnlyDictionary<string, string>> propertyTypes,
+		Func<int> remainingBudgetMs,
 		CancellationToken cancellationToken) {
 		List<ODataRowResult> results = [];
 		int index = 0;
@@ -318,9 +392,8 @@ public sealed class ODataCreateTool(
 		//later rows stop on cancellation would be promising something a caller cannot rely on.
 		//Both are checked BETWEEN rows, so a row that is already in flight completes and is reported -
 		//abandoning it mid-POST would leave its side effect unknown for no gain.
-		Stopwatch elapsed = Stopwatch.StartNew();
 		foreach (JsonElement row in rows.EnumerateArray()) {
-			int remainingMs = MaxBatchDurationMs - (int)Math.Min(elapsed.ElapsedMilliseconds, MaxBatchDurationMs);
+			int remainingMs = remainingBudgetMs();
 			string abortReason = DescribeAbort(cancellationToken, remainingMs);
 			if (abortReason is not null) {
 				// Not attempted, so not-inserted is KNOWN - the same shape as a locally rejected row.
@@ -335,8 +408,7 @@ public sealed class ODataCreateTool(
 			// Cap the per-row timeout to what is left of the batch budget, so the LAST row cannot overshoot
 			// the deadline by a further full timeout.
 			ODataRowResult result = CreateRow(
-				client, url, row, index, Math.Min(RowRequestTimeoutMs, remainingMs), propertyTypes,
-				() => MaxBatchDurationMs - (int)Math.Min(elapsed.ElapsedMilliseconds, MaxBatchDurationMs));
+				client, url, row, index, Math.Min(RowRequestTimeoutMs, remainingMs), propertyTypes, remainingBudgetMs);
 			results.Add(result);
 			if (!result.Success && stopOnError) {
 				break;
@@ -642,6 +714,12 @@ public sealed record ODataCreateArgs {
 	[Description("Stop inserting after the first failed row. Default false: continue and report every row independently. " +
 		"When true and a row fails, the rows after it are NOT attempted and do NOT appear in 'results', so 'results' may be shorter than the input 'rows'.")]
 	public bool StopOnError { get; init; }
+
+	/// <summary>Whether to read the created rows back and report divergences; <see langword="null"/> means true.</summary>
+	[JsonPropertyName("verify")]
+	[Description("Read the created rows back by Id after the batch (a few batched GETs within the batch time budget) and " +
+		"report each field Creatio stored with a different value in the row's 'diverged'. Default: true. false skips the read-back.")]
+	public bool? Verify { get; init; }
 
 	/// <summary>Optional path to a JSON array of row objects, used instead of <see cref="Rows"/>.</summary>
 	[JsonPropertyName("rows-file")]
