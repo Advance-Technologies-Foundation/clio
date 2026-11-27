@@ -323,16 +323,21 @@ public sealed class BuildCaseClientTests {
 		body.ContainsKey("confirmStageRecords").Should().BeFalse(
 			because: "a yes not given is not sent, so a package without the key does not refuse it as unknown");
 		body.ContainsKey("confirmValueRename").Should().BeFalse(because: "a yes not given is not sent");
+		body.ContainsKey("confirmAllRecords").Should().BeFalse(
+			because: "a yes to an all-records access-rights step not given is not sent, so a package whose contract "
+				+ "lacks the key does not refuse it as unknown");
 	}
 
 	[Test]
-	[Description("The two new confirmations travel as JSON true when the user said yes, under the keys the package declares.")]
+	[Description("The three new confirmations (stage records, value rename, all records) travel as JSON true when the user said yes, under the keys the package declares.")]
 	public void Modify_ShouldSendTheNewConfirmations_AsTrue_WhenGiven() {
 		// Arrange
 		string sent = null;
 		_client.ExecutePostRequest(ModifyCaseUrl, Arg.Do<string>(body => sent = body))
 			.Returns("{\"ModifyCaseResult\":{\"success\":true,\"outcome\":\"planned\"}}");
-		ModifyCaseRequest request = new() { CaseName = "UsrOrderCase", ConfirmStageRecords = true, ConfirmValueRename = true };
+		ModifyCaseRequest request = new() {
+			CaseName = "UsrOrderCase", ConfirmStageRecords = true, ConfirmValueRename = true, ConfirmAllRecords = true
+		};
 
 		// Act
 		using (IDynamicCaseSession session = _sut.OpenSession(Env)) {
@@ -343,6 +348,9 @@ public sealed class BuildCaseClientTests {
 		JsonObject body = JsonNode.Parse(sent)!["request"]!.AsObject();
 		body["confirmStageRecords"]!.GetValue<bool>().Should().BeTrue(because: "the user's yes is forwarded");
 		body["confirmValueRename"]!.GetValue<bool>().Should().BeTrue(because: "the user's yes is forwarded");
+		body["confirmAllRecords"]!.GetValue<bool>().Should().BeTrue(
+			because: "the user's separate yes to an access-rights step on every record is forwarded under the key the "
+				+ "package declares");
 	}
 
 	[Test]

@@ -391,6 +391,26 @@ public sealed class ModifyDynamicCaseToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The tool description and the stages argument name every step type token the bundled package takes, as one list, so an agent that has not read the guide yet still sends a type the package knows.")]
+	public void Descriptions_ShouldNameEveryStepType() {
+		// Arrange
+		// The whole list, not each token alone: "approval" also occurs in "after user approval", so a per-token check
+		// would pass for the tool description without the list.
+		const string stepTypes = "performTask, approval, openEditPage, subProcess, sendEmail or changeAccessRights";
+
+		// Act
+		string description = Description();
+		string stages = ParameterDescription("stages");
+
+		// Assert
+		description.Should().Contain(stepTypes,
+			because: "the tool description lists the step types, while the guide owns each type's shape");
+		stages.Should().Contain(stepTypes,
+			because: "the stages argument is where a step is written, so it names the type tokens too");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("confirm-running-instances tells the agent to leave it out unless the user said yes, so it is never set on the agent's own.")]
 	public void ConfirmRunningInstances_ShouldBeDescribedAsTheUsersYesOnly() {
 		// Arrange & Act

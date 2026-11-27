@@ -613,10 +613,13 @@ public sealed class CreateDynamicCaseToolE2ETests {
 	}
 
 	[Test]
-	[Description("Step types (ENG-107648): an access-rights step without a filter is refused step-acts-on-all-records with nothing written; a dry run with an approval (a condition on Positive) and an access-rights step on the contact who created the case's record writes nothing; the write stores both, describe returns each type's block, the approval's condition and the filter as [#Record.CreatedBy#], and the described steps sent back answer unchanged.")]
+	[Description("Step types (ENG-107648): an access-rights step without a filter is refused step-acts-on-all-records with nothing written; a dry run with an approval (a condition on Positive) and an access-rights step on the contact who created the case's record writes nothing; the write stores both, describe returns each type's block, the approval's condition and the filter as [#Record.CreatedBy#], and the described steps sent back answer unchanged. Not covered on the lane: openEditPage and subProcess with inputs, because the AutoTestClioMcp seed ships no section page of its object for an Open edit page step to open and no business process with an input parameter to call; sendEmail, because the lane's stand has no mailbox to send from.")]
 	[AllureName("modify-dynamic-case writes and describes an approval and an access-rights step")]
 	public async Task ModifyDynamicCase_ShouldWriteAndDescribeTheApprovalAndAccessRightsSteps() {
 		// Arrange
+		// No openEditPage, subProcess or sendEmail step here: the seed has no section page of its object (an Open edit
+		// page step takes only a page registered for a section), no process with an input parameter, and the lane's
+		// stand has no mailbox.
 		await using ProcessDesignerArrangeContext context = await StartAsync(CaseChangePackageVersion);
 		JsonObject? created = null;
 		try {
@@ -673,22 +676,28 @@ public sealed class CreateDynamicCaseToolE2ETests {
 
 			// Assert
 			IgnoreWhenProcessBuilderIsBehind(ToolText(everyRecord), CaseChangePackageVersion);
-			Text(ResultOf(everyRecord), "outcome").Should().Be("refused");
+			Text(ResultOf(everyRecord), "outcome").Should().Be("refused",
+				because: "an access-rights step without a filter and without the user's separate yes is not written");
 			Text(ResultOf(everyRecord), "errorCode").Should().Be("step-acts-on-all-records",
 				because: "without a filter the step changes the rights on every record of the object");
 			ShouldHaveLanded(dryRun, "an approval and a filtered access-rights step are valid steps");
-			Text(ResultOf(dryRun), "outcome").Should().Be("planned");
+			Text(ResultOf(dryRun), "outcome").Should().Be("planned",
+				because: "a dry run with valid steps runs every check and only plans the change");
 			StepsOf(StageOf(afterDryRun, stored[1])).Should().BeEmpty(because: "neither the refusal nor the dry run wrote");
 			ShouldHaveLanded(write, "the planned steps can be written");
 			List<JsonObject> steps = StepsOf(StageOf(after, stored[1]));
-			steps.Select(step => Text(step, "type")).Should().Equal("approval", "changeAccessRights");
+			steps.Select(step => Text(step, "type")).Should().Equal(["approval", "changeAccessRights"],
+				because: "describe reports each stored step by its own type token, in the order the steps were sent");
 			JsonObject approvalStep = steps[0];
 			approvalStep["required"]!.GetValue<bool>().Should().BeTrue(because: "an approval is required by default");
-			Text(approvalStep["approval"]!["approver"]!.AsObject(), "type").Should().Be("user");
+			Text(approvalStep["approval"]!["approver"]!.AsObject(), "type").Should().Be("user",
+				because: "describe returns the approval block with the approver type it was written with");
 			Text(approvalStep["conditions"]!.AsArray().Single()!.AsObject(), "nextStage")
-				.Should().Be(Text(StageOf(after, target), "caption"));
+				.Should().Be(Text(StageOf(after, target), "caption"),
+					because: "the approval's condition on Positive leads to the stage named, which describe names by caption");
 			JsonObject condition = steps[1]["filter"]!["conditions"]!.AsArray().Single()!.AsObject();
-			Text(condition, "column").Should().Be("Id");
+			Text(condition, "column").Should().Be("Id",
+				because: "describe returns the access-rights step's filter on the column it was written with");
 			Text(condition, "value").Should().Be("[#Record.CreatedBy#]",
 				because: "the filter names the contact who created the case's record");
 			ShouldHaveLanded(again, "the described steps are valid steps");

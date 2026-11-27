@@ -952,7 +952,7 @@ public class BundledProcessBuilderPackageTests {
 	}
 
 	[Test]
-	[Description("An archive that meets the case-change floor must read the two confirmations, report records, take a stage's steps and transitionType, and take a step copied from describe: a cut at or above the floor from a base without them (another branch's re-cut) would pass every pin while describe lost records and modify refused them as unknown keys.")]
+	[Description("An archive that meets the case-change floor must read the three confirmations, report records, take a stage's steps and transitionType, take a step copied from describe, take a sub-process step's inputs and refuse an all-records access-rights step without the user's yes: a cut at or above the floor from a base without them (another branch's re-cut) would pass every pin while describe lost records and modify refused them as unknown keys.")]
 	public void BundledArchive_ShouldAcceptTheCaseChangeConfirmations_WhenItMeetsTheirFloor() {
 		// Arrange
 		PackageVersion bundledVersion = ReadBundledVersionThroughTheCatalog();
@@ -966,6 +966,9 @@ public class BundledProcessBuilderPackageTests {
 		bool takesSteps = archive.Contains("[DataMember(Name = \"steps\")]", StringComparison.Ordinal);
 		bool takesTransitionType = archive.Contains("[DataMember(Name = \"transitionType\")]", StringComparison.Ordinal);
 		bool takesDescribedStep = archive.Contains("typeof(CaseStepRequest), typeof(CaseStepInfo)", StringComparison.Ordinal);
+		bool readsAllRecords = archive.Contains("[DataMember(Name = \"confirmAllRecords\")]", StringComparison.Ordinal);
+		bool takesStepInputs = archive.Contains("class CaseStepInputRequest", StringComparison.Ordinal);
+		bool refusesAllRecordsWithoutYes = archive.Contains("\"step-acts-on-all-records\"", StringComparison.Ordinal);
 
 		// Assert
 		if (bundledVersion >= floor) {
@@ -977,6 +980,15 @@ public class BundledProcessBuilderPackageTests {
 				because: $"the bundled {bundledVersion} meets the floor {floor}, raised for a stage's transitionType");
 			takesDescribedStep.Should().BeTrue(
 				because: $"the bundled {bundledVersion} meets the floor {floor}, raised for a step sent back as described");
+			readsAllRecords.Should().BeTrue(
+				because: $"the bundled {bundledVersion} meets the floor {floor}, raised for confirm-all-records, which "
+					+ "modify-dynamic-case sends as confirmAllRecords and an older contract refuses as an unknown key");
+			takesStepInputs.Should().BeTrue(
+				because: $"the bundled {bundledVersion} meets the floor {floor}, raised for the other step types, and a "
+					+ "sub-process step's inputs are read into CaseStepInputRequest");
+			refusesAllRecordsWithoutYes.Should().BeTrue(
+				because: $"the bundled {bundledVersion} meets the floor {floor}, raised for the access-rights step, whose "
+					+ "change on every record without the user's yes is refused as step-acts-on-all-records");
 		}
 	}
 

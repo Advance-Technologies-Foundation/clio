@@ -76,7 +76,8 @@ public class ModifyDynamicCaseTool(
 		 + "its object (confirm-all-records, a separate yes). Every refusal answers outcome refused with a stable errorCode "
 		 + "and writes nothing; the same call again answers unchanged. A case is interpreted: no compile-creatio and "
 		 + "no restart, but open pages of the object need a reload (F5). A stage item's steps are the WHOLE step list "
-		 + "of that stage (the guide has the step shape) and transitionType says when it moves on by itself; steps "
+		 + "of that stage (a step type is performTask, approval, openEditPage, subProcess, sendEmail or "
+		 + "changeAccessRights; the guide has each shape) and transitionType says when it moves on by itself; steps "
 		 + "start on real records, so ask the user first. Requires CrtProcessBuilder "
 		 + DynamicCaseChangeRequirement.MinimumProcessBuilderVersion
 		 + " or later (install-process-builder, after user approval).")]
@@ -210,7 +211,8 @@ public sealed record ModifyDynamicCaseArgs(
 		+ "of its group. successful: false for a stage of the final group (the last top-level stage and its members) "
 		+ "that ends the case unsuccessfully. caption renames the stage's lookup value for every record "
 		+ "(a stage shows its value's name), only with confirm-value-rename. steps: the stage's whole ordered step list "
-		+ "(a stored step left out is removed; omit to keep them); transitionType: none, afterRequired or afterAll. Omit "
+		+ "(type performTask, approval, openEditPage, subProcess, sendEmail or changeAccessRights; a stored step left out "
+		+ "is removed; omit to keep them); transitionType: none, afterRequired or afterAll. Omit "
 		+ "to keep the stages.")]
 	JsonElement? Stages = null,
 
