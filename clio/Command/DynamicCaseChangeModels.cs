@@ -52,10 +52,11 @@ public static class DynamicCaseChangeRequirement {
 	/// types as not supported and the flag as an unknown key. 1.6.6.212 to 1.6.6.215 were that branch's cuts without the
 	/// versions and before its review rounds, and reached no release. 1.6.6.219 takes a column of the case's record
 	/// (the designer's "Main record") in every step field the designer offers it for - hints, a purpose, a subject, a
-	/// role, a new record's pre-filled values - and links open-page and email steps to the case's record; 1.6.6.218
-	/// reached no release.
+	/// role, a new record's pre-filled values - and links open-page and email steps to the case's record; 1.6.6.220 adds
+	/// a column path through the record's lookups, an activity's time from a column, a Perform task's subject apart
+	/// from its caption and a step's other connections. 1.6.6.218 and 1.6.6.219 reached no release.
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.219";
+	public const string MinimumProcessBuilderVersion = "1.6.6.220";
 }
 
 /// <summary>
