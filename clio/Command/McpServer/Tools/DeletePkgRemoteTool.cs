@@ -103,7 +103,7 @@ public sealed class DeletePkgRemoteTool(
 			return Failure(args.PackageName, "environment-name is required and cannot be empty.");
 		}
 		if (string.IsNullOrWhiteSpace(args.PackageName)) {
-			return Failure(args.EnvironmentName, "package-name is required and cannot be empty.");
+			return Failure(args.PackageName, "package-name is required and cannot be empty.");
 		}
 		DeletePkgOptions options = new() {
 			Environment = args.EnvironmentName,

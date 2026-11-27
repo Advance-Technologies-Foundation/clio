@@ -169,6 +169,8 @@ public sealed class DeletePkgRemoteToolTests : BaseClioModuleTests {
 		// Assert
 		response.Success.Should().BeFalse(because: "no package was named, so nothing may be deleted");
 		response.Error.Should().Contain("package-name", because: "the caller must see which argument to fix");
+		response.PackageName.Should().BeNull(
+			because: "no package was named, so the response must not echo the environment name as the package");
 		_applicationClient.DidNotReceive()
 			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
