@@ -296,6 +296,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["delete-data-binding-db"] = PassthroughClassification.NotApplicable,
 			["delete-entity-business-rules"] = PassthroughClassification.NotApplicable,
 			["delete-page-business-rules"] = PassthroughClassification.NotApplicable,
+			["delete-pkg-remote"] = PassthroughClassification.NotApplicable,
 			["delete-schema"] = PassthroughClassification.NotApplicable,
 			["delete-theme"] = PassthroughClassification.NotApplicable,
 			["deploy-identity"] = PassthroughClassification.NotApplicable,

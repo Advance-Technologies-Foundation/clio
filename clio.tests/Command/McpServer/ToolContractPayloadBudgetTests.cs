@@ -188,7 +188,13 @@ public sealed class ToolContractPayloadBudgetTests {
 	// truncated or which could say the same in fewer words; the rest of each old first sentence is now its second:
 	// create-dynamic-case, describe-dynamic-case, describe-business-process, list-user-tasks,
 	// modify-business-process-as-new-version, set-active-business-process-version and validate-process-graph.
-	// Measured 18685, 3 under; the object index above measured 49998, under its ceiling without a re-pin.
+	// delete-pkg-remote (issue #1784), one more long-tail tool and line: measured 18755 with the purpose
+	// "Deletes a package from a Creatio environment.", 67 over. Paid by the legend, as the 73-step note above
+	// requires: the clio-run call shape {"command","args"} is gone (discoverable from clio-run's own contract)
+	// and "may delete or overwrite data" -> "may delete or overwrite"; the tool's purpose is the short
+	// "Deletes a package." (its name already says pkg and remote). The resident sentence the toolkit mirrors
+	// and the (D) sentence are unchanged. Both payments together: measured 18650, 38 under; the object index
+	// grows by the one new entry, still under its ceiling without a re-pin.
 	private const int MaxToolIndexSerializedBytes = 73 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes

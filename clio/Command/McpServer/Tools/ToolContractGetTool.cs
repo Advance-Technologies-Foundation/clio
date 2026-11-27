@@ -948,6 +948,7 @@ internal static class ToolContractCatalog {
 			[SchemaSyncTool.ToolName] = BuildSchemaSync(),
 			[PageSyncTool.ToolName] = BuildPageSync(),
 			[GetPkgListTool.GetPkgListToolName] = BuildGetPkgList(),
+			[DeletePkgRemoteTool.DeletePkgRemoteToolName] = BuildDeletePkgRemote(),
 			[PageListTool.ToolName] = BuildPageList(),
 			[PageGetTool.ToolName] = BuildPageGet(),
 			[CreateLookupTool.CreateLookupToolName] = BuildCreateLookup(),
@@ -1046,6 +1047,7 @@ internal static class ToolContractCatalog {
 		SchemaSyncTool.ToolName,
 		PageSyncTool.ToolName,
 		GetPkgListTool.GetPkgListToolName,
+		DeletePkgRemoteTool.DeletePkgRemoteToolName,
 		PageListTool.ToolName,
 		PageGetTool.ToolName,
 		CreateLookupTool.CreateLookupToolName,
@@ -1304,8 +1306,8 @@ internal static class ToolContractCatalog {
 	internal static readonly string ToolIndexLegend =
 		$"Each line: name (R)(D) [aka old names]: purpose, max {MaxToolIndexPurposeLength} chars. "
 		+ "(R) = resident, resident=true in detail=index-entries: call it directly. "
-		+ "No (R): call via clio-run {\"command\":\"<name>\",\"args\":{...}}. "
-		+ "(D) = destructive: may delete or overwrite data; a line without (D) can still write.";
+		+ "No (R): call via clio-run. "
+		+ "(D) = destructive: may delete or overwrite; a line without (D) can still write.";
 
 	/// <summary>
 	/// Explains one <c>facts</c> entry (<see cref="McpToolFacts.ToJson"/>). The same object sits in a resident tool's
@@ -4969,6 +4971,47 @@ internal static class ToolContractCatalog {
 			],
 			Flow([GetPkgListTool.GetPkgListToolName],
 				"Read one bounded page. While truncated is true, add count to offset and call list-packages again with the same filter and limit."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildDeletePkgRemote() {
+		return new ToolContractDefinition(
+			DeletePkgRemoteTool.DeletePkgRemoteToolName,
+			"Deletes a package. The destructive counterpart of create-package and the same operation as deleting a package in the Configuration section. " +
+			"Use it to remove a scratch package once its schemas are moved or discarded, so the environment does not keep it. " +
+			"Refuses without deleting anything when the package does not exist (status not-found), is foreign to the environment (status locked) — its maintainer differs from the environment's, or it was installed from a repository — or other installed packages depend on it (status blocked-by-dependents, the dependents named). " +
+			"An environment it cannot read is refused as unavailable rather than deleted blind. " +
+			"Before deleting it reports what the package holds — schemas, data bindings and install-time SQL scripts, as counts with the first names listed — then deletes it and verifies the absence by reading SysPackage again. " +
+			"success is true only when that read-back confirms the package is gone; with success=false and no deleted the delete call itself could not be confirmed, so check list-packages before retrying.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, PackageNameFieldName],
+				EnvironmentPackageFields()),
+			EnvelopeOutput("success",
+				["status is not-found, locked, blocked-by-dependents, delete-failed, delete-unverified or unavailable"],
+				[
+					Field("success", BooleanType, "True only when the delete completed and the read-back confirmed the package is gone."),
+					Field("status", StringType, "One of deleted, delete-unverified, delete-failed, not-found, locked (foreign to the environment), blocked-by-dependents or unavailable."),
+					Field(PackageNameFieldName, StringType, "The package name the caller asked for."),
+					Field("package-uid", StringType, "The package identifier read before the delete; omitted when it could not be read."),
+					Field("deleted", BooleanType, "True only when this call deleted the package and the read-back confirmed it; false when the call deleted nothing; omitted when the outcome could not be established."),
+					Field("dependents", ArrayType, "Installed packages that depend on the package; present when the status is blocked-by-dependents."),
+					Field("inventory", ObjectType, "What the package held when the delete was considered: schema, data-binding and SQL-script counts with the first names listed; present once the pre-flight passed."),
+					Field("warning", StringType, "Which inventory read failed, so a zero count reads as not read; present when the inventory is partial."),
+					Field("error", StringType, "The failure detail; omitted on success."),
+					Field("site-response", ObjectType, "What the site answered to the refused delete call: status, message and code; absent on success and when no HTTP response exists.")
+				]),
+			CommonErrorContract,
+			EnvironmentPackageAliases(),
+			[],
+			[
+				Example("Delete a scratch package and verify it is gone", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[PackageNameFieldName] = "UsrScratchPkg"
+				})
+			],
+			Flow([CreatePackageTool.CreatePackageToolName, DeletePkgRemoteTool.DeletePkgRemoteToolName],
+				"create-package → delete-pkg-remote: remove a scratch package once its contents are moved or discarded."),
 			[],
 			[]);
 	}

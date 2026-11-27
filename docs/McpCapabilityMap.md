@@ -350,7 +350,8 @@ sees the same envelope as before.
 
 - top level of the failed result: `create-entity-schema`, `update-entity-schema`,
   `modify-entity-schema-column`, `create-lookup`, `create-page`, `update-page`, `create-data-binding-db`,
-  `upsert-data-binding-row-db`, `remove-data-binding-row-db`, `delete-data-binding-db`, `odata-update`,
+  `upsert-data-binding-row-db`, `remove-data-binding-row-db`, `delete-data-binding-db`, `delete-pkg-remote`,
+  `odata-update`,
   `odata-delete` (one `id`), `install-application`, `push-workspace`, `install-process-builder`,
   `compile-creatio`, `restart-by-environment-name`, `restart-by-credentials`, `create-business-process`;
 - on each failed item of a batch: `odata-create` `results[i]`, `odata-delete` with `ids` `results[i]`,
@@ -425,6 +426,7 @@ and `message` are null: the result's own fields name what failed and why.
 | `odata-create`, per row | one POST per row, never replayed | `none` (`record-created: false`) when the row is refused without processing or rejected while Creatio reads the body |
 | `create-business-process` | one BuildProcess | `none` when BuildProcess is refused without processing |
 | `delete-data-binding-db` | one binding delete | `none` when the delete is refused without processing |
+| `delete-pkg-remote` | one package delete, after read-only pre-flight reads | `none` when the delete is refused without processing or before the request was sent; `unknown` when no answer came back (timeout) |
 | `compile-creatio` | one build request | `none` when the build request is refused without processing |
 | `restart-by-environment-name`, `restart-by-credentials` | one restart request, sent with up to 3 attempts | always `unknown` over MCP: a first attempt that timed out may have restarted the instance |
 | `create-entity-schema`, `update-entity-schema`, `modify-entity-schema-column`, `create-lookup` | designer state, save, DB structure, publish, OData build, then (create-lookup) the lookup registration; the designer requests go with 3 attempts | always `unknown` |
@@ -539,6 +541,8 @@ This area gives the AI a clean application-level view of the platform.
   Create a new, empty, editable package in an environment via `PackageService.svc` (or inside an installed application with `application-code`). Prepends the environment's `SchemaNamePrefix`, sets the requested dependencies with a second request, and returns the readback (`package-uid`, `package-name`, `maintainer`, `dependencies`, `install-type`, `editable`). Destructive and not idempotent: a repeated name is refused and nothing changes; `package-created=true` with `success=false` means the package exists but a later step (dependencies or readback) failed; `package-created=null` means the outcome is unknown after a transport failure.
 - `remove-package-dependency`
   Remove one or more package dependencies from a package via `PackageService.svc` — the symmetric counterpart of `add-package-dependency`, used to roll back a dependency added only to unblock the schema designer. Matched by name (case-insensitive); idempotent — removing an absent dependency is a no-op.
+- `delete-pkg-remote`
+  Delete an installed package from a registered environment via `AppInstallerService.svc/DeletePackage` — the destructive counterpart of `create-package`. Read-only pre-flight first: it refuses without deleting anything a package that does not exist (`not-found`), a package foreign to the environment (`locked`) — its maintainer differs from the environment's, or it was installed from a repository — or a package other installed packages depend on (`blocked-by-dependents`, the dependents named); an unreadable environment is refused as `unavailable` rather than deleted blind. Before deleting it reports the package's inventory — schemas, data bindings and install-time SQL scripts, as counts with the first names listed — then deletes it and verifies the absence by reading `SysPackage` again: `success=true` only when the read-back confirms the package is gone (`deleted=true`), `delete-unverified` when the delete was sent but the read-back could not run, `delete-failed` when the site refused it (`site-response` then present).
 
 What an external AI can practically do here:
 
@@ -551,6 +555,7 @@ What an external AI can practically do here:
 - install packaged apps into an environment
 - add missing package dependencies to recover a broken schema designer or compile
 - create a new editable package to hold design-time changes
+- delete a scratch package again once its contents are moved or discarded, verified gone
 
 The AI sees this as a higher abstraction layer than package-level commands.
 
