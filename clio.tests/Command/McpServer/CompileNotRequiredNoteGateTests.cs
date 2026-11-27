@@ -123,4 +123,24 @@ public class CompileNotRequiredNoteGateTests {
 			because: "the gate keys on the clause rather than the whole sentence, so a rewording on the server "
 				+ "side cannot silently re-enable the contradiction");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Suppresses the note when the compile warning reaches the log only inside a serialized dynamic-case result document. The DCM commands print the verdict and the document and no separate warning line, so the marker scan must find the clause inside the document's warnings array.")]
+	public void WithCompileNotRequiredNote_ShouldSuppressTheNote_WhenTheWarningIsOnlyInsideTheResultDocument() {
+		// Arrange
+		CommandExecutionResult result = ResultWith(
+			new InfoMessage("Dynamic case 'UsrOrderCase' created."),
+			new InfoMessage("{\"outcome\":\"created\",\"warnings\":[\"The package dependencies this call added to "
+				+ "'UsrPkg' cannot take effect until the configuration is compiled: the server asked for a "
+				+ "configuration compilation after the change.\"]}"));
+
+		// Act
+		CommandExecutionResult noted = result.WithCompileNotRequiredNote();
+
+		// Assert
+		noted.Note.Should().BeNull(
+			because: "the marker inside the result document must still withhold the note once the separate "
+				+ "warning line is gone");
+	}
 }

@@ -370,6 +370,20 @@ internal class ServiceUrlBuilderCommandTests
 			yield return new TestCaseDataWithKnownRoutes(true, "http://localhost",
 				ServiceUrlBuilder.KnownRoute.ModifyCase,
 				"http://localhost/rest/ProcessDesignService/ModifyCase");
+			// modify-dynamic-case-as-new-version and set-active-dynamic-case-version post here; a wrong path answers 404
+			// and reads as a package that predates the operations.
+			yield return new TestCaseDataWithKnownRoutes(false, "http://localhost",
+				ServiceUrlBuilder.KnownRoute.ModifyCaseAsNewVersion,
+				"http://localhost/0/rest/ProcessDesignService/ModifyCaseAsNewVersion");
+			yield return new TestCaseDataWithKnownRoutes(true, "http://localhost",
+				ServiceUrlBuilder.KnownRoute.ModifyCaseAsNewVersion,
+				"http://localhost/rest/ProcessDesignService/ModifyCaseAsNewVersion");
+			yield return new TestCaseDataWithKnownRoutes(false, "http://localhost",
+				ServiceUrlBuilder.KnownRoute.SetActiveCaseVersion,
+				"http://localhost/0/rest/ProcessDesignService/SetActiveCaseVersion");
+			yield return new TestCaseDataWithKnownRoutes(true, "http://localhost",
+				ServiceUrlBuilder.KnownRoute.SetActiveCaseVersion,
+				"http://localhost/rest/ProcessDesignService/SetActiveCaseVersion");
 		}
 	}
 

@@ -183,6 +183,12 @@ public sealed class ToolContractPayloadBudgetTests {
 	// its default-record-rights siblings, whose first sentences the cut truncated: set-default-record-rights ->
 	// "Changes default record rules.", apply-default-record-rights -> "Applies default record rules."; the rest of each
 	// old first sentence is now their second. Measured 18684, 4 under; the object index above measured 50238.
+	// modify-dynamic-case-as-new-version and set-active-dynamic-case-version, two more lines, measured 18838 (150
+	// over). Paid by the process-designer and dynamic-case lines, whose first sentences the 48-character cut
+	// truncated or which could say the same in fewer words; the rest of each old first sentence is now its second:
+	// create-dynamic-case, describe-dynamic-case, describe-business-process, list-user-tasks,
+	// modify-business-process-as-new-version, set-active-business-process-version and validate-process-graph.
+	// Measured 18685, 3 under; the object index above measured 49998, under its ceiling without a re-pin.
 	private const int MaxToolIndexSerializedBytes = 73 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes

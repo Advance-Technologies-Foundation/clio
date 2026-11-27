@@ -25,6 +25,12 @@ When a schema name exists in several packages, the target is resolved
 deterministically to the top (most-derived) layer — the same layer
 `get-client-unit-schema` reads — so the update never writes to an arbitrary layer.
 
+A body that is a client module (`define("Name", [deps], function(...) { ... })` whose
+factory returns no page sections) is linted with the code-quality rules `validate-page`
+applies to a module: function length, log-only catches, a bare numeric `comparisonType`,
+sequential independent loads and hard-coded record ids. The findings come back in the
+response's `warnings` and never block the save; the key is omitted when there are none.
+
 ## Synopsis
 
 ```bash

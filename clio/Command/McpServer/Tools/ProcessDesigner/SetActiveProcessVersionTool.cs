@@ -51,7 +51,7 @@ public class SetActiveProcessVersionTool(
 	// state; it is not a claim that an abandoned call is safe to retry blindly.
 	[McpServerTool(Name = SetActiveProcessVersionToolName, ReadOnly = false, Destructive = true,
 		 Idempotent = true, OpenWorld = false),
-	 Description("Make one version of a Creatio business process the ACTUAL one — the product's UI word for "
+	 Description("Activates a process version. It becomes the ACTUAL one, the product's UI word for "
 		 + "what the platform's data calls the active version. Identify the member by name (schema code) or "
 		 + "uid. ANY member of the family is a valid target, the family ROOT included - activating the root is "
 		 + "how you go back to the original, and the platform accepts it like any other member. This is the "

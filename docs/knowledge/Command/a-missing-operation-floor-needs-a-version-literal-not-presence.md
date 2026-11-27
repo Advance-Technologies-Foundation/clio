@@ -6,6 +6,8 @@ applies-to:
   - clio/Command/CreateDynamicCaseCommand.cs
   - clio/Command/DescribeDynamicCaseCommand.cs
   - clio/Command/ModifyDynamicCaseCommand.cs
+  - clio/Command/ModifyDynamicCaseAsNewVersionCommand.cs
+  - clio/Command/SetActiveDynamicCaseVersionCommand.cs
   - clio/Command/DynamicCaseChangeModels.cs
   - clio.tests/Command/ProcessDesignerRequiresPackageAttributeTests.cs
 ticket: ENG-94374
@@ -20,7 +22,11 @@ still accepts. `ModifyProcessAsNewVersionOptions` and `SetActiveProcessVersionOp
 same case for `BuildCase` (ENG-105556), with its floor held in one constant,
 `CreateDynamicCaseOptions.MinimumProcessBuilderVersion`; `DescribeDynamicCaseOptions` and
 `ModifyDynamicCaseOptions` are the same case for `DescribeCase` and `ModifyCase` (ENG-106378), both on one
-shared floor, `DynamicCaseChangeRequirement.MinimumProcessBuilderVersion`.
+shared floor, `DynamicCaseChangeRequirement.MinimumProcessBuilderVersion`. `ModifyDynamicCaseAsNewVersionOptions`
+and `SetActiveDynamicCaseVersionOptions` are the same case for `ModifyCaseAsNewVersion` and `SetActiveCaseVersion`
+(ENG-106400), on that same shared floor; describe and modify moved with them because what they advertise moved
+(`versions`, an inactive member by name), and a floor below the archive that carries it would let an older package
+answer describe without `versions`, which reads as "this case has no versions".
 
 **Why it is this way** — the presence-only form exists so the convergence rule (`IBundledPackageConvergence`)
 can own "keep the environment current" without a literal restating that policy where it cannot track the

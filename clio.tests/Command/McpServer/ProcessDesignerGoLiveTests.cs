@@ -33,7 +33,9 @@ public sealed class ProcessDesignerGoLiveTests {
 		// Added after go-live, ungated from the start: the dynamic-case tools ship the same way.
 		typeof(CreateDynamicCaseTool),
 		typeof(DescribeDynamicCaseTool),
-		typeof(ModifyDynamicCaseTool)
+		typeof(ModifyDynamicCaseTool),
+		typeof(ModifyDynamicCaseAsNewVersionTool),
+		typeof(SetActiveDynamicCaseVersionTool)
 	];
 
 	private static readonly Type[] GoLivePromptTypes = [
@@ -52,7 +54,9 @@ public sealed class ProcessDesignerGoLiveTests {
 		ValidateProcessGraphTool.ToolName,
 		CreateDynamicCaseTool.CreateDynamicCaseToolName,
 		DescribeDynamicCaseTool.DescribeDynamicCaseToolName,
-		ModifyDynamicCaseTool.ModifyDynamicCaseToolName
+		ModifyDynamicCaseTool.ModifyDynamicCaseToolName,
+		ModifyDynamicCaseAsNewVersionTool.ModifyDynamicCaseAsNewVersionToolName,
+		SetActiveDynamicCaseVersionTool.SetActiveDynamicCaseVersionToolName
 	];
 
 	// The REAL feature rule over a settings repository whose features map is empty — the state every
