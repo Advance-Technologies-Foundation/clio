@@ -387,6 +387,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["modify-business-process"] = PassthroughClassification.NotApplicable,
 			["modify-business-process-as-new-version"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - the same already-resolver-backed class (a) pattern as modify-business-process
 			["modify-dynamic-case"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - the same already-resolver-backed class (a) pattern as create-dynamic-case
+			["modify-dynamic-case-as-new-version"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - the same already-resolver-backed class (a) pattern as modify-dynamic-case
 			["modify-entity-schema-column"] = PassthroughClassification.NotApplicable,
 			["modify-user-task-parameters"] = PassthroughClassification.NotApplicable,
 			["new-integration-test-project"] = PassthroughClassification.NotApplicable,
@@ -419,6 +420,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["restore-workspace"] = PassthroughClassification.NotApplicable,
 			["run-process"] = PassthroughClassification.NotApplicable,
 			["set-active-business-process-version"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - the same already-resolver-backed class (a) pattern as modify-business-process
+			["set-active-dynamic-case-version"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - the same already-resolver-backed class (a) pattern as modify-dynamic-case
 			["set-background-image"] = PassthroughClassification.NotApplicable,
 			["set-fsm-mode"] = PassthroughClassification.NotApplicable,
 			["set-logo"] = PassthroughClassification.NotApplicable,

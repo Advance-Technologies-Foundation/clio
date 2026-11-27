@@ -57,7 +57,8 @@ public class ModifyProcessAsNewVersionTool(
 	// consent for a run that happens only when the save fails.
 	[McpServerTool(Name = ModifyProcessAsNewVersionToolName, ReadOnly = false, Destructive = false,
 		 Idempotent = false, OpenWorld = false),
-	 Description("Edit an existing Creatio business process and save the result as a NEW VERSION of it, leaving "
+	 Description("Saves a process edit as a NEW VERSION. It edits an existing Creatio business process and saves the "
+		 + "result as a new version of it, leaving "
 		 + "the current one untouched and still running. This is what the product's designer calls "
 		 + "\"Save new version\" (Ctrl+Alt+N), as opposed to \"Save current version\" - which is what "
 		 + "modify-business-process does. Identify the SOURCE process by name (schema code) or uid; the "

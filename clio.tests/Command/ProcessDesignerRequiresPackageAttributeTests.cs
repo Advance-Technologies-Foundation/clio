@@ -171,7 +171,9 @@ namespace Clio.Tests
 
         [TestCase(typeof(DescribeDynamicCaseOptions))]
         [TestCase(typeof(ModifyDynamicCaseOptions))]
-        [Description("describe-dynamic-case and modify-dynamic-case declare ONE shared VERSIONED floor: DescribeCase and ModifyCase are operations an older package does not carry at all, so a presence-only gate would let the call reach a package that answers its route with a 404, and BuildCase's floor is not enough for them.")]
+        [TestCase(typeof(ModifyDynamicCaseAsNewVersionOptions))]
+        [TestCase(typeof(SetActiveDynamicCaseVersionOptions))]
+        [Description("describe-dynamic-case, modify-dynamic-case and the two case version tools declare ONE shared VERSIONED floor: the case-change and version operations are operations an older package does not carry at all, so a presence-only gate would let the call reach a package that answers its route with a 404, and BuildCase's floor is not enough for them.")]
         public void DynamicCaseChangeOptions_ShouldDeclareTheSharedCaseChangeFloor(Type optionsType)
         {
             // Arrange & Act
@@ -181,11 +183,13 @@ namespace Clio.Tests
             requirement.Should().NotBeNull(
                 because: $"{optionsType.Name} calls an operation only a recent package carries, so the gate must fire");
             requirement!.Version.Should().Be(DynamicCaseChangeRequirement.MinimumProcessBuilderVersion,
-                because: "the floor of both tools is written in one place, so the rebundle moves one constant");
+                because: "the floor of the four tools is written in one place, so the rebundle moves one constant");
             PackageVersion.TryParseVersion(requirement.Version, out PackageVersion floor).Should().BeTrue(
                 because: "the checker parses the literal, and an unparseable one throws instead of gating");
             (floor >= PackageVersion.ParseVersion(CreateDynamicCaseOptions.MinimumProcessBuilderVersion)).Should().BeTrue(
-                because: "DescribeCase and ModifyCase arrived after BuildCase, so their floor is never below create-dynamic-case's: 1.6.6.206 (step conditions) against 1.6.6.179 (case filters)");
+                because: "DescribeCase and ModifyCase arrived after BuildCase, so their floor is never below create-dynamic-case's: 1.6.6.217 (case versions, steps inside stages and their conditions) against 1.6.6.179 (case filters)");
+            (floor > PackageVersion.ParseVersion("1.6.6.193")).Should().BeTrue(
+                because: "1.6.6.193 reached a shared stand as a dev build of the version operations, so only a cut above it names bytes that carry them for sure");
             requirement.Hint.Should().Be(ExpectedProcessBuilderHint,
                 because: "the install hint must be consistent across all process-designer gates");
         }

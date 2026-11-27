@@ -36,7 +36,7 @@ public sealed record DynamicCaseReply<TResponse>(DynamicCaseReplyKind Kind, TRes
 
 /// <summary>
 /// Opens sessions against <c>ProcessDesignService</c>'s dynamic-case operations (<c>BuildCase</c>,
-/// <c>DescribeCase</c>, <c>ModifyCase</c>).
+/// <c>DescribeCase</c>, <c>ModifyCase</c>, <c>ModifyCaseAsNewVersion</c>, <c>SetActiveCaseVersion</c>).
 /// </summary>
 public interface IBuildCaseClient {
 	/// <summary>
@@ -67,6 +67,14 @@ public interface IDynamicCaseSession : IDisposable {
 	/// <summary>Sends one <c>ModifyCase</c> call.</summary>
 	/// <param name="request">The change, or its dry run.</param>
 	DynamicCaseReply<ModifyCaseResponse> Modify(ModifyCaseRequest request);
+
+	/// <summary>Sends one <c>ModifyCaseAsNewVersion</c> call.</summary>
+	/// <param name="request">The change saved as a new version, or its dry run.</param>
+	DynamicCaseReply<ModifyCaseAsNewVersionResponse> ModifyAsNewVersion(ModifyCaseAsNewVersionRequest request);
+
+	/// <summary>Sends one <c>SetActiveCaseVersion</c> call.</summary>
+	/// <param name="request">The member to activate, or its dry run.</param>
+	DynamicCaseReply<SetActiveCaseVersionResponse> SetActiveVersion(SetActiveCaseVersionRequest request);
 }
 
 /// <inheritdoc />
@@ -110,6 +118,15 @@ public sealed class BuildCaseClient(
 
 		public DynamicCaseReply<ModifyCaseResponse> Modify(ModifyCaseRequest request) =>
 			Send<ModifyCaseResponse>(ServiceUrlBuilder.KnownRoute.ModifyCase, "ModifyCaseResult", request);
+
+		public DynamicCaseReply<ModifyCaseAsNewVersionResponse> ModifyAsNewVersion(
+			ModifyCaseAsNewVersionRequest request) =>
+			Send<ModifyCaseAsNewVersionResponse>(ServiceUrlBuilder.KnownRoute.ModifyCaseAsNewVersion,
+				"ModifyCaseAsNewVersionResult", request);
+
+		public DynamicCaseReply<SetActiveCaseVersionResponse> SetActiveVersion(SetActiveCaseVersionRequest request) =>
+			Send<SetActiveCaseVersionResponse>(ServiceUrlBuilder.KnownRoute.SetActiveCaseVersion,
+				"SetActiveCaseVersionResult", request);
 
 		public void Dispose() {
 			if (_disposed) {

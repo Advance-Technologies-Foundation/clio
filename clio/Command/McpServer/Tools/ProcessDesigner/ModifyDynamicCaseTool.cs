@@ -45,7 +45,9 @@ public class ModifyDynamicCaseTool(
 		+ "\"group\"?: \"<parent stage value>\" | null, \"successful\"?: false, \"steps\"?: [...], "
 		+ "\"transitionType\"?: \"none\" | \"afterRequired\" | \"afterAll\"}";
 
-	private static readonly string[] StageKeys = [
+	/// <summary>The stage item keys modify-dynamic-case declares; modify-dynamic-case-as-new-version reads the same
+	/// list, so a key the package answers for itself (steps, transitionType) is never refused as unknown-keys.</summary>
+	internal static readonly string[] StageKeys = [
 		DynamicCaseStageArguments.ValueKey, DynamicCaseStageArguments.CaptionKey, DynamicCaseStageArguments.ColorKey,
 		DynamicCaseStageArguments.GroupKey, DynamicCaseStageArguments.SuccessfulKey, DynamicCaseStageArguments.StepsKey,
 		DynamicCaseStageArguments.TransitionTypeKey
@@ -63,14 +65,18 @@ public class ModifyDynamicCaseTool(
 	 Description("Change an existing dynamic case (DCM) in place. Read get-guidance name=process-dynamic-case-change "
 		 + "first. Call describe-dynamic-case, then this tool with dry-run=true, show the user the planned diff and the "
 		 + "notes and ask before writing. Name the case by case-name or case-uid, or by entity-schema-name when the "
-		 + "object has one case. stages is the WHOLE desired list in order, matched to the stored stages by lookup "
+		 + "object has one case; an inactive version named by case-name or case-uid is changed in place and stays "
+		 + "inactive. To change the active case without touching what runs, use modify-dynamic-case-as-new-version. "
+		 + "stages is the WHOLE desired list in order, matched to the stored stages by lookup "
 		 + "value: a stage left out is removed, a new value is added, and an item member left out keeps its stored "
 		 + "value. A stage shows its lookup value's name, so a stage caption renames that value for every record "
 		 + "(confirm-value-rename). caption renames the case. filter gives the case a filter (which new records start "
 		 + "it; the object's first filter splits all its cases by that column) and remove-filter=true removes it. "
-		 + "enabled=false disables the case and true enables it; send enabled alone. Disabled, its running cases "
+		 + "enabled=false disables the case and true enables it; send enabled alone, on the active version only "
+		 + "(invalid-request on an inactive one). Disabled, its running cases "
 		 + "continue only when no other case of the object is enabled; otherwise they are cancelled at their record's "
-		 + "next stage change. Three writes need the user's yes first, each refused until then with the counts to "
+		 + "next change of an enabled case's stage or filter column, and the record then starts the enabled case it "
+		 + "fits, if any. Three writes need the user's yes first, each refused until then with the counts to "
 		 + "show: running cases (confirm-running-instances), records in a removed stage (confirm-stage-records), a "
 		 + "stage value rename (confirm-value-rename). Every refusal answers outcome refused with a stable errorCode "
 		 + "and writes nothing; the same call again answers unchanged. A case is interpreted: no compile-creatio and "
@@ -184,16 +190,16 @@ public sealed record ModifyDynamicCaseArgs(
 	string EnvironmentName,
 
 	[property: JsonPropertyName("case-name")]
-	[property: Description("The case's schema name.")]
+	[property: Description("The case's schema name: any member of its version family.")]
 	string CaseName = null,
 
 	[property: JsonPropertyName("case-uid")]
-	[property: Description("The case's schema UId.")]
+	[property: Description("The case's schema UId: any member of its version family.")]
 	string CaseUId = null,
 
 	[property: JsonPropertyName("entity-schema-name")]
-	[property: Description("The object; accepted only when it has exactly one case (else case-ambiguous with the "
-		+ "list).")]
+	[property: Description("The object's schema name (e.g. UsrOrder); a unique caption is resolved. Accepted only "
+		+ "when it has exactly one case (else case-ambiguous with the list).")]
 	string EntitySchemaName = null,
 
 	// JsonElement, not a typed list: an array of stage objects, an array of strings and a string holding either are
@@ -203,7 +209,9 @@ public sealed record ModifyDynamicCaseArgs(
 	[property: JsonPropertyName("stages")]
 	[property: Description("Optional WHOLE desired stage list in order: an array of {\"value\": \"<lookup value Id or "
 		+ "exact display value>\", \"caption\"?, \"color\"?: \"#RRGGBB\", \"group\"?, \"successful\"?} (a bare string "
-		+ "is {\"value\"}). A stored stage left out is removed; a member left out keeps its stored value. group: the "
+		+ "is {\"value\"}). A stored stage left out is removed with its steps and their conditions (refused "
+		+ "stage-is-condition-target while a kept step's condition still moves records to it); a member left out "
+		+ "keeps its stored value. group: the "
 		+ "parent stage's value, a stage of the list in no group itself (one level); \"group\": null takes the stage out "
 		+ "of its group. successful: false for a stage of the final group (the last top-level stage and its members) "
 		+ "that ends the case unsuccessfully. caption renames the stage's lookup value for every record "
@@ -230,8 +238,8 @@ public sealed record ModifyDynamicCaseArgs(
 
 	[property: JsonPropertyName("enabled")]
 	[property: Description("Optional: false disables the case (new records start none; its running cases continue only "
-		+ "when no other case of the object is enabled, otherwise they are cancelled at their record's next stage "
-		+ "change), true enables it. Send it alone, with no other change.")]
+		+ "when no other case of the object is enabled, otherwise they are cancelled at their record's next change "
+		+ "of an enabled case's stage or filter column), true enables it. Send it alone, with no other change, to the active version only.")]
 	bool? Enabled = null,
 
 	[property: JsonPropertyName("confirm-running-instances")]

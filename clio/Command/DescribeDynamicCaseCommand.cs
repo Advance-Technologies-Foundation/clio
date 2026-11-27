@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -27,8 +26,10 @@ public sealed class DescribeDynamicCaseOptions : EnvironmentOptions {
 }
 
 /// <summary>
-/// Reads an existing dynamic case and reports it: a one-line verdict, the result document, the notes to relay and
-/// the warnings. The exit code is 0 when the case or the object could be read, and 1 otherwise.
+/// Reads an existing dynamic case and reports it in two lines: a one-line verdict that also counts the warnings, then
+/// the result document, whose <c>notes</c>, <c>warnings</c> and a refusal's <c>errorMessage</c> are the one copy of what
+/// to relay. The exit code is 0
+/// when the case or the object could be read, and 1 otherwise.
 /// </summary>
 public class DescribeDynamicCaseCommand(IDynamicCaseService dynamicCaseService, ILogger logger)
 	: Command<DescribeDynamicCaseOptions> {
@@ -58,7 +59,7 @@ public class DescribeDynamicCaseCommand(IDynamicCaseService dynamicCaseService, 
 	/// <param name="result">The result document.</param>
 	internal static string Verdict(DescribeDynamicCaseResult result) {
 		if (!result.Success) {
-			return $"Refused [{result.ErrorCode}]: {result.ErrorMessage}";
+			return DynamicCaseRefusalVerdict.For(result.ErrorCode, result.ErrorMessage, string.Empty);
 		}
 		int count = result.Cases?.Count ?? 0;
 		if (count == 0) {
@@ -68,24 +69,29 @@ public class DescribeDynamicCaseCommand(IDynamicCaseService dynamicCaseService, 
 			return $"{count} dynamic cases read; nothing was changed.";
 		}
 		DynamicCaseInfo found = result.Cases[0];
-		string state = found.Enabled ? "enabled" : "disabled";
-		return $"Dynamic case '{found.SchemaName}' read: {found.Stages?.Count ?? 0} stages, {state}; nothing was "
-			+ "changed.";
+		return $"Dynamic case '{found.SchemaName}' read: {found.Stages?.Count ?? 0} stages, {State(found)}; nothing "
+			+ "was changed.";
+	}
+
+	private static string State(DynamicCaseInfo found) {
+		// enabled is the family's flag, which an inactive member shares: read alone it would let the agent present a
+		// version no record uses as the case in force. Only a family lists versions, and an inactive member always has
+		// one, so a case without versions is never called inactive on a missing activeVersion.
+		bool inactiveMember = !found.ActiveVersion && found.Versions is { Count: > 0 };
+		if (!inactiveMember) {
+			return found.Enabled ? "enabled" : "disabled";
+		}
+		string family = found.Enabled ? "an enabled" : "a disabled";
+		return "an inactive version of " + family + " family";
 	}
 
 	private void Report(DescribeDynamicCaseResult result) {
-		string verdict = Verdict(result);
+		string verdict = Verdict(result) + DynamicCaseWarningsHint.For(result.Warnings, beforeAnyWrite: false);
 		if (result.Success) {
 			logger.WriteInfo(verdict);
 		} else {
 			logger.WriteError(verdict);
 		}
 		logger.WriteInfo(JsonSerializer.Serialize(result, ResultJsonOptions));
-		foreach (string note in (result.Notes ?? []).Where(note => !string.IsNullOrWhiteSpace(note))) {
-			logger.WriteInfo(note);
-		}
-		foreach (string warning in (result.Warnings ?? []).Where(warning => !string.IsNullOrWhiteSpace(warning))) {
-			logger.WriteWarning(warning);
-		}
 	}
 }

@@ -76,6 +76,7 @@ public sealed class McpToolFactsCoverageTests {
 		  "zz-facts-host-path-partial-tool": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none",
 		    "host-paths": [{"argument": "outputFile", "kind": "file"}, {"argument": "source", "kind": "archive", "access": "read"}]},
 		  "zz-facts-hint-careless-read-tool": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none"},
+		  "zz-facts-hint-quiet-rename-tool": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
 		  "zz-facts-hint-read-only-writer-tool": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none",
 		    "host-paths": [{"argument": "outputFile", "kind": "file", "access": "write"}]},
 		  "zz-facts-hint-unset-tool": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none"},
@@ -140,6 +141,24 @@ public sealed class McpToolFactsCoverageTests {
 		["clear-browser-session"] = "it deletes the cached browser session from clio's own cache: the next call signs in again"
 	};
 
+	/// <summary>
+	/// Arguments whose confirmation lets a call overwrite data the environment shares at once: a call that passes one
+	/// renames a lookup value for every record that holds it. A tool that takes one is destructiveHint=true, the
+	/// (D) marker, unless it is listed in <see cref="ConfirmedLiveOverwrites"/>.
+	/// </summary>
+	private static readonly IReadOnlyList<string> LiveOverwriteArguments = ["confirm-value-rename"];
+
+	/// <summary>
+	/// Tools that take a <see cref="LiveOverwriteArguments"/> argument and stay destructiveHint=false, each with why
+	/// (ADR adr-mcp-tool-facts D9). The hint is static, so true would put every call behind destructive consent,
+	/// the dry run and the common add-only write included, for an overwrite only an explicit confirmation reaches.
+	/// </summary>
+	internal static readonly IReadOnlyDictionary<string, string> ConfirmedLiveOverwrites = new Dictionary<string, string>(StringComparer.Ordinal) {
+		["modify-dynamic-case-as-new-version"] = "it adds an inactive case version; the one overwrite is a stage value "
+			+ "rename, refused by the server without confirm-value-rename, which the description and the guide say to send "
+			+ "only after the user's yes to a rename that acts at once for every record (owner's decision, adr-mcp-tool-facts D9)"
+	};
+
 	private static IEnumerable<string> FindHintFailures(string name, McpServerTool tool, McpToolFacts facts) {
 		ModelContextProtocol.Protocol.ToolAnnotations annotations = tool.ProtocolTool.Annotations;
 		bool? readOnlyHint = annotations?.ReadOnlyHint;
@@ -172,6 +191,11 @@ public sealed class McpToolFactsCoverageTests {
 		// An absent destructiveHint means true in MCP, so only an explicit false contradicts a destroy.
 		if (facts.Effect == McpToolEffect.Destroy && destructiveHint == false) {
 			yield return $"Tool '{name}' is destroy but destructiveHint=false: the (D) marker would under-report it.";
+		}
+		string liveOverwrite = LiveOverwriteArguments.FirstOrDefault(ReadArgumentNames(tool.ProtocolTool.InputSchema).Contains);
+		if (liveOverwrite is not null && destructiveHint == false && !ConfirmedLiveOverwrites.ContainsKey(name)) {
+			yield return $"Tool '{name}' takes '{liveOverwrite}', which overwrites shared data at once, but is destructiveHint=false: "
+				+ "mark it destructive, or list it in ConfirmedLiveOverwrites with why (ADR adr-mcp-tool-facts D9).";
 		}
 	}
 
@@ -302,6 +326,34 @@ public sealed class McpToolFactsCoverageTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Every listed exception to the live-overwrite rule is still true: the tool is served, takes the confirmation argument, is a change, and is destructiveHint=false; a stale entry would excuse a tool that no longer needs it.")]
+	public void ConfirmedLiveOverwrites_ShouldNameServedNonDestructiveChanges_ThatTakeTheConfirmation() {
+		// Arrange
+		Dictionary<string, (McpServerTool Tool, McpToolFacts Facts)> served = ReadCatalog()
+			.ToDictionary(entry => entry.Name, entry => (entry.Tool, entry.Facts), StringComparer.Ordinal);
+
+		// Act
+		List<string> stale = [];
+		foreach (string name in ConfirmedLiveOverwrites.Keys) {
+			if (!served.TryGetValue(name, out (McpServerTool Tool, McpToolFacts Facts) entry)) {
+				stale.Add($"'{name}' is not served");
+				continue;
+			}
+			if (!LiveOverwriteArguments.Any(ReadArgumentNames(entry.Tool.ProtocolTool.InputSchema).Contains)) {
+				stale.Add($"'{name}' takes no live-overwrite confirmation");
+			}
+			if (entry.Facts?.Effect != McpToolEffect.Change || entry.Tool.ProtocolTool.Annotations?.DestructiveHint != false) {
+				stale.Add($"'{name}' is not a non-destructive change");
+			}
+		}
+
+		// Assert
+		ConfirmedLiveOverwrites.Should().NotBeEmpty(because: "the list records the one exception the facts ADR names");
+		stale.Should().BeEmpty(because: "an exception that no longer holds must be removed, not kept as a silent excuse");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The checking routine has teeth: over synthetic tools it reports a missing declaration, a partial one, a " +
 		"destroy marked non-destructive, a read-only hint on a change, and argument entries that are unknown or wider than " +
 		"the tool, and stays silent about a correct tool.")]
@@ -348,13 +400,17 @@ public sealed class McpToolFactsCoverageTests {
 			typeof(CarelessReadFixtureTool),
 			typeof(ReadOnlyWriterFixtureTool),
 			typeof(UnsetHintsFixtureTool),
-			typeof(HostPathDeclaredFixtureTool));
+			typeof(HostPathDeclaredFixtureTool),
+			typeof(QuietRenameFixtureTool));
 
 		// Act
 		IReadOnlyList<string> failures = FindFactsFailures(synthetic);
 
 		// Assert
-		synthetic.Should().HaveCount(4, because: "every synthetic tool must be discovered, or this proof is itself vacuous");
+		synthetic.Should().HaveCount(5, because: "every synthetic tool must be discovered, or this proof is itself vacuous");
+		failures.Should().ContainSingle(failure => failure.Contains(QuietRenameFixtureTool.ToolName, StringComparison.Ordinal))
+			.Which.Should().Contain("takes 'confirm-value-rename', which overwrites shared data at once, but is destructiveHint=false",
+				because: "a confirmed rename overwrites a value every record shares, which the (D) marker exists to show");
 		failures.Should().ContainSingle(failure => failure.Contains(CarelessReadFixtureTool.ToolName, StringComparison.Ordinal))
 			.Which.Should().Contain("readOnlyHint=false but its facts say it only reads",
 				because: "a host that trusts the hint would ask before a call that changes nothing, or the facts hide a change");
@@ -419,7 +475,7 @@ public sealed class McpToolFactsCoverageTests {
 		IReadOnlyList<string> failures = FindStaleEntries(catalog.Keys, [DeclaredFixtureTool.ToolName, PartialFixtureTool.ToolName,
 			HintContradictionFixtureTool.ToolName, WideArgumentFixtureTool.ToolName, HostPathDeclaredFixtureTool.ToolName,
 			HostPathDefectFixtureTool.ToolName, HostPathPartialFixtureTool.ToolName, CarelessReadFixtureTool.ToolName,
-			ReadOnlyWriterFixtureTool.ToolName, UnsetHintsFixtureTool.ToolName]);
+			ReadOnlyWriterFixtureTool.ToolName, UnsetHintsFixtureTool.ToolName, QuietRenameFixtureTool.ToolName]);
 
 		// Assert
 		failures.Should().ContainSingle(because: "only the stale entry names a tool that is not served")
@@ -513,6 +569,18 @@ public sealed class McpToolFactsCoverageTests {
 		[System.ComponentModel.Description("Synthetic tool whose argument entries are unknown or wider than the tool.")]
 		public static string Run(string mode) => mode;
 	}
+
+	[McpServerToolType]
+	private static class QuietRenameFixtureTool {
+		internal const string ToolName = "zz-facts-hint-quiet-rename-tool";
+
+		[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+		[System.ComponentModel.Description("Synthetic tool that takes a live-overwrite confirmation but is not marked destructive.")]
+		public static string Run(QuietRenameArgs args) => args.ConfirmValueRename.ToString();
+	}
+
+	private sealed record QuietRenameArgs(
+		[property: System.Text.Json.Serialization.JsonPropertyName("confirm-value-rename")] bool ConfirmValueRename = false);
 
 	[McpServerToolType]
 	private static class CarelessReadFixtureTool {

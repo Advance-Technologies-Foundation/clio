@@ -488,7 +488,22 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		///     <c>{"request":{...}}</c> (WCF <c>BodyStyle = Wrapped</c>) and the answer is wrapped under
 		///     <c>ModifyCaseResult</c>; <c>validateOnly: true</c> plans without writing.
 		/// </summary>
-		ModifyCase = 130
+		ModifyCase = 130,
+
+		/// <summary>
+		///     Changes a dynamic case (DCM) as a NEW, inactive version of it via the ProcessDesignService package: the
+		///     family's active member is copied, the change is applied to the copy, and the copy is saved. The body is
+		///     <c>{"request":{...}}</c> (WCF <c>BodyStyle = Wrapped</c>) and the answer is wrapped under
+		///     <c>ModifyCaseAsNewVersionResult</c>; <c>validateOnly: true</c> plans without writing.
+		/// </summary>
+		ModifyCaseAsNewVersion = 131,
+
+		/// <summary>
+		///     Makes one member of a dynamic case's version family the active one via the ProcessDesignService package.
+		///     The body is <c>{"request":{...}}</c> (WCF <c>BodyStyle = Wrapped</c>) and the answer is wrapped under
+		///     <c>SetActiveCaseVersionResult</c>; <c>validateOnly: true</c> plans without writing.
+		/// </summary>
+		SetActiveCaseVersion = 132
 
 	}
 
@@ -594,6 +609,8 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.BuildCase, "/rest/ProcessDesignService/BuildCase"},
 		{KnownRoute.DescribeCase, "/rest/ProcessDesignService/DescribeCase"},
 		{KnownRoute.ModifyCase, "/rest/ProcessDesignService/ModifyCase"},
+		{KnownRoute.ModifyCaseAsNewVersion, "/rest/ProcessDesignService/ModifyCaseAsNewVersion"},
+		{KnownRoute.SetActiveCaseVersion, "/rest/ProcessDesignService/SetActiveCaseVersion"},
 		{KnownRoute.CreatePackage, "ServiceModel/PackageService.svc/CreatePackage"},
 		{KnownRoute.CreatePackageInApp, "ServiceModel/ApplicationPackagesService.svc/CreatePackageInApp"},
 		{KnownRoute.GetConfigurationData, "/rest/ConfigurationDataService/GetData"},

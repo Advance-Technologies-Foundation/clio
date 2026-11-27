@@ -45,7 +45,9 @@ public sealed class ToolMiniContractTests {
 			ToolMiniContract.ForModifyBusinessProcess(all),
 			ToolMiniContract.ForCreateEntitySchema(all),
 			CreateDynamicCaseTool.ForCreateDynamicCase(all),
-			ModifyDynamicCaseTool.ForModifyDynamicCase(all)
+			ModifyDynamicCaseTool.ForModifyDynamicCase(all),
+			ModifyDynamicCaseAsNewVersionTool.ForModifyDynamicCaseAsNewVersion(all),
+			SetActiveDynamicCaseVersionTool.ForSetActiveDynamicCaseVersion(all)
 		];
 
 		// Act & Assert

@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -85,16 +84,15 @@ public sealed class CreateDynamicCaseOptions : EnvironmentOptions {
 }
 
 /// <summary>
-/// Creates a minimal dynamic case and reports the outcome: the result document, a one-line verdict, the notes to
-/// relay and the warnings. The exit code is 0 for <c>planned</c>, <c>created</c>, <c>created-page-skipped</c> and
-/// <c>already-present</c>, and 1 for everything else.
+/// Creates a minimal dynamic case and reports the outcome in two lines: a one-line verdict that also counts the
+/// warnings, then the result document, whose <c>notes</c>, <c>warnings</c> and a refusal's <c>errorMessage</c> are the
+/// one copy of what to relay. The exit code is 0 for <c>planned</c>, <c>created</c>, <c>created-page-skipped</c> and <c>already-present</c>, and 1
+/// for everything else.
 /// </summary>
 public class CreateDynamicCaseCommand(IDynamicCaseService dynamicCaseService, ILogger logger)
 	: Command<CreateDynamicCaseOptions> {
 
 	private const string NothingWritten = " Nothing was written.";
-
-	private const string NothingWrittenPhrase = "nothing was written";
 
 	private static readonly JsonSerializerOptions ResultJsonOptions = new() {
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -150,14 +148,9 @@ public class CreateDynamicCaseCommand(IDynamicCaseService dynamicCaseService, IL
 			DynamicCaseOutcomes.FailedLeftover => $"The build failed [{result.ErrorCode}] and could not undo everything "
 				+ $"it wrote: {result.ErrorMessage} Remove, in this order: {string.Join("; ", result.Leftovers ?? [])}.",
 			DynamicCaseOutcomes.Unknown => result.ErrorMessage,
-			_ => $"Refused [{result.ErrorCode}]: {result.ErrorMessage}"
-				+ (SaysNothingWasWritten(result) ? string.Empty : nothingWritten)
+			_ => DynamicCaseRefusalVerdict.For(result.ErrorCode, result.ErrorMessage, nothingWritten)
 		};
 	}
-
-	// Some refusals already say it in their own words; repeating it would read as two separate claims.
-	private static bool SaysNothingWasWritten(DynamicCaseResult result) =>
-		result.ErrorMessage?.Contains(NothingWrittenPhrase, StringComparison.OrdinalIgnoreCase) == true;
 
 	private static string PageClause(DynamicCaseResult result) => result.Page?.Status switch {
 		DynamicCaseService.PageInserted => $" The progress bar was added to '{result.Page.PageSchemaName}'.",
@@ -167,19 +160,13 @@ public class CreateDynamicCaseCommand(IDynamicCaseService dynamicCaseService, IL
 	};
 
 	private void Report(DynamicCaseResult result) {
-		string verdict = Verdict(result);
+		string verdict = Verdict(result) + DynamicCaseWarningsHint.For(result.Warnings, beforeAnyWrite: true);
 		if (result.Success) {
 			logger.WriteInfo(verdict);
 		} else {
 			logger.WriteError(verdict);
 		}
 		logger.WriteInfo(JsonSerializer.Serialize(result, ResultJsonOptions));
-		foreach (string note in (result.Notes ?? []).Where(note => !string.IsNullOrWhiteSpace(note))) {
-			logger.WriteInfo(note);
-		}
-		foreach (string warning in (result.Warnings ?? []).Where(warning => !string.IsNullOrWhiteSpace(warning))) {
-			logger.WriteWarning(warning);
-		}
 	}
 
 	private static void EnsureRequired(string value, string argumentName) {

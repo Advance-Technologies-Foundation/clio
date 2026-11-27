@@ -342,7 +342,7 @@ public sealed class CreateDynamicCaseToolTests {
 		description.Should().Contain("Read get-guidance name=process-dynamic-case first.",
 			because: "the article owns the workflow, and clio-knowledge 1.15.210 and every later pinned generation publish it");
 		firstSentence.Length.Should().BeLessThanOrEqualTo(120, because: "the compact index cuts the purpose at 120");
-		firstSentence.Should().StartWith("Create a minimal dynamic case (DCM)", because: "the index line says what it does");
+		firstSentence.Should().StartWith("Creates a minimal dynamic case (DCM)", because: "the index line says what it does");
 		description.Should().Contain("Steps: add them with modify-dynamic-case.",
 			because: "steps are added by the change tool once the case exists");
 		description.Should().Contain("(case-exists): change it with modify-dynamic-case",

@@ -40,17 +40,18 @@ public class DescribeDynamicCaseTool(
 	/// <returns>The command execution result; the result document is in the log output.</returns>
 	[McpServerTool(Name = DescribeDynamicCaseToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		 OpenWorld = false),
-	 Description("Reads a dynamic case (DCM), read-only. One case, or every case of an object. Answers the "
+	 Description("Reads a dynamic case (DCM). Read-only: one case, or every case of an object. Answers the "
 		 + "stages in order with their groups, the final stages, each stage's steps and transitionType, the running "
 		 + "cases per stage and per step, "
 		 + "the records per stage (finished cases included), "
 		 + "whether the case is enabled, its filter ({column, values}, {column, empty: true}, or {unreadable: true} for a "
 		 + "designer-built filter clio cannot change), and the object's case settings rows with their filterColumnName, "
-		 + "with the designer link per case. Call "
+		 + "with the designer link per case. versions lists every member of the case's version family (name, version, "
+		 + "package, which one is active, running cases, designer link); absent for a case with no other version. Call "
 		 + "it before answering any question about an existing case and before changing one with "
-		 + "modify-dynamic-case. Name the case by case-name or case-uid, or the object by entity-schema-name. "
-		 + "Requires CrtProcessBuilder " + DynamicCaseChangeRequirement.MinimumProcessBuilderVersion
-		 + " or later (install-process-builder, after user approval).")]
+		 + "modify-dynamic-case or modify-dynamic-case-as-new-version. Name the case by case-name or case-uid (any "
+		 + "member of its family, an inactive version included), or the object by entity-schema-name (its active "
+		 + $"cases). Requires CrtProcessBuilder {DynamicCaseChangeRequirement.MinimumProcessBuilderVersion} or later (install-process-builder, after user approval).")]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.PerCall,
@@ -97,15 +98,16 @@ public sealed record DescribeDynamicCaseArgs(
 	string EnvironmentName,
 
 	[property: JsonPropertyName("case-name")]
-	[property: Description("The case's schema name.")]
+	[property: Description("The case's schema name: any member of its version family.")]
 	string CaseName = null,
 
 	[property: JsonPropertyName("case-uid")]
-	[property: Description("The case's schema UId.")]
+	[property: Description("The case's schema UId: any member of its version family.")]
 	string CaseUId = null,
 
 	[property: JsonPropertyName("entity-schema-name")]
-	[property: Description("The object: every case of it is read, enabled or not.")]
+	[property: Description("The object's schema name (e.g. UsrOrder); a unique caption is resolved. Every active "
+		+ "case of it is read, enabled or not.")]
 	string EntitySchemaName = null) {
 
 	/// <summary>
