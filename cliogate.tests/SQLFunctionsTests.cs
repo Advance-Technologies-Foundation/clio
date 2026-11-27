@@ -121,6 +121,24 @@ namespace cliogate.tests {
 		}
 
 		[Test]
+		[Description("The executor taken for the reader is disposed, so its connection returns to the pool")]
+		public void ExecuteSQL_ShouldDisposeExecutor_WhenSelectReturns() {
+			// Arrange
+			using (var data = new DataTable()) {
+				data.Columns.Add("Name", typeof(string));
+				data.Rows.Add("Contact");
+				UserConnection.DBExecutor.ExecuteReader(Arg.Any<string>()).Returns(data.CreateDataReader());
+
+				// Act
+				SQLFunctions.ExecuteSQL("select \"Name\" from \"Contact\"", UserConnection);
+			}
+
+			// Assert
+			UserConnection.DBExecutor.ReceivedCalls().Count(c => c.GetMethodInfo().Name == "Dispose").Should()
+				.BeGreaterOrEqualTo(1, "an undisposed executor keeps its database connection out of the pool");
+		}
+
+		[Test]
 		[Description("SQL failures complete the log with an error and no fabricated row count")]
 		public void ExecuteSQL_ShouldCompleteLogWithError_WhenSqlFails() {
 			// Arrange

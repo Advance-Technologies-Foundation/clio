@@ -82,7 +82,9 @@ namespace ClioGate.Functions.SQL
 					rowCount = count >= 0 ? (int?)count : null;
 					return count.ToString();
 				}
-				using (var records = query.ExecuteReader(userConnection.EnsureDBConnection()))
+				// EnsureDBConnection takes a pooled connection; without disposing the executor it never returns to the pool.
+				using (DBExecutor dbExecutor = userConnection.EnsureDBConnection())
+				using (var records = query.ExecuteReader(dbExecutor))
 				using (var dataTable = new DataTable { TableName = "clioTable" }) {
 					dataTable.Load(records);
 					timer.Stop();
