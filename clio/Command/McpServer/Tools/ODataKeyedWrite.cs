@@ -126,7 +126,7 @@ internal static class ODataKeyedWrite {
 			return CreatioResponseError.TryDetect(doc.RootElement, CreatioResponseContext.ODataPayload,
 				out string serverError)
 				? CreatioResponseError.AppendStructuredODataWriteError(
-					SensitiveErrorTextRedactor.Redact(serverError), doc.RootElement)
+					SensitiveErrorTextRedactor.RedactSiteText(serverError), doc.RootElement)
 				: null;
 		} catch (JsonException) {
 			return SensitiveErrorTextRedactor.Redact(CreatioResponseError.DescribeNonJsonResponse(response));

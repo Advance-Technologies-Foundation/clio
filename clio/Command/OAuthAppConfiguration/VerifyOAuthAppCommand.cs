@@ -11,7 +11,7 @@ namespace Clio.Command.OAuthAppConfiguration;
 /// CLI options for verifying a server-to-server OAuth app end to end over REST.
 /// </summary>
 [Verb("verify-oauth-app",
-	HelpText = "Verify a server-to-server OAuth app: acquire a client_credentials token and run a bearer DataService smoke test")]
+	HelpText = "Verify a server-to-server OAuth app: acquire a client_credentials token and run a DataService smoke test with the bearer token")]
 public sealed class VerifyOAuthAppOptions : RemoteCommandOptions
 {
 	/// <summary>
@@ -40,7 +40,7 @@ public sealed class VerifyOAuthAppOptions : RemoteCommandOptions
 /// or logged — only whether it was acquired.
 /// </summary>
 /// <param name="TokenAcquired">Whether a <c>client_credentials</c> access token was acquired.</param>
-/// <param name="DataServiceStatus">HTTP status returned by the bearer DataService smoke request (0 when skipped).</param>
+/// <param name="DataServiceStatus">HTTP status returned by the DataService smoke request made with the bearer token (0 when skipped).</param>
 /// <param name="Ok">Whether the token was acquired AND the DataService smoke request returned HTTP 200.</param>
 /// <param name="IdentityServerUrl">The IdentityService base URL used for the token request.</param>
 public sealed record VerifyOAuthAppResult(
@@ -104,7 +104,7 @@ public class VerifyOAuthAppCommand : Command<VerifyOAuthAppOptions>
 	}
 
 	/// <summary>
-	/// Acquires a <c>client_credentials</c> token and runs a bearer DataService smoke test for the supplied
+	/// Acquires a <c>client_credentials</c> token and runs a DataService smoke test with the bearer token for the supplied
 	/// OAuth app credentials.
 	/// </summary>
 	/// <param name="options">Verification criteria and environment settings.</param>

@@ -7307,7 +7307,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildDeployIdentity() {
 		return new ToolContractDefinition(
 			DeployIdentityTool.DeployIdentityToolName,
-			"Deploys IdentityService to IIS for a registered local Creatio environment, connects Creatio through the platform sys-settings/REST path, creates a fresh clio OAuth client bound to an existing user by default, and stores the returned client credentials in local clio appsettings only after discovery, token issuance, and a read-only CRM bearer request succeed. Records its resolved IdentityService attachment before artifacts, including noApp and partial deployments, for later standalone or combined removal. With noApp, token and CRM checks are skipped. Never echo the generated client secret in logs or public messages.",
+			"Deploys IdentityService to IIS for a registered local Creatio environment, connects Creatio through the platform sys-settings/REST path, creates a fresh clio OAuth client bound to an existing user by default, and stores the returned client credentials in local clio appsettings only after discovery, token issuance, and a read-only CRM request with the bearer token succeed. Records its resolved IdentityService attachment before artifacts, including noApp and partial deployments, for later standalone or combined removal. With noApp, token and CRM checks are skipped. Never echo the generated client secret in logs or public messages.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName],
 				[

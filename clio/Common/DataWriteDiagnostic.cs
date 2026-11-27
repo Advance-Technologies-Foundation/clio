@@ -43,6 +43,7 @@ public sealed record DataWriteDiagnostic(
 		};
 		// Legacy write errors may append an unrecognized response body. Keep that preview
 		// out of the new diagnostic, which is bounded context rather than a payload dump.
+		// The message carries the site's own words (the write's error text), so it takes the site-text redaction.
 		int preview = message?.IndexOf(" Response: ", StringComparison.Ordinal) ?? -1;
 		if (preview >= 0) {
 			message = message[..preview];
@@ -51,7 +52,7 @@ public sealed record DataWriteDiagnostic(
 		string safeEntity = entity is not null && Regex.IsMatch(entity, "^[A-Za-z_][A-Za-z0-9_]{0,127}$", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1))
 			? entity : SensitiveErrorTextRedactor.RedactUntrustedOrNull(entity);
 		return new(operation, safeEntity, itemIndex, attempted,
-			transport, effect, advice, SensitiveErrorTextRedactor.RedactUntrustedOrNull(message));
+			transport, effect, advice, SensitiveErrorTextRedactor.RedactUntrustedSiteTextOrNull(message));
 	}
 
 	/// <summary>

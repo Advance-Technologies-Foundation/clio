@@ -222,7 +222,7 @@ internal sealed class BrandingBackgroundService(IApplicationClient applicationCl
 			//column was rejected as a service failure.
 			if (CreatioResponseError.TryDetect(document.RootElement, CreatioResponseContext.ODataPayload,
 				out string serverError)) {
-				error = serverError;
+				error = SensitiveErrorTextRedactor.RedactSiteText(serverError);
 				return false;
 			}
 			if (!document.RootElement.TryGetProperty("value", out JsonElement rows)

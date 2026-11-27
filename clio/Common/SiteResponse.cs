@@ -24,8 +24,8 @@ namespace Clio.Common;
 /// <param name="Status">The HTTP status of that response. A Creatio service often refuses with HTTP 200 and
 /// <c>success:false</c>; the status then reads 200, because that is what the site sent.</param>
 /// <param name="Message">The site's own message from the body, or <see langword="null"/> when the body holds none
-/// in a known shape. It passes clio's sensitive-text redaction, like the error text beside it, and a length cap;
-/// nothing else is changed.</param>
+/// in a known shape. It passes clio's site-text redaction (<see cref="SensitiveErrorTextRedactor.RedactSiteText"/>)
+/// and a length cap; nothing else is changed.</param>
 /// <param name="Code">The site's own error code (<c>errorInfo.errorCode</c>, OData <c>error.code</c> or
 /// <c>responseStatus.ErrorCode</c>), or <see langword="null"/>.</param>
 /// <param name="Body">What KIND of body the site sent: one of <c>json</c>, <c>html</c>, <c>text</c> or
@@ -267,11 +267,15 @@ public sealed record SiteResponse(
 
 	private static string NonBlank(string value) => string.IsNullOrWhiteSpace(value) ? null : value;
 
-	// The site's text goes through the same sensitive-text redaction as the error field next to it (URIs, paths,
-	// host:port, emails, credential and connection-string pairs become placeholders), then the length cap: a
-	// result reaches a model transcript, so it must not carry more than the error text already does.
+	// The site's text goes through the SITE-text redaction (SensitiveErrorTextRedactor.RedactSiteText): everything
+	// Redact removes - URIs, paths, host:port, emails, credential and connection-string pairs - plus what only a
+	// site writes: sign-in and database names in the database's own phrases, server instances, relative paths, key
+	// runs after a secret noun, and the stack trace or page after the reason. Then the length cap: a result reaches
+	// a model transcript, so it must not carry more than the error text already does.
+	// Redacted FIRST, then capped, as master's Cap(Redact(value)) (option B, condition 3): a clamp before the chain cut a
+	// value quoted with escaped quotes at an inner space and kept its first half.
 	private static string Carry(string value, int maxLength) =>
-		value is null ? null : Cap(SensitiveErrorTextRedactor.Redact(value), maxLength);
+		value is null ? null : Cap(SensitiveErrorTextRedactor.RedactSiteText(value), maxLength);
 
 	private static string Cap(string value, int maxLength) {
 		if (value is null || value.Length <= maxLength) {

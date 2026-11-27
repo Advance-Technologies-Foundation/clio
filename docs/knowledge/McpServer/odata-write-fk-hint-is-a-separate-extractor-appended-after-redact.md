@@ -1,5 +1,5 @@
 ---
-description: odata-create/update/delete FK hint (DescribeStructuredODataWriteError / AppendStructuredODataWriteError) is a separate write extractor appended after SensitiveErrorTextRedactor.Redact; it never changes record-created, side-effect or retry-guidance; which PG 23503 / MSSQL 547 wordings were measured live; the database-name and key-value groups are match-only
+description: odata-create/update/delete FK hint (DescribeStructuredODataWriteError / AppendStructuredODataWriteError) is a separate write extractor appended after the server error's redaction (SensitiveErrorTextRedactor.RedactSiteText since 2026-11-19); it never changes record-created, side-effect or retry-guidance; which PG 23503 / MSSQL 547 wordings were measured live; the database-name and key-value groups are match-only
 applies-to:
   - clio/Common/CreatioResponseError.StructuredDetail.cs
   - clio/Command/McpServer/Tools/ODataCreateTool.cs
@@ -14,8 +14,10 @@ date: 2026-09-30
 not the read one. It shares the message walk, the 2,048-character cap and the match timeout with
 `DescribeStructuredODataError`, but it reports foreign-key facts only and no `error.code`, so a write body
 without an FK wording yields `null` and the write result is byte-identical to what it was before GH-1699.
-`AppendStructuredODataWriteError` adds the hint AFTER `SensitiveErrorTextRedactor.Redact`: the hint is clio's
-own sentence around bounded ASCII identifiers, so the redactor has nothing to remove from it. The hint names a
+`AppendStructuredODataWriteError` adds the hint AFTER the server error is redacted - with
+`SensitiveErrorTextRedactor.RedactSiteText` since 2026-11-19, because the extracted message is the site's own
+text ([[site-text-takes-redact-site-text-and-fails-closed]]): the hint is clio's own sentence around bounded
+ASCII identifiers, so the redactor has nothing to remove from it, and it must stay out of the site rules. The hint names a
 cause and a diagnostic next step only: odata-create keeps `record-created` null and its retry guidance, and
 odata-update/odata-delete keep `side-effect` `unknown`. The hint says when the response does not name the
 foreign-key column or the referenced table rather than guessing one, and it does not claim an OData mapping

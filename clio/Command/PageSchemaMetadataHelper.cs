@@ -452,8 +452,18 @@ namespace Clio.Command {
 		/// <summary>The attempt count of every <see cref="PostDesignerRequest"/>: one, never retried.</summary>
 		internal const int DesignerRequestAttempts = 1;
 
+		/// <summary>
+		/// The designer's own reason for a failed save, from its <c>errorInfo</c>, <c>validationErrors</c> or
+		/// <c>addonsErrors</c>, or <paramref name="defaultMessage"/> when it gives none.
+		/// </summary>
+		/// <remarks>
+		/// The designer's text is the site's own, so it takes the site-text redaction here, where it is read: every
+		/// caller (create-page, update-page, sync-pages, the schema designers) puts it into an exception or an
+		/// <c>error</c> that is only Redacted afterwards. <paramref name="defaultMessage"/> is clio's own sentence
+		/// and is returned as it is.
+		/// </remarks>
 		internal static string ParseSaveErrorMessage(JObject saveResponse, string defaultMessage) {
-			string errorMessage = defaultMessage;
+			string errorMessage = null;
 			if (saveResponse["errorInfo"] is JObject errorInfo) {
 				string infoMessage = errorInfo["message"]?.ToString();
 				if (!string.IsNullOrWhiteSpace(infoMessage))
@@ -467,7 +477,7 @@ namespace Clio.Command {
 			}
 			if (saveResponse["addonsErrors"] is JArray addonsErrors && addonsErrors.Count > 0)
 				errorMessage = string.Join("; ", addonsErrors.Select(e => e.ToString()));
-			return errorMessage;
+			return errorMessage is null ? defaultMessage : SensitiveErrorTextRedactor.RedactSiteText(errorMessage);
 		}
 
 		/// <summary>

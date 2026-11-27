@@ -72,20 +72,22 @@ internal static partial class CredentialShapeMasker {
 
 	/// <summary>Replaces every credential recognisable by its shape.</summary>
 	/// <param name="text">The text; <see langword="null"/> or empty is returned as is.</param>
-	/// <returns>The text with each credential replaced by <c>[redacted]</c>; <c>[redacted]</c> whole on a timeout.</returns>
+	/// <returns>The text with each credential replaced by <c>[redacted]</c>; <c>[redacted-timeout]</c> whole on a timeout or past its budget.</returns>
 	public static string Mask(string text) {
 		if (string.IsNullOrEmpty(text)) {
 			return text;
 		}
-		return SensitiveErrorTextRedactor.ExecuteRegex(() => {
-			string result = BasicCredentialRegex().Replace(text, match => IsUserPassword(match.Groups["token"].Value)
+		return SensitiveErrorTextRedactor.ExecuteRegex(nameof(CredentialShapeMasker) + "." + nameof(Mask), text.Length, () => {
+			// Each rule's matches run under the redactor's per-call deadline (BoundedReplace): the patterns are master's.
+			string result = SensitiveErrorTextRedactor.BoundedReplace(BasicCredentialRegex(), text, match => IsUserPassword(match.Groups["token"].Value)
 				? $"{match.Groups["scheme"].Value}{match.Groups["gap"].Value}{Redacted}"
 				: match.Value);
-			result = BearerTokenRegex().Replace(result, match => $"{match.Groups["scheme"].Value}{match.Groups["gap"].Value}{Redacted}");
-			result = JwtRegex().Replace(result, Redacted);
-			result = JsonSecretPropertyRegex().Replace(result,
+			result = SensitiveErrorTextRedactor.BoundedReplace(BearerTokenRegex(), result,
+				match => $"{match.Groups["scheme"].Value}{match.Groups["gap"].Value}{Redacted}");
+			result = SensitiveErrorTextRedactor.BoundedReplace(JwtRegex(), result, _ => Redacted);
+			result = SensitiveErrorTextRedactor.BoundedReplace(JsonSecretPropertyRegex(), result,
 				match => $"{match.Groups["head"].Value}{Redacted}{match.Groups["close"].Value}");
-			return SecretPairRegex().Replace(result, match => $"{match.Groups["head"].Value}{Redacted}");
+			return SensitiveErrorTextRedactor.BoundedReplace(SecretPairRegex(), result, match => $"{match.Groups["head"].Value}{Redacted}");
 		});
 	}
 

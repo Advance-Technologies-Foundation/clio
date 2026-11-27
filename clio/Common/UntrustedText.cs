@@ -27,6 +27,15 @@ public static class UntrustedText {
 	public static string Fenced(string text) => SensitiveErrorTextRedactor.RedactUntrustedOrNull(text);
 
 	/// <summary>
+	/// The AGENT rendering of text a Creatio SITE wrote - its error message, its compiler output, an inner
+	/// exception it returned: <see cref="Fenced"/> with the site-text redaction
+	/// (<see cref="SensitiveErrorTextRedactor.RedactSiteText"/>) instead of <see cref="Scrub"/>'s.
+	/// </summary>
+	/// <param name="text">The raw text the site sent.</param>
+	/// <returns>The fenced text, or <see langword="null"/> when there is nothing to report.</returns>
+	public static string FencedSiteText(string text) => SensitiveErrorTextRedactor.RedactUntrustedSiteTextOrNull(text);
+
+	/// <summary>
 	/// The CONSOLE rendering: scrubbed, flattened and capped, with no fence. Use for a line whose only
 	/// reader is a person at a terminal.
 	/// </summary>

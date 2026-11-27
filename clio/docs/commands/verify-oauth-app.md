@@ -6,7 +6,7 @@ Installation and Deployment commands
 
 ## Name
 
-verify-oauth-app - Verify a server-to-server OAuth app: acquire a client_credentials token and run a bearer DataService smoke test
+verify-oauth-app - Verify a server-to-server OAuth app: acquire a client_credentials token and run a DataService smoke test with the bearer token
 
 ## Description
 
@@ -17,7 +17,7 @@ Creatio DataService smoke request with that token.
 It reports:
 
 - `tokenAcquired` - whether a `client_credentials` access token was acquired
-- `dataServiceStatus` - the HTTP status of the bearer DataService smoke request (`0` when skipped)
+- `dataServiceStatus` - the HTTP status of the DataService smoke request made with the bearer token (`0` when skipped)
 - `ok` - whether the token was acquired and the CRM returned HTTP `200` with a successful DataService JSON response
 - `identityServerUrl` - the IdentityService base URL used for the token request
 

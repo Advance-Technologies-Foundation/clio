@@ -126,8 +126,16 @@ internal static partial class CreatioResponseError {
 		string status = TryGetMarkupErrorStatusCode(body, out int statusCode)
 			? $" The server answered with an {MarkupStatusPhrase(statusCode)}."
 			: string.Empty;
-		return $"Creatio did not return a JSON response.{status} {NonJsonResponseHint} Response: {Truncate(body)}";
+		// MASTER'S ORDER (option B): the body is cut to the preview length FIRST, exactly where master cut it, and the
+		// callers Redact the whole sentence after, as on master. What clio adds is the site-text redaction of that
+		// preview, which runs on master's cut text: a stack trace or an HTML page after a line break goes, as do sign-in
+		// and server names, and nothing master's chain removed from the cut text can show again.
+		return $"Creatio did not return a JSON response.{status} {NonJsonResponseHint} Response: "
+			+ SensitiveErrorTextRedactor.RedactSiteText(Truncate(body));
 	}
+
+	// The preview length of a non-JSON body: master's cut, before any redaction.
+	private const int PreviewLength = 500;
 
 	/// <summary>
 	/// The one noun phrase every caller uses to name an error page by the status its title states, so
@@ -410,7 +418,7 @@ internal static partial class CreatioResponseError {
 		if (string.IsNullOrEmpty(value)) {
 			return "<empty>";
 		}
-		return value.Length > 500 ? value[..500] + "..." : value;
+		return value.Length > PreviewLength ? value[..PreviewLength] + "..." : value;
 	}
 
 	/// <summary>

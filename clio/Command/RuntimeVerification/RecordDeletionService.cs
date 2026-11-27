@@ -507,8 +507,11 @@ internal sealed class RecordDeletionService(
 			if (inner is null) {
 				return null;
 			}
+			// MASTER'S ORDER (option B): the first line, cut to 500 characters, then the fenced rendering, exactly as
+			// master read it. FirstLine and the 500 cut run before the chain because master ran them there; the
+			// fenced site-text rendering then redacts that text with master's chain first and caps it at 300.
 			string firstLine = ProcessRunMonitor.FirstLine(inner);
-			return UntrustedText.Fenced(firstLine.Length > 500 ? firstLine[..500] : firstLine);
+			return UntrustedText.FencedSiteText(firstLine.Length > 500 ? firstLine[..500] : firstLine);
 		}
 		catch (System.Text.Json.JsonException) {
 			return null;
