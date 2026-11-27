@@ -12,7 +12,7 @@ using Creatio.Client.Dto;
 
 namespace Clio.Common;
 
-public class CreatioClientAdapter : IOwnedApplicationClient {
+public class CreatioClientAdapter : IOwnedApplicationClient, IStatusPreservingApplicationClient {
 	#region Fields: Private
 
 	private readonly ICreatioClientTransport _transport;
@@ -418,6 +418,68 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 		_loginDiagnostics.TrackRequestAsync(() =>
 			Client.ExecutePostRequestAsync(url, requestData, requestTimeout, maxAttempts, delaySec,
 				cancellationToken));
+
+	/// <inheritdoc />
+	/// <remarks>
+	/// <para>
+	/// Sends through the transport's response-returning method - the one the string method itself awaits - so
+	/// the status survives, and reads the body the same way. The reauth executor and the login diagnostics wrap
+	/// it exactly as they wrap the string methods, with the replay rule the caller states.
+	/// </para>
+	/// <para>
+	/// A transport fault is read with <c>.Result</c>, not <c>GetAwaiter().GetResult()</c>, so it surfaces
+	/// wrapped in an <see cref="AggregateException"/> exactly as from the string method, and the callers that
+	/// unwrap it keep working. One difference is left: the string method signs in through a legacy wrapper
+	/// first, which turns a non-2xx answer of the sign-in endpoint itself into a <see cref="WebException"/>.
+	/// Here that answer surfaces as the client's own "The authentication endpoint returned HTTP ..." error
+	/// inside the <see cref="AggregateException"/>. It only happens when this is the client's first request,
+	/// and a sign-in the site refuses for its credentials ("Unauthorized ... for ...") is the same either way.
+	/// </para>
+	/// </remarks>
+	public SiteHttpResponse SendKeepingStatus(SiteRequestVerb verb, string url, string requestData,
+		int requestTimeout = Timeout.Infinite, int maxAttempts = 1, int delaySec = 1, bool replayAllowed = true) {
+		// Counted so the answer says when clio re-sent the request after reading the first answer as an expired
+		// session: that reading comes from the body, so the first send may have been applied.
+		int sends = 0;
+		SiteHttpResponse answer = _reauthExecutor.Execute(
+			() => {
+				sends++;
+				return _loginDiagnostics.TrackRequest(() =>
+					ReadKeepingStatus(StartKeepingStatus(verb, url, requestData, requestTimeout, maxAttempts, delaySec),
+					verb, url, sentWithoutBody: verb == SiteRequestVerb.Delete && string.IsNullOrEmpty(requestData)));
+			},
+			response => ReauthExecutor.IsSessionExpiredResponse(response.Body),
+			replayAllowed);
+		return sends > 1 ? answer with { Resent = true } : answer;
+	}
+
+	private Task<HttpResponseMessage> StartKeepingStatus(SiteRequestVerb verb, string url, string requestData,
+		int requestTimeout, int maxAttempts, int delaySec) =>
+		verb switch {
+			SiteRequestVerb.Post => Client.ExecutePostRequestAsync(url, requestData, requestTimeout, maxAttempts,
+				delaySec, CancellationToken.None),
+			SiteRequestVerb.Patch => Client.ExecutePatchRequestAsync(url, requestData, requestTimeout, maxAttempts,
+				delaySec, CancellationToken.None),
+			SiteRequestVerb.Delete => Client.ExecuteDeleteRequestAsync(url, requestData, requestTimeout, maxAttempts,
+				delaySec, CancellationToken.None),
+			_ => throw new ArgumentOutOfRangeException(nameof(verb), verb, "Unsupported request verb.")
+		};
+
+	// creatio.client sends a DELETE without data with no body at all (omitEmptyContent), and a request without a
+	// body is the one its redirect following can repeat unseen; POST and PATCH always carry content.
+	private static SiteHttpResponse ReadKeepingStatus(Task<HttpResponseMessage> pending, SiteRequestVerb verb,
+		string url, bool sentWithoutBody) {
+		using HttpResponseMessage response = pending.Result;
+		string body = response.Content is null ? string.Empty : response.Content.ReadAsStringAsync().Result;
+		return SiteHttpResponse.Read(response, body, ToHttpMethod(verb), url, sentWithoutBody);
+	}
+
+	private static HttpMethod ToHttpMethod(SiteRequestVerb verb) => verb switch {
+		SiteRequestVerb.Post => HttpMethod.Post,
+		SiteRequestVerb.Patch => HttpMethod.Patch,
+		SiteRequestVerb.Delete => HttpMethod.Delete,
+		_ => throw new ArgumentOutOfRangeException(nameof(verb), verb, "Unsupported request verb.")
+	};
 
 	public string ExecutePatchRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int maxAttempts = 1, int delaySec = 1) {

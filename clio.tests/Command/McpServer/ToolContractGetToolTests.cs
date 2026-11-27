@@ -788,6 +788,49 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The default create-page-business-rules contract lookup keeps the rejected condition attributes whole, so an agent that does not ask for detail=full still learns what the page validator rejects.")]
+	public void ToolContractGet_CreatePageBusinessRules_Default_Detail_Should_Keep_Rejected_Attributes() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(
+			new ToolContractGetArgs([CreatePageBusinessRuleTool.BusinessRuleCreateToolName], "short"));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "create-page-business-rules must resolve to a curated contract");
+		result.Tools!.Single().InputSchema.Properties.Single(field => field.Name == "rules").Description.Should()
+			.Contain(PageBusinessRuleContractText.RejectedConditionAttributes,
+				because: "the rejected half is worded as a duty, which the short form keeps whole");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The create-page-business-rules contract states the accepted and rejected condition attributes the page validator enforces and no longer forbids '<data source>.<column>' paths such as PDS.Priority, which the validator accepts.")]
+	public void ToolContractGet_CreatePageBusinessRules_Should_Match_Page_Validator_Attributes() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(
+			new ToolContractGetArgs([CreatePageBusinessRuleTool.BusinessRuleCreateToolName], ToolContractShortForm.FullDetail));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "create-page-business-rules must resolve to a curated contract");
+		ToolContractDefinition entry = result.Tools!.Single();
+		entry.InputSchema.Properties.Single(field => field.Name == "rules").Description.Should()
+			.Contain(PageBusinessRuleContractText.ConditionAttributes,
+				because: "the contract must state the same accepted and rejected attributes as the tool description")
+			.And.NotContain("not datasource paths like PDS.Priority",
+				because: "the page validator accepts '<data source>.<column>' paths");
+		entry.AntiPatterns!.Should().NotContain(pattern => pattern.Pattern.Contains("PDS.Priority", StringComparison.Ordinal),
+			because: "a '<data source>.<column>' path is accepted, so it is no anti-pattern");
+		entry.AntiPatterns!.Should().Contain(pattern => pattern.Pattern.Contains("virtual view-model attribute", StringComparison.Ordinal),
+			because: "the anti-pattern names the attributes the page validator actually rejects");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("GitHub #1150: the curated update-page contract states that an append dry run projects the merge and returns appendProjection, and declares that field in the output envelope. update-page is non-resident, so this curated entry — not the tool's [Description] attribute — is the whole description an agent reads.")]
 	public void ToolContractGet_Should_State_That_An_Append_DryRun_Projects_The_Merge() {
 		// Arrange
@@ -2594,8 +2637,22 @@ public sealed class ToolContractGetToolTests {
 			contract.Name == CreateDataBindingTool.CreateDataBindingToolName);
 		createContract.Description.Should().Contain("data-bindings",
 			because: "create-data-binding should route callers to the canonical binding guide");
-		createContract.InputSchema.Required.Should().Contain(["package-name", "schema-name", "workspace-path"],
-			because: "create-data-binding should require package-name, schema-name, and workspace-path as the minimal local payload");
+		createContract.InputSchema.Required.Should().Equal(["package-name", "workspace-path"],
+			because: "create-data-binding requires package-name and workspace-path; schema-name is required only without from-environment");
+		createContract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "require-schema-name-or-from-environment"
+				&& validator.Fields != null
+				&& validator.Fields.SequenceEqual(new[] { "schema-name", "from-environment" }),
+			because: "the conditional schema-name requirement must stay machine-readable (ENG-106290)");
+		createContract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "from-environment-requires-environment-and-binding"
+				&& validator.Fields != null
+				&& validator.Fields.SequenceEqual(new[] { "from-environment", "environment-name", "binding-name", "schema-name" }),
+			because: "from-environment reads the binding from the environment, so it needs both (ENG-106290)");
+		createContract.InputSchema.Properties.Should().Contain(field =>
+				field.Name == "from-environment" && field.Type == "boolean"
+				&& field.Description.Contains("platform package export", StringComparison.Ordinal),
+			because: "create-data-binding advertises the single-binding route from the environment (ENG-106290)");
 		createContract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "environment-name" &&
 				field.Description.Contains("Required when schema-name is not SysSettings", StringComparison.Ordinal),
@@ -4747,7 +4804,7 @@ public sealed class ToolContractGetToolTests {
 		"Recompiles a registered Creatio environment and forces a runtime reload.",
 		TestName = "PurposePinned_CompileCreatio_ComesFromTheCuratedContract")]
 	[TestCase(ValidateProcessGraphTool.ToolName,
-		"Checks a planned Creatio business-process graph against the BPMN connection rules before you build it.",
+		"Validates a process graph.",
 		TestName = "PurposePinned_ValidateProcessGraph")]
 	[Description("Each tool whose compact-index one-liner ENG-96389 examined advertises that exact purpose, so reverting a single description fails here instead of hiding behind the uniqueness guard.")]
 	public void GetToolContracts_ShouldAdvertiseTheRepairedPurpose_WhenCompactIndexIsBuilt(

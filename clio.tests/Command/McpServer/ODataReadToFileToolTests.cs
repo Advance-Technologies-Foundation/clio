@@ -824,4 +824,62 @@ public sealed class ODataReadToFileToolTests {
 			.And.Contain("$select=Id%2CName", because: "select must be escaped into the query string")
 			.And.Contain("$top=10", because: "the file tool must build its query through the same shared builder as odata-read");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A nested $select in expand reaches the file tool's request URL exactly as it reaches odata-read's (ENG-107610).")]
+	public void ReadToFile_Should_Send_A_Nested_Select_In_Expand() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		string outputFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-expand-{Guid.NewGuid():N}.json");
+		ICreatioApplicationClient client = Substitute.For<ICreatioApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
+		client.ExecuteGetRequestBoundedAsync(
+				Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns(Task.FromResult(Encoding.UTF8.GetBytes("{\"@odata.context\":\"http://creatio/odata/$metadata#Contact\",\"value\":[]}")));
+		ODataReadToFileTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+
+		// Act
+		ODataReadResponse response = tool.ReadToFile(new ODataReadToFileArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			OutputFile = outputFile,
+			Expand = JsonDocument.Parse("\"Account($select=Id,Name),Owner\"").RootElement.Clone()
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the file tool shares odata-read's expand validation");
+		urlBuilder.Received(1).Build("odata/Contact?$expand=Account%28%24select%3DId%2CName%29%2COwner&$top=25");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An unsupported nested expand option is refused by the file tool before any request, exactly as odata-read refuses it.")]
+	public void ReadToFile_Should_Refuse_A_Nested_Filter_In_Expand() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		string outputFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-expand-{Guid.NewGuid():N}.json");
+		ICreatioApplicationClient client = Substitute.For<ICreatioApplicationClient>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		ODataReadToFileTool tool = new(resolver, new OperationCorrelationIdProvider(), new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+
+		// Act
+		ODataReadResponse response = tool.ReadToFile(new ODataReadToFileArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			OutputFile = outputFile,
+			Expand = JsonDocument.Parse("[\"Account($filter=Name eq 'x')\"]").RootElement.Clone()
+		});
+
+		// Assert
+		response.ErrorCode.Should().Be("argument", because: "the shared validator refuses every nested option but $select");
+		response.Error.Should().Contain("Nav($select=A,B)", because: "the caller needs the accepted form");
+		client.ReceivedCalls().Should().BeEmpty(because: "nothing may reach Creatio for a refused expand");
+		fileSystem.File.Exists(outputFile).Should().BeFalse(because: "a refused call writes no file");
+	}
 }

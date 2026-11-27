@@ -24,7 +24,7 @@ public class SetEntitySchemaPropertiesOptions : RemoteCommandOptions
 	/// </summary>
 	internal const string NoPropertyToSetError =
 		"At least one schema property to set is required " +
-		"(for example --primary-display-column, --is-db-view, --title or --title-localizations).";
+		"(for example --primary-display-column, --primary-color-column, --is-db-view, --title or --title-localizations).";
 
 	/// <summary>
 	/// Single source of truth for the "--title together with --title-localizations" rejection.
@@ -71,6 +71,14 @@ public class SetEntitySchemaPropertiesOptions : RemoteCommandOptions
 	[Option("primary-display-column", Required = false,
 		HelpText = "Column name (own or inherited) to set as the primary-display column")]
 	public string? PrimaryDisplayColumn { get; set; }
+
+	/// <summary>
+	/// Gets or sets the name of the column (own or inherited, of type <c>Color</c>) to set as the schema's
+	/// color column - the column Freedom UI reads to color the schema's records, for example lookup values.
+	/// </summary>
+	[Option("primary-color-column", Required = false,
+		HelpText = "Column name (own or inherited, of type Color) to set as the color column Freedom UI uses to color records")]
+	public string? PrimaryColorColumn { get; set; }
 
 	/// <summary>Gets or sets the database-view flag; omission preserves its current value.</summary>
 	[Option("is-db-view", Required = false,
@@ -121,12 +129,13 @@ public class SetEntitySchemaPropertiesOptions : RemoteCommandOptions
 	/// </remarks>
 	internal bool HasAnyPropertyToSet =>
 		IsDBView.HasValue || !string.IsNullOrWhiteSpace(PrimaryDisplayColumn)
+		|| !string.IsNullOrWhiteSpace(PrimaryColorColumn)
 		|| !string.IsNullOrWhiteSpace(Title)
 		|| ParsedTitleLocalizations is { Count: > 0 };
 }
 
 /// <summary>
-/// Sets schema-level properties (the primary-display column and the schema caption per culture) on a remote entity schema through the
+/// Sets schema-level properties (the primary-display column, the color column and the schema caption per culture) on a remote entity schema through the
 /// Entity Schema Designer save pipeline, then verifies the change was persisted.
 /// </summary>
 public class SetEntitySchemaPropertiesCommand : Command<SetEntitySchemaPropertiesOptions>

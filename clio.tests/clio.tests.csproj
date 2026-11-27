@@ -105,6 +105,10 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
 
+    <None Include="Command\Filters\Fixtures\**">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+
     <None Include="Theming\Fixtures\**">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

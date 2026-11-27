@@ -10,6 +10,7 @@ using Allure.NUnit.Attributes;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
+using Clio.Common;
 using Clio.Mcp.E2E.Support;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
@@ -28,6 +29,9 @@ namespace Clio.Mcp.E2E;
 /// different order on the same object that is refused as case-exists, and refusals that write nothing. Then
 /// <c>describe-dynamic-case</c> and <c>modify-dynamic-case</c> on a case each test creates without the bar: a read by
 /// object, a reorder planned and written, a stage removed and added back, a final stage group, and disable / enable.
+/// Then <c>modify-dynamic-case-as-new-version</c> and <c>set-active-dynamic-case-version</c>: a version planned and
+/// created inactive, the family described, activated, re-activated as unchanged and rolled back to the root, and an
+/// inactive version described and changed in place by name with <c>enabled</c> refused on it.
 /// </summary>
 /// <remarks>
 /// <para>Runs on the ProcessDesigner lane. Its seed ships in the AutoTestClioMcp 7.8.0 test package, which the
@@ -54,7 +58,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 	/// <summary>The first CrtProcessBuilder that carries BuildCase.</summary>
 	private const string MinimumPackageVersion = CreateDynamicCaseOptions.MinimumProcessBuilderVersion;
 
-	/// <summary>The first CrtProcessBuilder that carries DescribeCase and ModifyCase.</summary>
+	/// <summary>The first CrtProcessBuilder that carries DescribeCase, ModifyCase and the case version operations.</summary>
 	private const string CaseChangePackageVersion = DynamicCaseChangeRequirement.MinimumProcessBuilderVersion;
 
 	/// <summary>The member only a describe result document carries; it has no outcome.</summary>
@@ -73,7 +77,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 	private const int StageCount = 4;
 
 	[Test]
-	[Description("A dry run plans the case in the lookup's position order and writes nothing: no case schema and no settings row for the object appear.")]
+	[Description("A dry run plans the case in the lookup's position order and writes nothing: no case schema and no settings row for the object appear, and the log holds exactly the verdict and the result document.")]
 	[AllureName("A dry run plans the case and writes nothing")]
 	public async Task CreateDynamicCase_ShouldPlanAndWriteNothing_OnADryRun() {
 		// Arrange
@@ -94,6 +98,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 		result["case"]!["stages"]!.AsArray().Should().HaveCount(StageCount, because: "one stage per lookup value");
 		Text(result["page"]!.AsObject(), "status").Should().Be("planned",
 			because: "the page checks and the append dry run ran too");
+		ShouldHoldOnlyTheVerdictAndThePlan(planned);
 		(await CaseSchemaRowsAsync(context)).GetArrayLength().Should().Be(casesBefore, because: "a dry run writes no case");
 		(await SettingsRowsAsync(context)).GetArrayLength().Should().Be(settingsBefore,
 			because: "a dry run writes no settings row");
@@ -153,7 +158,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			Text(rerun, "outcome").Should().Be("already-present", because: "the equivalent case exists");
 			Text(rerun["page"]!.AsObject(), "status").Should().Be("already-present", because: "the bar exists");
 
-			ShouldBeRefused(differentCall, "another order is another case");
+			ShouldBeRefusedOnce(differentCall, "another order is another case");
 			Text(ResultOf(differentCall), "errorCode").Should().Be("case-exists",
 				because: "create does not change an existing case; modify-dynamic-case does");
 			(await CaseSchemaRowsAsync(context)).GetArrayLength().Should().Be(1,
@@ -184,9 +189,9 @@ public sealed class CreateDynamicCaseToolE2ETests {
 
 		// Assert
 		IgnoreWhenProcessBuilderIsBehind(ToolText(notLookup), MinimumPackageVersion);
-		ShouldBeRefused(notLookup, "a text column has no values to become stages");
+		ShouldBeRefusedOnce(notLookup, "a text column has no values to become stages");
 		Text(ResultOf(notLookup), "errorCode").Should().Be("column-not-lookup", because: "the code names the reason");
-		ShouldBeRefused(unknownValue, "a stage must name a lookup value");
+		ShouldBeRefusedOnce(unknownValue, "a stage must name a lookup value");
 		Text(ResultOf(unknownValue), "errorCode").Should().Be("stage-value-unknown", because: "the code names the reason");
 		(await CaseSchemaRowsAsync(context)).GetArrayLength().Should().Be(casesBefore, because: "a refusal writes nothing");
 		(await SettingsRowsAsync(context)).GetArrayLength().Should().Be(settingsBefore,
@@ -223,7 +228,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 		IgnoreWhenProcessBuilderIsBehind(ToolText(textFilter), MinimumPackageVersion);
 		ShouldBeRefused(deactivateAlone, "deactivate-unfiltered disables a case only to let a filtered one start");
 		LogText(deactivateAlone).Should().Contain("[invalid-request]", because: "clio names the stable code");
-		ShouldBeRefused(textFilter, "a filter column must be a lookup of the object");
+		ShouldBeRefusedOnce(textFilter, "a filter column must be a lookup of the object");
 		Text(ResultOf(textFilter), "errorCode").Should().Be("filter-column-invalid", because: "the code names the reason");
 		ShouldBeRefused(filterAndRemove, "a filter and its removal contradict each other");
 		LogText(filterAndRemove).Should().Contain("[invalid-request]", because: "clio names the stable code");
@@ -323,10 +328,10 @@ public sealed class CreateDynamicCaseToolE2ETests {
 
 			// Assert
 			IgnoreWhenProcessBuilderIsBehind(ToolText(unconfirmedCall), CaseChangePackageVersion);
-			ShouldBeRefused(unconfirmedCall, "a value rename reaches every record, so the user agrees first");
+			ShouldBeRefusedOnce(unconfirmedCall, "a value rename reaches every record, so the user agrees first");
 			Text(ResultOf(unconfirmedCall), "errorCode").Should().Be("value-rename-confirmation-required",
 				because: "the code names the yes that is missing");
-			ShouldBeRefused(takenCall, "two values would read the same on the bar");
+			ShouldBeRefusedOnce(takenCall, "two values would read the same on the bar");
 			Text(ResultOf(takenCall), "errorCode").Should().Be("stage-value-ambiguous",
 				because: "the name is another value's");
 			JsonObject after = await DescribeCaseAsync(context, created);
@@ -337,7 +342,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 	}
 
 	[Test]
-	[Description("A modify-dynamic-case dry run that reorders the stages answers planned with the moves in the diff and writes nothing: the stored order is unchanged.")]
+	[Description("A modify-dynamic-case dry run that reorders the stages answers planned with the moves in the diff, logs only the verdict and the result document, and writes nothing: the stored order is unchanged.")]
 	[AllureName("modify-dynamic-case plans a reorder and writes nothing")]
 	public async Task ModifyDynamicCase_ShouldPlanAReorder_AndWriteNothing_OnADryRun() {
 		// Arrange
@@ -361,6 +366,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			ShouldHaveLanded(planCall, "a dry run that passes every check is a success");
 			JsonObject plan = ResultOf(planCall);
 			Text(plan, "outcome").Should().Be("planned", because: "a dry run plans");
+			ShouldHoldOnlyTheVerdictAndThePlan(planCall);
 			plan["diff"]!["moved"]!.AsArray().Should().NotBeEmpty(because: "two stages swap places");
 			StageValues(await DescribeCaseAsync(context, created)).Should().Equal(stored,
 				because: "a dry run writes nothing");
@@ -457,6 +463,258 @@ public sealed class CreateDynamicCaseToolE2ETests {
 	}
 
 	[Test]
+	[Description("Steps inside a stage (ENG-107646): a dry run with a stage's steps and transitionType answers planned and writes nothing; the write stores two Perform task steps, the second after the first and with a hint, and the stage's transitionType, read back by describe-dynamic-case; the same call again, hint included, answers unchanged, and so does the stage's steps sent back as describe returns them.")]
+	[AllureName("modify-dynamic-case plans, writes and describes the steps of a stage")]
+	public async Task ModifyDynamicCase_ShouldPlanThenWriteTheStepsOfAStage() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync(CaseChangePackageVersion);
+		JsonObject? created = null;
+		try {
+			CallToolResult createCall = await CallAsync(context, WithoutBar());
+			IgnoreWhenProcessBuilderIsBehind(ToolText(createCall), MinimumPackageVersion);
+			created = ResultOf(createCall);
+			ShouldHaveLanded(createCall, "the seeded object takes a case");
+			List<string> stored = StageValues(created["case"]!.AsObject());
+			object[] withSteps = WithSteps(stored, stored[1], "afterRequired",
+				Step("Check the order", required: true), Step("Send contract", after: "Check the order", hint: "Attach the price list"));
+
+			// Act
+			CallToolResult dryRun = await ModifyAsync(context, created,
+				new Dictionary<string, object?> { ["stages"] = withSteps, ["dry-run"] = true });
+			JsonObject afterDryRun = await DescribeCaseAsync(context, created);
+			CallToolResult write = await ModifyAsync(context, created, new Dictionary<string, object?> { ["stages"] = withSteps });
+			JsonObject after = await DescribeCaseAsync(context, created);
+			CallToolResult again = await ModifyAsync(context, created, new Dictionary<string, object?> { ["stages"] = withSteps });
+			JsonNode described = StageOf(after, stored[1])["steps"]!.DeepClone();
+			CallToolResult echo = await ModifyAsync(context, created, new Dictionary<string, object?> {
+				["stages"] = WithDescribedSteps(stored, stored[1], described)
+			});
+
+			// Assert
+			IgnoreWhenProcessBuilderIsBehind(ToolText(dryRun), CaseChangePackageVersion);
+			ShouldHaveLanded(dryRun, "a Perform task step is a valid change");
+			Text(ResultOf(dryRun), "outcome").Should().Be("planned", because: "a dry run only plans");
+			StepsOf(StageOf(afterDryRun, stored[1])).Should().BeEmpty(because: "the dry run wrote nothing");
+			ShouldHaveLanded(write, "the planned steps can be written");
+			Text(ResultOf(write), "outcome").Should().Be("modified", because: "the steps were written");
+			JsonObject stage = StageOf(after, stored[1]);
+			Text(stage, "transitionType").Should().Be("afterRequired", because: "the stage moves on after its required steps");
+			List<JsonObject> steps = StepsOf(stage);
+			steps.Select(step => Text(step, "caption")).Should().Equal(["Check the order", "Send contract"],
+				because: "the steps are stored in the order sent");
+			steps.Should().OnlyContain(step => Text(step, "type") == "performTask", because: "both steps are Perform tasks");
+			steps[0]["required"]!.GetValue<bool>().Should().BeTrue(because: "the first step was sent as required");
+			steps[1]["required"]!.GetValue<bool>().Should().BeFalse(because: "a Perform task is optional by default");
+			Text(steps[1], "after").Should().Be("Check the order", because: "the second step waits for the first");
+			Text(steps[1], "hint").Should().Be("Attach the price list", because: "a Perform task's block is written");
+			ShouldHaveLanded(again, "the same call again is a success");
+			Text(ResultOf(again), "outcome").Should().Be("unchanged",
+				because: "the steps are stored as sent, and a block equal to the stored one changes nothing");
+			ShouldHaveLanded(echo, "describe's steps sent back are taken as they are");
+			Text(ResultOf(echo), "outcome").Should().Be("unchanged",
+				because: "what only describe reports is ignored, and every block is what the step stores");
+		} finally {
+			await CleanUpAsync(context, created, null, null, string.Empty);
+		}
+	}
+
+	[Test]
+	[Description("Steps inside a stage (ENG-107646): a change that names another stage's steps leaves the steps of a stage it does not name as they are, and a stage's whole list without a stored step removes that step.")]
+	[AllureName("modify-dynamic-case keeps the steps of a stage it does not name")]
+	public async Task ModifyDynamicCase_ShouldKeepTheStepsOfAStageItDoesNotName() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync(CaseChangePackageVersion);
+		JsonObject? created = null;
+		try {
+			CallToolResult createCall = await CallAsync(context, WithoutBar());
+			IgnoreWhenProcessBuilderIsBehind(ToolText(createCall), MinimumPackageVersion);
+			created = ResultOf(createCall);
+			ShouldHaveLanded(createCall, "the seeded object takes a case");
+			List<string> stored = StageValues(created["case"]!.AsObject());
+			CallToolResult first = await ModifyAsync(context, created, new Dictionary<string, object?> {
+				["stages"] = WithSteps(stored, stored[0], null, Step("Review the order"), Step("Call the client"))
+			});
+			IgnoreWhenProcessBuilderIsBehind(ToolText(first), CaseChangePackageVersion);
+			ShouldHaveLanded(first, "the first stage takes two steps");
+
+			// Act
+			CallToolResult second = await ModifyAsync(context, created, new Dictionary<string, object?> {
+				["stages"] = WithSteps(stored, stored[2], null, Step("Ship it"))
+			});
+			CallToolResult third = await ModifyAsync(context, created, new Dictionary<string, object?> {
+				["stages"] = WithSteps(stored, stored[0], null, Step("Review the order"))
+			});
+			JsonObject after = await DescribeCaseAsync(context, created);
+
+			// Assert
+			ShouldHaveLanded(second, "another stage's steps can be written");
+			ShouldHaveLanded(third, "a step left out of its stage's list is removed");
+			StepsOf(StageOf(after, stored[0])).Select(step => Text(step, "caption")).Should().Equal(["Review the order"],
+				because: "the second call did not name this stage, and the third left one step out");
+			StepsOf(StageOf(after, stored[2])).Select(step => Text(step, "caption")).Should().Equal(["Ship it"],
+				because: "the third call did not name this stage");
+			ResultOf(third)["diff"]!["steps"]!.AsArray().Select(change => Text(change!.AsObject(), "change"))
+				.Should().Equal(["removed"], because: "only the step left out changes");
+		} finally {
+			await CleanUpAsync(context, created, null, null, string.Empty);
+		}
+	}
+
+	[Test]
+	[Description("Step conditions (ENG-107647): a dry run with a step's condition writes nothing; the write stores the condition, which describe-dynamic-case returns by result and target stage; a result the step's task category does not offer is refused with nothing written; removing the step removes its condition and the case still saves.")]
+	[AllureName("modify-dynamic-case writes, describes and removes a step's condition")]
+	public async Task ModifyDynamicCase_ShouldWriteDescribeAndRemoveAStepCondition() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync(CaseChangePackageVersion);
+		JsonObject? created = null;
+		try {
+			CallToolResult createCall = await CallAsync(context, WithoutBar());
+			IgnoreWhenProcessBuilderIsBehind(ToolText(createCall), MinimumPackageVersion);
+			created = ResultOf(createCall);
+			ShouldHaveLanded(createCall, "the seeded object takes a case");
+			List<string> stored = StageValues(created["case"]!.AsObject());
+			string target = stored[^1];
+			Dictionary<string, object?> check = Step("Check the order");
+			check["conditions"] = new[] { new Dictionary<string, object?> { ["result"] = "Canceled", ["nextStage"] = target } };
+			Dictionary<string, object?> unknown = Step("Check the order");
+			unknown["conditions"] = new[] { new Dictionary<string, object?> { ["result"] = "Maybe later", ["nextStage"] = target } };
+
+			// Act
+			CallToolResult dryRun = await ModifyAsync(context, created, new Dictionary<string, object?> {
+				["stages"] = WithSteps(stored, stored[1], null, check), ["dry-run"] = true
+			});
+			JsonObject afterDryRun = await DescribeCaseAsync(context, created);
+			CallToolResult write = await ModifyAsync(context, created,
+				new Dictionary<string, object?> { ["stages"] = WithSteps(stored, stored[1], null, check) });
+			JsonObject after = await DescribeCaseAsync(context, created);
+			CallToolResult refused = await ModifyAsync(context, created,
+				new Dictionary<string, object?> { ["stages"] = WithSteps(stored, stored[1], null, unknown) });
+			JsonObject afterRefusal = await DescribeCaseAsync(context, created);
+			CallToolResult removed = await ModifyAsync(context, created,
+				new Dictionary<string, object?> { ["stages"] = WithSteps(stored, stored[1], null) });
+			JsonObject afterRemoval = await DescribeCaseAsync(context, created);
+
+			// Assert
+			IgnoreWhenProcessBuilderIsBehind(ToolText(dryRun), CaseChangePackageVersion);
+			ShouldHaveLanded(dryRun, "a Perform task step takes a condition");
+			Text(ResultOf(dryRun), "outcome").Should().Be("planned");
+			StepsOf(StageOf(afterDryRun, stored[1])).Should().BeEmpty(because: "the dry run wrote nothing");
+			ShouldHaveLanded(write, "the planned condition can be written");
+			JsonObject step = StepsOf(StageOf(after, stored[1])).Single();
+			JsonObject condition = step["conditions"]!.AsArray().Single()!.AsObject();
+			Text(condition, "result").Should().Be("Canceled");
+			Text(condition, "nextStage").Should().Be(Text(StageOf(after, target), "caption"),
+				because: "the condition leads to the stage named");
+			Text(ResultOf(refused), "outcome").Should().Be("refused");
+			Text(ResultOf(refused), "errorCode").Should().Be("step-condition-invalid",
+				because: "the task category offers no such result");
+			JsonObject kept = StepsOf(StageOf(afterRefusal, stored[1])).Single()["conditions"]!.AsArray().Single()!.AsObject();
+			Text(kept, "result").Should().Be("Canceled", because: "a refused change writes nothing");
+			Text(kept, "nextStage").Should().Be(Text(StageOf(after, target), "caption"));
+			ShouldHaveLanded(removed, "a step with a condition is removed with it");
+			StepsOf(StageOf(afterRemoval, stored[1])).Should().BeEmpty();
+		} finally {
+			await CleanUpAsync(context, created, null, null, string.Empty);
+		}
+	}
+
+	[Test]
+	[Description("Step types (ENG-107648): an access-rights step without a filter is refused step-acts-on-all-records with nothing written; a dry run with an approval (a condition on Positive) and an access-rights step on the contact who created the case's record writes nothing; the write stores both, describe returns each type's block, the approval's condition and the filter as [#Record.CreatedBy#], and the described steps sent back answer unchanged. Not covered on the lane: openEditPage and subProcess with inputs, because the AutoTestClioMcp seed ships no section page of its object for an Open edit page step to open and no business process with an input parameter to call; sendEmail, because the lane's stand has no mailbox to send from.")]
+	[AllureName("modify-dynamic-case writes and describes an approval and an access-rights step")]
+	public async Task ModifyDynamicCase_ShouldWriteAndDescribeTheApprovalAndAccessRightsSteps() {
+		// Arrange
+		// No openEditPage, subProcess or sendEmail step here: the seed has no section page of its object (an Open edit
+		// page step takes only a page registered for a section), no process with an input parameter, and the lane's
+		// stand has no mailbox.
+		await using ProcessDesignerArrangeContext context = await StartAsync(CaseChangePackageVersion);
+		JsonObject? created = null;
+		try {
+			CallToolResult createCall = await CallAsync(context, WithoutBar());
+			IgnoreWhenProcessBuilderIsBehind(ToolText(createCall), MinimumPackageVersion);
+			created = ResultOf(createCall);
+			ShouldHaveLanded(createCall, "the seeded object takes a case");
+			List<string> stored = StageValues(created["case"]!.AsObject());
+			string target = stored[^1];
+			Dictionary<string, object?> approval = new() {
+				["type"] = "approval",
+				["caption"] = "Approve the order",
+				["approval"] = new Dictionary<string, object?> {
+					["object"] = Entity,
+					["recordId"] = new Dictionary<string, object?> { ["recordId"] = "[#Record.Id#]" },
+					["approver"] = new Dictionary<string, object?> { ["type"] = "user", ["employee"] = "Supervisor" }
+				},
+				["conditions"] = new[] { new Dictionary<string, object?> { ["result"] = "Positive", ["nextStage"] = target } }
+			};
+			// Contact, not the seeded object: an object without record permissions refuses any rights step as one that
+			// changes nothing, before the all-records check (the seed's object has none; seen on the ProcessDesigner lane).
+			Dictionary<string, object?> unfiltered = new() {
+				["type"] = "changeAccessRights",
+				["caption"] = "Lock the creator's contact",
+				["accessRights"] = new Dictionary<string, object?> {
+					["object"] = "Contact",
+					["remove"] = new[] {
+						new Dictionary<string, object?> {
+							["operations"] = new[] { "delete" },
+							["grantee"] = new Dictionary<string, object?> { ["type"] = "role", ["role"] = "All employees" }
+						}
+					}
+				}
+			};
+			Dictionary<string, object?> filtered = new(unfiltered) {
+				["filter"] = new Dictionary<string, object?> {
+					["conditions"] = new[] { new Dictionary<string, object?> { ["column"] = "Id", ["value"] = "[#Record.CreatedBy#]" } }
+				}
+			};
+
+			// Act
+			CallToolResult everyRecord = await ModifyAsync(context, created,
+				new Dictionary<string, object?> { ["stages"] = WithSteps(stored, stored[1], null, unfiltered) });
+			CallToolResult dryRun = await ModifyAsync(context, created, new Dictionary<string, object?> {
+				["stages"] = WithSteps(stored, stored[1], null, approval, filtered), ["dry-run"] = true
+			});
+			JsonObject afterDryRun = await DescribeCaseAsync(context, created);
+			CallToolResult write = await ModifyAsync(context, created,
+				new Dictionary<string, object?> { ["stages"] = WithSteps(stored, stored[1], null, approval, filtered) });
+			JsonObject after = await DescribeCaseAsync(context, created);
+			CallToolResult again = await ModifyAsync(context, created, new Dictionary<string, object?> {
+				["stages"] = WithDescribedSteps(stored, stored[1], StageOf(after, stored[1])["steps"]!.DeepClone())
+			});
+
+			// Assert
+			IgnoreWhenProcessBuilderIsBehind(ToolText(everyRecord), CaseChangePackageVersion);
+			Text(ResultOf(everyRecord), "outcome").Should().Be("refused",
+				because: "an access-rights step without a filter and without the user's separate yes is not written");
+			Text(ResultOf(everyRecord), "errorCode").Should().Be("step-acts-on-all-records",
+				because: "without a filter the step changes the rights on every record of the object");
+			ShouldHaveLanded(dryRun, "an approval and a filtered access-rights step are valid steps");
+			Text(ResultOf(dryRun), "outcome").Should().Be("planned",
+				because: "a dry run with valid steps runs every check and only plans the change");
+			StepsOf(StageOf(afterDryRun, stored[1])).Should().BeEmpty(because: "neither the refusal nor the dry run wrote");
+			ShouldHaveLanded(write, "the planned steps can be written");
+			List<JsonObject> steps = StepsOf(StageOf(after, stored[1]));
+			steps.Select(step => Text(step, "type")).Should().Equal(["approval", "changeAccessRights"],
+				because: "describe reports each stored step by its own type token, in the order the steps were sent");
+			JsonObject approvalStep = steps[0];
+			approvalStep["required"]!.GetValue<bool>().Should().BeTrue(because: "an approval is required by default");
+			Text(approvalStep["approval"]!["approver"]!.AsObject(), "type").Should().Be("user",
+				because: "describe returns the approval block with the approver type it was written with");
+			Text(approvalStep["conditions"]!.AsArray().Single()!.AsObject(), "nextStage")
+				.Should().Be(Text(StageOf(after, target), "caption"),
+					because: "the approval's condition on Positive leads to the stage named, which describe names by caption");
+			JsonObject condition = steps[1]["filter"]!["conditions"]!.AsArray().Single()!.AsObject();
+			Text(condition, "column").Should().Be("Id",
+				because: "describe returns the access-rights step's filter on the column it was written with");
+			Text(condition, "value").Should().Be("[#Record.CreatedBy#]",
+				because: "the filter names the contact who created the case's record");
+			ShouldHaveLanded(again, "the described steps are valid steps");
+			Text(ResultOf(again), "outcome").Should().Be("unchanged",
+				because: "describe's steps sent back are the stored ones");
+		} finally {
+			await CleanUpAsync(context, created, null, null, string.Empty);
+		}
+	}
+
+	[Test]
 	[Description("successful=false on a stage outside the final group is refused as stage-group-invalid with nothing written; grouping the last two stages, the second unsuccessful, stores the group and the flag, read back by describe-dynamic-case from the saved case.")]
 	[AllureName("modify-dynamic-case groups the final stages and refuses an unsuccessful non-final stage")]
 	public async Task ModifyDynamicCase_ShouldGroupTheFinalStages_AndRefuseAnUnsuccessfulNonFinalStage() {
@@ -487,7 +745,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 
 			// Assert
 			IgnoreWhenProcessBuilderIsBehind(ToolText(refusedCall), CaseChangePackageVersion);
-			ShouldBeRefused(refusedCall, "only a stage of the final group can end the case unsuccessfully");
+			ShouldBeRefusedOnce(refusedCall, "only a stage of the final group can end the case unsuccessfully");
 			Text(ResultOf(refusedCall), "errorCode").Should().Be("stage-group-invalid",
 				because: "the code names the reason");
 			afterRefusal["stages"]!.AsArray().Should().OnlyContain(
@@ -579,12 +837,202 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			ShouldHaveLanded(disableCall, "an enabled case can be disabled");
 			Text(ResultOf(disableCall), "outcome").Should().Be("modified", because: "the case was enabled");
 			afterDisable["enabled"]!.GetValue<bool>().Should().BeFalse(because: "the disable was stored");
-			ShouldBeRefused(mixedCall, "enabled is a save of its own");
+			ShouldBeRefusedOnce(mixedCall, "enabled is a save of its own");
 			Text(ResultOf(mixedCall), "errorCode").Should().Be("invalid-request", because: "the code names the reason");
 			afterMixed["enabled"]!.GetValue<bool>().Should().BeFalse(because: "a refusal writes nothing");
 			Text(afterMixed, "caption").Should().Be(captionBefore, because: "a refusal writes nothing");
 			ShouldHaveLanded(enableCall, "a disabled case with no other case on the object can be enabled");
 			afterEnable["enabled"]!.GetValue<bool>().Should().BeTrue(because: "the enable was stored");
+		} finally {
+			await CleanUpAsync(context, created, null, null, string.Empty);
+		}
+	}
+
+	[Test]
+	[Description("A change saved as a new version: the dry run plans an inactive version, names it by name only (no uId, no case schemaUId) and writes nothing, and the write saves it under that name; the write creates it inactive with a designer link while the case stays active; describe lists both members; the activation dry run writes nothing; each dry run logs only the verdict and the result document; the activation reads the version back as active; the same activation again, with an unneeded confirm-package-position, answers unchanged; activating the root goes back.")]
+	[AllureName("modify-dynamic-case-as-new-version and set-active-dynamic-case-version: create, check, activate, go back")]
+	public async Task DynamicCaseVersion_ShouldBeCreatedInactive_ThenActivated_ThenRolledBack() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync(CaseChangePackageVersion);
+		JsonObject? created = null;
+		JsonObject? version = null;
+		try {
+			CallToolResult createCall = await CallAsync(context, WithoutBar());
+			IgnoreWhenProcessBuilderIsBehind(ToolText(createCall), MinimumPackageVersion);
+			created = ResultOf(createCall);
+			ShouldHaveLanded(createCall, "the seeded object takes a case");
+			string rootName = CaseNameOf(created);
+			string[] reordered = SwapFirstTwo(StageValues(created["case"]!.AsObject()));
+			Dictionary<string, object?> change = new() { ["stages"] = reordered };
+
+			// Act
+			CallToolResult planCall = await NewVersionAsync(context, created, change, dryRun: true);
+			JsonObject afterPlan = await DescribeCaseAsync(context, created);
+			CallToolResult versionCall = await NewVersionAsync(context, created, change, dryRun: false);
+			IgnoreWhenProcessBuilderIsBehind(ToolText(versionCall), CaseChangePackageVersion);
+			// Assigned before the assertion, so a failed-leftover or unknown write still reaches the version cleanup.
+			version = ResultOf(versionCall);
+			ShouldHaveLanded(versionCall, "the active case can be changed as a new version");
+			string versionName = Text(version["version"]!.AsObject(), "name")!;
+			JsonObject afterVersion = await DescribeCaseAsync(context, created);
+			CallToolResult activatePlanCall = await SetActiveAsync(context, versionName, dryRun: true);
+			JsonObject afterActivatePlan = await DescribeCaseAsync(context, created);
+			CallToolResult activateCall = await SetActiveAsync(context, versionName, dryRun: false);
+			JsonObject afterActivate = await DescribeCaseAsync(context, created);
+			CallToolResult againCall = await SetActiveAsync(context, versionName, dryRun: false,
+				confirmPackagePosition: true);
+			CallToolResult backCall = await SetActiveAsync(context, rootName, dryRun: false);
+			JsonObject afterBack = await DescribeCaseAsync(context, created);
+
+			// Assert
+			IgnoreWhenProcessBuilderIsBehind(ToolText(planCall), CaseChangePackageVersion);
+			ShouldHaveLanded(planCall, "a dry run of a valid version plans it");
+			Text(ResultOf(planCall), "outcome").Should().Be("planned", because: "a dry run writes nothing");
+			ShouldHoldOnlyTheVerdictAndThePlan(planCall);
+			ResultOf(planCall)["version"]!["active"]!.GetValue<bool>().Should().BeFalse(
+				because: "a version is always planned inactive");
+			ResultOf(planCall)["version"]!.AsObject().ContainsKey("uId").Should().BeFalse(
+				because: "the dry run's copy gets a UId per call that the write never saves, so the plan names none");
+			ResultOf(planCall)["case"]!.AsObject().ContainsKey("schemaUId").Should().BeFalse(
+				because: "the case block names the same unsaved copy");
+			Text(ResultOf(planCall)["version"]!.AsObject(), "name").Should().Be(versionName,
+				because: "the name is the handle: the write saves the version under the name the dry run planned");
+			afterPlan["versions"].Should().BeNull(because: "the dry run wrote no version, so the case has no other member");
+			Text(version, "outcome").Should().Be("version-created", because: "the version was saved");
+			version["version"]!["active"]!.GetValue<bool>().Should().BeFalse(because: "creating never activates");
+			Text(version["version"]!.AsObject(), "designerUrl").Should().NotBeNullOrWhiteSpace(
+				because: "a saved version opens in the case designer, which is where the user checks it");
+			Text(version, "sourceName").Should().Be(rootName, because: "the version is copied from the active case");
+			Text(afterVersion, "schemaName").Should().Be(rootName, because: "describe by the root reads the root");
+			afterVersion["activeVersion"]!.GetValue<bool>().Should().BeTrue(
+				because: "the case stays active until the separate activation");
+			StageValues(afterVersion).Should().NotEqual(reordered, because: "the change went to the version only");
+			MembersOf(afterVersion).Should().BeEquivalentTo([rootName, versionName],
+				because: "describe lists the whole family once it has a second member");
+			ActiveMemberOf(afterVersion).Should().Be(rootName, because: "the root is still the platform's pick");
+			ShouldHaveLanded(activatePlanCall, "the version can be activated");
+			Text(ResultOf(activatePlanCall), "outcome").Should().Be("planned", because: "a dry run writes nothing");
+			ShouldHoldOnlyTheVerdictAndThePlan(activatePlanCall);
+			McpCommandExecutionParser.Extract(activatePlanCall).Output![0].Value.Should().Contain(
+				$"'{rootName}' is still the active one",
+				because: "a dry run switches nothing, and the verdict says which member is active now");
+			new[] {
+				ResultOf(activatePlanCall)["activeVersion"]!["active"]!.GetValue<bool>(),
+				ResultOf(activatePlanCall)["previousActiveVersion"]!["active"]!.GetValue<bool>()
+			}.Count(active => active).Should().Be(1, because: "a dry run never shows two members of a family active");
+			ActiveMemberOf(afterActivatePlan).Should().Be(rootName, because: "the activation dry run wrote nothing");
+			ShouldHaveLanded(activateCall, "the version can be activated");
+			Text(ResultOf(activateCall), "outcome").Should().Be("activated", because: "the switch read back");
+			Text(ResultOf(activateCall)["activeVersion"]!.AsObject(), "name").Should().Be(versionName,
+				because: "the result names the member really active, as read back");
+			ActiveMemberOf(afterActivate).Should().Be(versionName, because: "the switch was stored");
+			ShouldHaveLanded(againCall, "activating the active member again is a success");
+			Text(ResultOf(againCall), "outcome").Should().Be("unchanged",
+				because: "the call is idempotent, and a package-position yes the switch does not need binds and changes nothing");
+			ShouldHaveLanded(backCall, "the root is a member like any other, so activating it goes back");
+			ActiveMemberOf(afterBack).Should().Be(rootName, because: "the rollback was stored");
+		} finally {
+			await CleanUpVersionAsync(context, created, version);
+			await CleanUpAsync(context, created, null, null, string.Empty);
+		}
+	}
+
+	[Test]
+	[Description("An inactive version is read by its own name with a note naming the active case, changed in place by name (it stays inactive), and refused invalid-request for enabled, writing nothing.")]
+	[AllureName("describe and modify a dynamic case's inactive version by name")]
+	public async Task DynamicCaseVersion_ShouldBeDescribedAndChangedInPlace_AndRefuseEnabled() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync(CaseChangePackageVersion);
+		JsonObject? created = null;
+		JsonObject? version = null;
+		try {
+			CallToolResult createCall = await CallAsync(context, WithoutBar());
+			IgnoreWhenProcessBuilderIsBehind(ToolText(createCall), MinimumPackageVersion);
+			created = ResultOf(createCall);
+			ShouldHaveLanded(createCall, "the seeded object takes a case");
+			string rootName = CaseNameOf(created);
+			CallToolResult versionCall = await NewVersionAsync(context, created, [], dryRun: false);
+			IgnoreWhenProcessBuilderIsBehind(ToolText(versionCall), CaseChangePackageVersion);
+			version = ResultOf(versionCall);
+			ShouldHaveLanded(versionCall, "an unchanged copy of the active case is a valid version");
+			string versionName = Text(version["version"]!.AsObject(), "name")!;
+			string captionBefore = Text(version["case"]!.AsObject(), "caption")!;
+			Dictionary<string, object?> draft = new() {
+				["environment-name"] = context.EnvironmentName,
+				["case-name"] = versionName
+			};
+
+			// Act
+			CallToolResult describeCall = await DescribeAsync(context, new Dictionary<string, object?> {
+				["case-name"] = versionName
+			});
+			CallToolResult captionCall = await ProcessDesignerE2EArrange.CallToolAsync(context,
+				ModifyDynamicCaseTool.ModifyDynamicCaseToolName,
+				new Dictionary<string, object?>(draft) { ["caption"] = captionBefore + " draft" });
+			CallToolResult enabledCall = await ProcessDesignerE2EArrange.CallToolAsync(context,
+				ModifyDynamicCaseTool.ModifyDynamicCaseToolName,
+				new Dictionary<string, object?>(draft) { ["enabled"] = false });
+			JsonObject root = await DescribeCaseAsync(context, created);
+
+			// Assert
+			ShouldHaveLanded(describeCall, "any member of the family can be read by name");
+			JsonObject described = ResultOf(describeCall, DescribeMarker)[DescribeMarker]!.AsArray()[0]!.AsObject();
+			Text(described, "schemaName").Should().Be(versionName, because: "the version itself is read, not the root");
+			described["activeVersion"]!.GetValue<bool>().Should().BeFalse(because: "the version was never activated");
+			LogText(describeCall).Should().Contain($"is not the active version of its case; '{rootName}' (",
+				because: "the note names the active member");
+			ShouldHaveLanded(captionCall, "an inactive version is changed in place");
+			Text(ResultOf(captionCall), "outcome").Should().Be("modified", because: "the caption changed");
+			ResultOf(captionCall)["case"]!["activeVersion"]!.GetValue<bool>().Should().BeFalse(
+				because: "an in-place change does not activate the version");
+			ShouldBeRefusedOnce(enabledCall, "enabled lives on the active case");
+			Text(ResultOf(enabledCall), "errorCode").Should().Be("invalid-request", because: "the code names the reason");
+			Text(root, "caption").Should().NotEndWith(" draft", because: "the draft's change never reaches the root");
+			root["enabled"]!.GetValue<bool>().Should().BeTrue(because: "the refused enabled wrote nothing");
+		} finally {
+			await CleanUpVersionAsync(context, created, version);
+			await CleanUpAsync(context, created, null, null, string.Empty);
+		}
+	}
+
+	[Test]
+	[Description("A new version copies the active case's steps as they are: steps or a transitionType sent with a stage reach the package through the shared stage keys and are refused steps-not-supported, not unknown-keys, and no version is written.")]
+	[AllureName("modify-dynamic-case-as-new-version refuses steps and transitionType as steps-not-supported")]
+	public async Task DynamicCaseVersion_ShouldRefuseStepsAndTransitionType_AsStepsNotSupported() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync(CaseChangePackageVersion);
+		JsonObject? created = null;
+		try {
+			CallToolResult createCall = await CallAsync(context, WithoutBar());
+			IgnoreWhenProcessBuilderIsBehind(ToolText(createCall), MinimumPackageVersion);
+			created = ResultOf(createCall);
+			ShouldHaveLanded(createCall, "the seeded object takes a case");
+			List<string> stored = StageValues(created["case"]!.AsObject());
+			Dictionary<string, object?> withSteps = new() {
+				["stages"] = WithSteps(stored, stored[0], null, Step("Call the client"))
+			};
+			Dictionary<string, object?> withTransition = new() {
+				["stages"] = stored.Select<string, object>(value => value != stored[0]
+					? value
+					: new Dictionary<string, object?> { ["value"] = value, ["transitionType"] = "afterAll" }).ToArray()
+			};
+
+			// Act
+			CallToolResult stepsCall = await NewVersionAsync(context, created, withSteps, dryRun: false);
+			CallToolResult transitionCall = await NewVersionAsync(context, created, withTransition, dryRun: false);
+			JsonObject afterCalls = await DescribeCaseAsync(context, created);
+
+			// Assert
+			IgnoreWhenProcessBuilderIsBehind(ToolText(stepsCall), CaseChangePackageVersion);
+			ShouldBeRefusedOnce(stepsCall, "a version copies the active case's steps as they are");
+			Text(ResultOf(stepsCall), "errorCode").Should().Be("steps-not-supported",
+				because: "the package's own refusal reaches the agent, not a clio unknown-keys answer");
+			Text(ResultOf(stepsCall), "errorMessage").Should().Contain("modify-dynamic-case",
+				because: "the refusal says where the version's steps are changed");
+			ShouldBeRefusedOnce(transitionCall, "a version copies the active case's transition types too");
+			Text(ResultOf(transitionCall), "errorCode").Should().Be("steps-not-supported",
+				because: "transitionType is a declared stage key the package answers for itself");
+			afterCalls["versions"].Should().BeNull(because: "a refused call writes no version");
 		} finally {
 			await CleanUpAsync(context, created, null, null, string.Empty);
 		}
@@ -676,6 +1124,45 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			args);
 	}
 
+	private static async Task<CallToolResult> NewVersionAsync(ProcessDesignerArrangeContext context,
+		JsonObject created, Dictionary<string, object?> change, bool dryRun) {
+		Dictionary<string, object?> args = new() {
+			["environment-name"] = context.EnvironmentName,
+			["case-name"] = CaseNameOf(created),
+			["dry-run"] = dryRun
+		};
+		foreach (KeyValuePair<string, object?> pair in change) {
+			args[pair.Key] = pair.Value;
+		}
+		return await ProcessDesignerE2EArrange.CallToolAsync(context,
+			ModifyDynamicCaseAsNewVersionTool.ModifyDynamicCaseAsNewVersionToolName, args);
+	}
+
+	private static Task<CallToolResult> SetActiveAsync(ProcessDesignerArrangeContext context, string versionName,
+		bool dryRun, bool confirmPackagePosition = false) {
+		Dictionary<string, object?> args = new() {
+			["environment-name"] = context.EnvironmentName,
+			["version-name"] = versionName,
+			["dry-run"] = dryRun
+		};
+		if (confirmPackagePosition) {
+			args["confirm-package-position"] = true;
+		}
+		return ProcessDesignerE2EArrange.CallToolAsync(context,
+			SetActiveDynamicCaseVersionTool.SetActiveDynamicCaseVersionToolName, args);
+	}
+
+	/// <summary>The names of the case's version family members, as describe lists them.</summary>
+	private static List<string> MembersOf(JsonObject caseBlock) =>
+		[.. (caseBlock["versions"]?.AsArray() ?? []).Select(member => Text(member!.AsObject(), "name")!)];
+
+	/// <summary>The member describe names as the platform's pick.</summary>
+	private static string? ActiveMemberOf(JsonObject caseBlock) =>
+		(caseBlock["versions"]?.AsArray() ?? []).Select(member => member!.AsObject())
+			.Where(member => member["active"]!.GetValue<bool>())
+			.Select(member => Text(member, "name"))
+			.SingleOrDefault();
+
 	private static string CaseNameOf(JsonObject created) => Text(created["case"]!.AsObject(), "schemaName")!;
 
 	/// <summary>The stage lookup values of a case block, in the stored order.</summary>
@@ -698,6 +1185,89 @@ public sealed class CreateDynamicCaseToolE2ETests {
 		[.. values.Select<string, object>(stored => stored == value
 			? new Dictionary<string, object?> { ["value"] = stored, ["caption"] = caption }
 			: stored)];
+
+	/// <summary>
+	/// A refused case call prints its reason once: the Error verdict names the stable code and points at the result
+	/// document, whose errorMessage is the one copy of the reason and the remedy.
+	/// </summary>
+	private static void ShouldBeRefusedOnce(CallToolResult result, string because) {
+		ShouldBeRefused(result, because);
+		IReadOnlyList<CommandLogMessageEnvelope> log = McpCommandExecutionParser.Extract(result).Output ?? [];
+		string? errorMessage = Text(ResultOf(result), "errorMessage");
+		errorMessage.Should().NotBeNullOrWhiteSpace(because: "the document carries the reason and the remedy");
+		CommandLogMessageEnvelope verdict = log.Should().ContainSingle(
+			message => message.MessageType == LogDecoratorType.Error,
+			because: "a refusal has one Error line, its verdict").Subject;
+		verdict.Value.Should().StartWith("Refused [", because: "the verdict names the stable code");
+		log.Where(message => message.Value?.TrimStart().StartsWith('{') != true).Should().NotContain(
+			message => message.Value!.Contains(errorMessage!, StringComparison.Ordinal),
+			because: "the reason travels once, in the document, not again in the verdict. The server said: {0}",
+			LogText(result));
+	}
+
+	/// <summary>
+	/// A dry run's log holds exactly two lines: the Info verdict, then the result document. Notes and warnings travel
+	/// once, inside the document; asserting the count holds whether or not this stand's dry run returned any. When the
+	/// document carries warnings, the verdict counts them, since no separate line does.
+	/// </summary>
+	private static void ShouldHoldOnlyTheVerdictAndThePlan(CallToolResult result) {
+		IReadOnlyList<CommandLogMessageEnvelope> log = McpCommandExecutionParser.Extract(result).Output ?? [];
+		log.Should().HaveCount(2, because: "the log holds the verdict and the result document only, with no second "
+			+ "copy of a note or a warning. The server said: {0}", LogText(result));
+		log[0].MessageType.Should().Be(LogDecoratorType.Info, because: "a planned dry run is a success");
+		log[0].Value.Should().StartWith("Dry run:", because: "the verdict comes first");
+		JsonObject document = JsonNode.Parse(log[1].Value!)!.AsObject();
+		Text(document, "outcome").Should().Be("planned",
+			because: "the result document follows the verdict and is the last line");
+		int warnings = (document["warnings"] as JsonArray ?? new JsonArray())
+			.Count(warning => !string.IsNullOrWhiteSpace(warning?.GetValue<string>()));
+		if (warnings > 0) {
+			log[0].Value.Should().Contain(warnings == 1 ? "1 warning in the result" : $"{warnings} warnings in the result",
+				because: "the verdict is the one top-level line that says warnings wait in the document");
+		} else {
+			log[0].Value.Should().NotContain("in the result: show", because: "a dry run without warnings counts none");
+		}
+	}
+
+	/// <summary>A Perform task step item as the package takes it.</summary>
+	private static Dictionary<string, object?> Step(string caption, bool? required = null, string? after = null,
+		string? hint = null) {
+		Dictionary<string, object?> step = new() { ["type"] = "performTask", ["caption"] = caption };
+		if (hint is not null) {
+			step["hint"] = hint;
+		}
+		if (required.HasValue) {
+			step["required"] = required.Value;
+		}
+		if (after is not null) {
+			step["after"] = after;
+		}
+		return step;
+	}
+
+	/// <summary>The stored stages in order, the one named carrying its whole step list and a transition type.</summary>
+	private static object[] WithSteps(List<string> values, string value, string? transitionType,
+		params Dictionary<string, object?>[] steps) =>
+		[.. values.Select<string, object>(stored => {
+			if (stored != value) {
+				return stored;
+			}
+			Dictionary<string, object?> item = new() { ["value"] = stored, ["steps"] = steps };
+			if (transitionType is not null) {
+				item["transitionType"] = transitionType;
+			}
+			return item;
+		})];
+
+	/// <summary>The stage list with <paramref name="value"/> carrying the steps exactly as describe returned them.</summary>
+	private static object[] WithDescribedSteps(List<string> values, string value, JsonNode steps) =>
+		[.. values.Select<string, object>(stored => stored != value
+			? stored
+			: new Dictionary<string, object?> { ["value"] = stored, ["steps"] = steps })];
+
+	/// <summary>A described stage's steps; none when the stage has none.</summary>
+	private static List<JsonObject> StepsOf(JsonObject stage) =>
+		stage["steps"] is JsonArray steps ? [.. steps.Select(step => step!.AsObject())] : [];
 
 	/// <summary>The result document: the one execution-log message that is a JSON object carrying an outcome.</summary>
 	private static JsonObject ResultOf(CallToolResult result) => ResultOf(result, "outcome");
@@ -838,6 +1408,38 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			await DeleteProcessAsync(context.EnvironmentName, caseName);
 		}
 		await RestorePageAsync(context, pageBefore, bodyBefore, directory);
+	}
+
+	// A version goes before its root: the root is made active again first (a version may be the active one when an
+	// assertion failed half-way), then the version's own link-row binding, then the version schema. Deleting a case
+	// schema removes its link row but leaves that row's package binding behind, so the binding goes first.
+	private static async Task CleanUpVersionAsync(ProcessDesignerArrangeContext context, JsonObject? created,
+		JsonObject? version) {
+		// unknown counts too when the answer still names the version: the server answers it after a save it could not
+		// read back, and the version is then on the shared seeded object.
+		if (created is null || version is null
+			|| Text(version, "outcome") is not ("version-created" or "failed-leftover" or "unknown")
+			|| version["version"] is not JsonObject) {
+			return;
+		}
+		try {
+			CallToolResult back = await SetActiveAsync(context, CaseNameOf(created), dryRun: false);
+			if (McpCommandExecutionParser.Extract(back).ExitCode != 0) {
+				await TestContext.Error.WriteLineAsync($"Could not activate the root again: {LogText(back)}");
+			}
+		} catch (Exception exception) {
+			PayloadDumpReader.DeleteIfPresent(exception.Message);
+			await TestContext.Error.WriteLineAsync($"Activating the root again failed: {exception.Message}");
+		}
+		JsonObject? settings = version["settings"]?.AsObject();
+		List<string> bindings = settings?["bindings"]?.AsArray().Select(binding => binding!.GetValue<string>()).ToList()
+			?? [];
+		await RemoveBindingRowAsync(context, bindings, "SysDcmSchemaInSettings_",
+			settings is null ? null : Text(settings, "sysDcmSchemaInSettingsId"));
+		string? versionName = version["version"] is JsonObject block ? Text(block, "name") : null;
+		if (!string.IsNullOrWhiteSpace(versionName)) {
+			await DeleteProcessAsync(context.EnvironmentName, versionName);
+		}
 	}
 
 	private static async Task RemoveBindingRowAsync(ProcessDesignerArrangeContext context, List<string> bindings,

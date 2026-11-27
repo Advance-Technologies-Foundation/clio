@@ -353,6 +353,60 @@ public sealed class PageBusinessRuleAttributeProviderTests {
 			because: "the container registers each component source once and the provider receives the stepper source");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Reports every declared page attribute it does not expose with the reason: virtual, lookup path, forward reference, unsupported column, untyped page parameter, non-entity data source or collection.")]
+	public void GetAttributes_Should_Report_Rejected_Attributes_With_Reason() {
+		// Arrange
+		IEntityBusinessRuleAttributeProvider entityAttributeProvider = Substitute.For<IEntityBusinessRuleAttributeProvider>();
+		entityAttributeProvider.GetAttributes("UsrTestBR", Arg.Any<Guid>())
+			.Returns(new EntityBusinessRuleAttributeContext(
+				new EntityDesignSchemaDto(),
+				new Dictionary<string, BusinessRuleAttributeDescriptor> {
+					["UsrText"] = new("UsrText", "Text", null)
+				}));
+		PageBundleInfo bundle = CreateBundleWithAttributes(
+			new Dictionary<string, object?> {
+				["PDS_Text"] = CreateAttribute("PDS.UsrText"),
+				["UsrVirtualFlag"] = new Dictionary<string, object?> { ["value"] = true },
+				["UsrOrderStatus"] = CreateAttribute("PDS.Order.Status"),
+				["PDS_Order_Status"] = CreateAttribute("PDS.PDS_Order_Status"),
+				["PDS_Missing"] = CreateAttribute("PDS.MissingColumn"),
+				["UsrParam"] = CreateAttribute("PageParameters.UsrUntyped"),
+				["UsrOther"] = CreateAttribute("OtherDS.UsrText"),
+				["PDS_List"] = new Dictionary<string, object?> {
+					["isCollection"] = true,
+					["modelConfig"] = new Dictionary<string, object?> { ["path"] = "PDS.UsrText" }
+				}
+			});
+		bundle.ModelConfig["dataSources"]!["PDS"]!["config"]!["attributes"] = new JsonObject {
+			["PDS_Order_Status"] = new JsonObject { ["path"] = "Order.Status", ["type"] = "ForwardReference" }
+		};
+		Dictionary<string, string> rejected = new(StringComparer.Ordinal);
+
+		// Act
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> result = CreateProvider(entityAttributeProvider)
+			.GetAttributes(bundle, Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), rejected);
+
+		// Assert
+		result.Should().ContainKey("PDS_Text", because: "a direct data-source column stays accepted");
+		rejected.Should().NotContainKey("PDS_Text", because: "an accepted attribute has no rejection reason");
+		rejected["UsrVirtualFlag"].Should().StartWith("'UsrVirtualFlag' is a virtual view-model attribute",
+			because: "an attribute with no modelConfig.path is virtual");
+		rejected["UsrOrderStatus"].Should().StartWith("'UsrOrderStatus' is a lookup path ('PDS.Order.Status')",
+			because: "a three-segment path reads a column of a related object");
+		rejected["PDS_Order_Status"].Should().StartWith("'PDS_Order_Status' is a forward reference ('PDS.PDS_Order_Status' -> 'Order.Status')",
+			because: "the data source declares the column as a forward reference");
+		rejected["PDS_Missing"].Should().Be("'PDS_Missing' is bound to 'PDS.MissingColumn', which is not a supported column of 'UsrTestBR'.",
+			because: "the entity does not expose the bound column");
+		rejected["UsrParam"].Should().Be("'UsrParam' is bound to page parameter 'UsrUntyped', which bundle.parameters[] does not type.",
+			because: "an untyped page parameter cannot be an operand");
+		rejected["UsrOther"].Should().Be("'UsrOther' is bound to 'OtherDS.UsrText', but 'OtherDS' is not an entity data source of the page.",
+			because: "the bound data source is not an entity data source");
+		rejected["PDS_List"].Should().StartWith("'PDS_List' is a collection (list) attribute",
+			because: "every skip point of the provider records why, so the validator never has to guess");
+	}
+
 	private static PageBusinessRuleAttributeProvider CreateProvider(IEntityBusinessRuleAttributeProvider entityAttributeProvider) =>
 		new(entityAttributeProvider, [new WidgetStateSource()]);
 

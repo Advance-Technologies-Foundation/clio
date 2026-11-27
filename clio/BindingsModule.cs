@@ -522,6 +522,7 @@ public class BindingsModule {
 		services.AddTransient<IBusinessRuleLookupReferenceValidator, BusinessRuleLookupReferenceValidator>();
 		services.AddTransient<IBusinessRuleValidator, BusinessRuleValidator>();
 		services.AddTransient<IEntityBusinessRuleSchemaProvider, EntityBusinessRuleSchemaProvider>();
+		services.AddTransient<Clio.Command.Filters.IWidgetFilterValidator, Clio.Command.Filters.WidgetFilterValidator>();
 		services.AddTransient<IEntityBusinessRuleAttributeProvider, EntityBusinessRuleAttributeProvider>();
 		services.AddTransient<IEntityBusinessRuleService, EntityBusinessRuleService>();
 		services.AddTransient<IPageBusinessRuleSchemaProvider, PageBusinessRuleSchemaProvider>();
@@ -559,6 +560,8 @@ public class BindingsModule {
 		services.AddTransient<CreateDynamicCaseCommand>();
 		services.AddTransient<DescribeDynamicCaseCommand>();
 		services.AddTransient<ModifyDynamicCaseCommand>();
+		services.AddTransient<ModifyDynamicCaseAsNewVersionCommand>();
+		services.AddTransient<SetActiveDynamicCaseVersionCommand>();
 		services.AddTransient<IApplicationSectionGetListService, ApplicationSectionGetListService>();
 		services.AddTransient<GetAppSectionsCommand>();
 		services.AddTransient<IdentityProviderListCommand>();
@@ -1022,6 +1025,7 @@ public class BindingsModule {
 		services.AddTransient<IDataBindingSerializer, DataBindingSerializer>();
 		services.AddTransient<IDataBindingValueConverter, DataBindingValueConverter>();
 		services.AddTransient<IDataBindingDisplayValueResolver, DataBindingDisplayValueResolver>();
+		services.AddTransient<IDataBindingSnapshotReader, DataBindingSnapshotReader>();
 		services.AddTransient<IDataBindingService, DataBindingService>();
 		services.AddTransient<ILookupRegistrationService, LookupRegistrationService>();
 		services.AddTransient<CreateDataBindingCommand>();

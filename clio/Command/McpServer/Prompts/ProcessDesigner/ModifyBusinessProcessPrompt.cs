@@ -34,13 +34,14 @@ public static class ModifyBusinessProcessPrompt {
 		 fractional `timeoutSeconds` is refused (leave it out to keep the stored value, or send whole seconds), and a
 		 block with no `service` needs a registered service named again. A described `chatMessage` block
 		 re-applies unchanged: its `templateName`, `outputs`, `issues` and each value source's `display` are
-		 describe-only, ignored and named in a warning. A filter, signal or
-		 connections goes in its own operation (setFilter, setSignal, setConnections), and flat approval fields are
+		 describe-only, ignored and named in a warning. A described `timer` block re-applies the same way: its
+		 `storedCron`, `designerKind` and `scheduled` are describe-only. A filter, signal, timer or
+		 connections goes in its own operation (setFilter, setSignal, setTimer, setConnections), and flat approval fields are
 		 written nested in the same block (approver.type, notifyApprover.emailTemplate); (2) read `get-guidance name=process-modeling` for the operation and field contract, plus
 		 `get-guidance name=process-parameters` for parameters, mappings and type compatibility;
 		 (3) supply a JSON `operations` array (applied in order) — each item has an `op`: `addElement`,
 		 `removeElement`, `addFlow`, `removeFlow`, `setFlow`, `setFlowCondition`, `addParameter`, `addMapping`,
-		 `setParameter`, `removeParameter`, `setFilter`, `clearFilter`, `setSignal`, `setElement`,
+		 `setParameter`, `removeParameter`, `setFilter`, `clearFilter`, `setSignal`, `setTimer`, `setElement`,
 		 `setFlowResults`, `setConnections`, `clearConnections`, or `setTracing`
 		 — plus that op's arguments (the element / parameter / mapping / filter / signal shapes match a build,
 		 so an `addElement` for a Pre-configured page or an Open edit page uses `type:"preconfiguredPage"` /
@@ -110,7 +111,11 @@ public static class ModifyBusinessProcessPrompt {
 		 set or remove a `signalStart`'s record filter, `setSignal` reconfigures a `signalStart`'s record trigger
 		 and its tracked-change `changedColumns` in place (a start a `mergeFrom` parameter lists keeps its object
 		 unless every listed start moves with it; `removeElement` refuses it until `setParameter` takes it out of
-		 the list), and `setElement` changes element-level fields in place —
+		 the list), `setTimer` changes a `timerStart`'s schedule in place (same element, same flows, same
+		 scheduler job: send the whole schedule - `schedule` and the fields of its kind - to change it; `start`,
+		 `end`, `timeZone` and `repeatOnMisfire` change one by one, but a change of kind clears a `start`/`end` you
+		 do not resend; a timer runs the process unattended, so save one only after the user confirms its
+		 schedule), and `setElement` changes element-level fields in place —
 		 `useBackgroundMode` on an element kind that offers it (it takes effect only on a start event and an
 		 element that waits — `process-element-catalog`), a `sendEmail` element's `email` block, where the fields you
 		 pass (`mode`, `sender`, `subject`, `body`, `importance`, `ignoreErrors`, `performer`) replace the current

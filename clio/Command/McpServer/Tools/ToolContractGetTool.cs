@@ -547,6 +547,7 @@ internal static class ToolContractCatalog {
 	private const string ArrayType = "array";
 	private const string ResultsFieldName = "results";
 	private const string BindingNameFieldName = "binding-name";
+	private const string FromEnvironmentFieldName = "from-environment";
 	private const string BooleanFalseLiteral = "false";
 	private const string BooleanType = "boolean";
 	private const string BodyFileFieldName = "body-file";
@@ -640,6 +641,26 @@ internal static class ToolContractCatalog {
 	private const string PassthroughEnvironmentNameSuffix =
 		" Required on stdio / registered-environment transports; omit under credential passthrough — the X-Integration-Credentials header supplies the target tenant.";
 	private const string ErrorFieldName = "error";
+	private const string SiteResponseFieldName = "site-response";
+	private const string SiteResponseDescription =
+		"What the Creatio site itself sent back for the failed request: status (HTTP), message and code (the site's own, "
+		+ "from a known JSON shape, redacted like error, message capped at 2,000 characters) and body (only the KIND "
+		+ "of body: json|html|text|empty, never the body itself). Never clio's wording or a stack trace. Absent on success, when no HTTP response "
+		+ "exists and when the failure is clio's own.";
+	private const string SiteResponseShortDescription =
+		"Site answer to a failed save: status, message, code, body kind.";
+	private const string SiteRefusalDiagnosticDescription =
+		"Beside every site-response: the same object as the odata tools' diagnostic (operation, entity and message "
+		+ "null here). side-effect is none only when clio proves nothing was applied: the tool sends one write per "
+		+ "call, it went out once and was not re-sent or redirected, and the site refused it for the request's "
+		+ "shape - HTTP 405, 413, 414 or 415 with an empty, page or plain-text body. A 401 or 403 never proves it: "
+		+ "the HTTP client re-sends after a 401 without showing the first answer, and a gateway can answer 403 after "
+		+ "the write ran. Tools that can prove it: update-page, create-page, sync-pages per page, "
+		+ "create-business-process, delete-data-binding-db and compile-creatio. Everything else is unknown, the "
+		+ "restart tools included (they send with up to 3 attempts): read back before retrying. retry-advice says "
+		+ "what to do next.";
+	private const string SiteRefusalDiagnosticShortDescription =
+		"side-effect: none (save refused unprocessed) or unknown.";
 	private const string ExampleAccountSchemaName = "Account";
 	private const string ExampleContactSchemaName = "Contact";
 	private const string ExampleEnvironmentName = "local";
@@ -716,6 +737,10 @@ internal static class ToolContractCatalog {
 	private const string QueryFieldName = "query";
 	private const string ReferenceSchemaNameFieldName = "reference-schema-name";
 	private const string RegisteredEnvironmentNameDescription = "Registered clio environment name.";
+
+	/// <summary>The expand field of both OData read contracts, which share one validator (ENG-107610).</summary>
+	private const string ODataExpandFieldDescription =
+		"Array of navigation properties to expand, for example [\"Account\", \"Owner\"]. An entry may limit the expanded fields with one nested select of plain field names: Account($select=Id,Name). No other nested option is accepted; rejected with error-code argument before any Creatio request: " + ODataExpandEntry.RejectedNestedOptions + ". A comma-separated string (\"Account($select=Id,Name),Owner\") is tolerated as input and splits only on commas outside parentheses; an array element is always one entry and is never split. On error-code invalid-query a nested name the navigation's target does not have is reported in unknown-members under expand as Nav/Name; like every other path, this check reaches one navigation level deep, so the nested names of a multi-segment navigation (Account/Owner($select=...)) are not checked.";
 	private const string RejectedStatus = "rejected";
 
 	// An alias the server actually honors, as opposed to RejectedStatus, which documents a spelling that is
@@ -851,7 +876,7 @@ internal static class ToolContractCatalog {
 		+ "retry-guidance.";
 
 	private const string DataWriteDiagnosticFieldName = "diagnostic";
-	private const string DataWriteDiagnosticDescription = "Optional bounded context: operation, entity, item-index, write-attempted, transport-outcome, side-effect, retry-advice and sanitized message. No inferred HTTP status or offending field.";
+	private const string DataWriteDiagnosticDescription = "Optional bounded context: operation, entity, item-index, write-attempted, transport-outcome, side-effect, retry-advice and sanitized message. No inferred HTTP status or offending field. side-effect is none only when the write is known not applied: it was rejected before writing, or its one request (one PATCH; one POST per odata-create row; never a DELETE, which goes without a body the client can redirect unseen) was refused without processing (HTTP 405, 413, 414 or 415 with an empty, page or plain-text body, not redirected; never a 401 or 403).";
 
 	private const string ODataReadErrorCodeFieldName = "error-code";
 
@@ -2720,7 +2745,7 @@ internal static class ToolContractCatalog {
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(FiltersFieldName, ObjectType, "Structured filter {all?: [c], any?: [c]}, c = {field, op?: eq|ne|gt|ge|lt|le|contains|startswith|endswith (default eq), value | in: [...]}; all joins with AND, any with OR, groups with AND. So A AND (B OR C) is one filter object. GUID values in Id-suffixed fields and navigation paths ending in Id are automatically unquoted. Use lookup traversal paths such as Account/Id when filtering records by lookup primary value. Example: { \"all\": [{ \"field\": \"Account/Id\", \"op\": \"eq\", \"value\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }] }."),
 					Field(SelectFieldName, ArrayType, "Array of field names to return. Use [\"Id\", \"Name\"] when resolving lookup records by display value. A comma-separated string (\"Id,Name\") is tolerated as input; an array element is always one column name and is never split on commas."),
-					Field("expand", ArrayType, "Array of navigation properties to expand. A comma-separated string (\"Account,Owner\") is tolerated as input; an array element is always one navigation name and is never split on commas."),
+					Field("expand", ArrayType, ODataExpandFieldDescription),
 					Field(OrderByFieldName, StringType, "OData $orderby clause, for example CreatedOn desc or Name asc."),
 					Field("top", NumberType, "Maximum number of records to return, 1-100. Default: 25. An out-of-range top (including 0 or negative) is rejected with success:false, never silently changed."),
 					Field("skip", NumberType, "Number of matching records to skip. Must be zero or greater. Use order-by for stable paging."),
@@ -2732,7 +2757,7 @@ internal static class ToolContractCatalog {
 					new ToolContractValidator("skip-range", "invalid-skip", "skip",
 						Context: "skip must be zero or greater; use order-by with skip for stable paging."),
 					new ToolContractValidator("member-path", "argument", "select",
-						Context: "select, expand and order-by are held to the same rule as a filter field: every name must be a plain OData member path (letters, digits, underscore and '/'), and order-by additionally accepts a trailing asc or desc. Nested query options such as Account($select=Id) are rejected before any Creatio request."),
+						Context: "select, expand and order-by are held to the same rule as a filter field: every name must be a plain OData member path (letters, digits, underscore and '/'), and order-by additionally accepts a trailing asc or desc. An expand entry may additionally carry one nested select of plain field names, Nav($select=A,B), which is rebuilt from the parsed names; every other nested shape (" + ODataExpandEntry.RejectedNestedOptions + ") is rejected before any Creatio request."),
 					new ToolContractValidator("structured-filter", "invalid-filter", "filters",
 						Context: "When filters is present it must be a non-null object containing at least one condition in all or any. Every condition requires a simple field or navigation path and exactly one of value or in; unknown group/condition members, embedded OData grammar, and unsupported op values are rejected before any Creatio request.")
 				]),
@@ -2856,7 +2881,7 @@ internal static class ToolContractCatalog {
 					Field(OutputFileFieldName, StringType, "Required path for the raw OData JSON response, confined to the workspace or the OS temp directory. The file must not already exist, so a retry must use a different path."),
 					Field(FiltersFieldName, ObjectType, "Structured filter {all?: [c], any?: [c]}, c = {field, op?: eq|ne|gt|ge|lt|le|contains|startswith|endswith (default eq), value | in: [...]}; all joins with AND, any with OR, groups with AND. Identical to odata-read; A AND (B OR C) is one filter object. Example: { \"all\": [{ \"field\": \"Account/Id\", \"op\": \"eq\", \"value\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }] }."),
 					Field(SelectFieldName, ArrayType, "Fields to return. Narrowing the projection is the cheapest way to stay under the response limit."),
-					Field("expand", ArrayType, "Navigation properties to expand."),
+					Field("expand", ArrayType, ODataExpandFieldDescription),
 					Field(OrderByFieldName, StringType, "OData $orderby clause, for example CreatedOn desc or Name asc."),
 					Field("top", NumberType, "Maximum number of records to return, 1-100. Default: 25. An out-of-range top (including 0 or negative) is rejected with success:false, never silently changed."),
 					Field("skip", NumberType, "Number of matching records to skip. Must be zero or greater. Use order-by for stable paging."),
@@ -3091,6 +3116,7 @@ internal static class ToolContractCatalog {
 				[SuccessFalseSignal],
 				Field(SuccessFieldName, BooleanType, "Whether the OData update succeeded."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription + " " + ODataWriteForeignKeyHintDescription),
+				Field(SiteResponseFieldName, ObjectType, SiteResponseDescription),
 				Field("id", StringType, "GUID of the updated record."),
 				Field("warnings", ArrayType, "Notes that did not stop the call, for example that values was accepted as data; absent when there is nothing to note."),
 				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription),
@@ -3145,12 +3171,13 @@ internal static class ToolContractCatalog {
 				[SuccessFalseSignal],
 				Field(SuccessFieldName, BooleanType, "Whether every requested record is gone (dry-run: whether the plan was built)."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription + " " + ODataWriteForeignKeyHintDescription),
+				Field(SiteResponseFieldName, ObjectType, SiteResponseDescription),
 				Field("id", StringType, "GUID of the deleted record (single id; absent on dry-run)."),
 				Field("explanation", StringType, "Why the record was not deleted; present on every refusal the server answered."),
 				Field("referencing", ArrayType, "Rows still referencing the record: {entity, column, ids, more, kind} with kind owned, linked or cascade."),
 				Field("cascade-deleted", ArrayType, "Owned rows deleted before the record ({entity, id})."),
 				Field("cascade-unconfirmed", ArrayType, "Owned rows whose DELETE got no answer: they may be gone; check with odata-read."),
-				Field(ResultsFieldName, ArrayType, "With ids: one {id, success, error, explanation, referencing, cascade-deleted} per id."),
+				Field(ResultsFieldName, ArrayType, "With ids: one {id, success, error, explanation, referencing, cascade-deleted, site-response, diagnostic} per id; an item's diagnostic side-effect is always unknown."),
 				Field("plan", ArrayType, "With dry-run: one {id, visible, referencing, cascade-would-delete, platform-cascade, cascade-refusal, blocked-because, complete} per id."),
 				Field("cascade-plan-hash", StringType, "With dry-run and cascade: pass it back with confirm to delete exactly this plan."),
 				Field("note", StringType, "With dry-run: rows hidden from the user by record-level rights are not seen by the check."),
@@ -3350,7 +3377,9 @@ internal static class ToolContractCatalog {
 					.. BusinessRuleConditionValidators(),
 					.. EntityBusinessRuleActionValidators()
 				]),
-			BusinessRuleBatchOutput(),
+			BusinessRuleBatchOutput(
+				"Per-rule outcomes in input order; each item has name, success, ruleName, and error. " +
+				StaticFilterResultFields),
 			CommonErrorContract,
 			[
 			],
@@ -3590,6 +3619,7 @@ internal static class ToolContractCatalog {
 			[
 				"Call get-guidance with name business-rules before calling create-entity-business-rules.",
 				"For an apply-static-filter action, also call get-guidance with name business-rule-filters to load the full filter contract.",
+				"clio runs the filter it builds for an apply-static-filter action on the environment before saving (a one-row count on the target lookup's reference schema). When the server rejects the filter, that rule fails with the server's message and nothing is saved. Otherwise the result's filterMatchCount says how many lookup records the filter keeps, so check it against what the user asked for instead of re-typing the filter for execute-esq; when the filter could not be run (rights, timeout), the rule is saved and the result carries a warning.",
 				"Call get-tool-contract for create-entity-business-rules before building the final payload.",
 				"When any lookup condition or lookup set-values constant is needed, resolve it with odata-read or execute-esq first and use an existing record Id."
 			]);
@@ -3606,7 +3636,7 @@ internal static class ToolContractCatalog {
 					Field(PackageNameFieldName, StringType, "Target package name where the page BusinessRule add-on will be saved."),
 					Field(PageSchemaNameFieldName, StringType, PageSchemaNameWithAliasDescription),
 					Field(SchemaNameFieldName, StringType, SchemaNameAliasDescription),
-					Field(RulesFieldName, ArrayType, "Array of one or more page business-rule definitions saved together in a single batch (one configuration rebuild for the whole array; prefer one call over many). A failed rule does not abort the others. Each item is a rule with caption, one top-level condition group, and one or more page actions. AttributeValue paths must be declared page attribute names from get-page bundle.viewModelConfig.attributes, not datasource paths like PDS.Priority. EITHER side of a condition may be a page attribute (type AttributeValue), a constant (type Const), a system variable (type SysValue with sysValueName such as CurrentDate, CurrentDateTime, CurrentTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles), or a system setting (type SysSetting with sysSettingName set to the setting code, for example DisableEquipmentDelivery; the setting's value type is resolved from the environment, and Binary/SecureText settings are not supported). A common visibility pattern is hiding a control when a Boolean system setting is enabled: SysSetting equal a Const true. For role-based or current-user visibility (e.g. 'show field only for administrators / for the supervisor') put CurrentUserRoles (left) comparisonType contain/not-contain a Const SysAdminUnit role id, or compare CurrentUser/CurrentUserContact/CurrentUserAccount to a Const id — use this instead of a HandleViewModelInitRequest handler. Action items must be page element names from recursive get-page bundle.viewConfig. Lookup constants are supported when supplied as stable GUID strings.")
+					Field(RulesFieldName, ArrayType, "Array of one or more page business-rule definitions saved together in a single batch (one configuration rebuild for the whole array; prefer one call over many). A failed rule does not abort the others. Each item is a rule with caption, one top-level condition group, and one or more page actions. " + PageBusinessRuleContractText.ConditionAttributes + " EITHER side of a condition may be a page attribute (type AttributeValue), a constant (type Const), a system variable (type SysValue with sysValueName such as CurrentDate, CurrentDateTime, CurrentTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles), or a system setting (type SysSetting with sysSettingName set to the setting code, for example DisableEquipmentDelivery; the setting's value type is resolved from the environment, and Binary/SecureText settings are not supported). A common visibility pattern is hiding a control when a Boolean system setting is enabled: SysSetting equal a Const true. For role-based or current-user visibility (e.g. 'show field only for administrators / for the supervisor') put CurrentUserRoles (left) comparisonType contain/not-contain a Const SysAdminUnit role id, or compare CurrentUser/CurrentUserContact/CurrentUserAccount to a Const id — use this instead of a HandleViewModelInitRequest handler. Action items must be page element names from recursive get-page bundle.viewConfig. Lookup constants are supported when supplied as stable GUID strings.")
 				],
 				AnyOf: [
 					new[] { PageSchemaNameFieldName },
@@ -3616,7 +3646,7 @@ internal static class ToolContractCatalog {
 					.. BusinessRuleConditionValidators(),
 					.. PageBusinessRuleActionValidators()
 				]),
-			BusinessRuleBatchOutput(),
+			BusinessRuleBatchOutput(warningsDescription: PageBusinessRuleWarningsDescription),
 			CommonErrorContract,
 			[
 				Alias(ParameterScope, PageSchemaNameFieldName, SchemaNameFieldName, AcceptedStatus,
@@ -3722,8 +3752,8 @@ internal static class ToolContractCatalog {
 			[],
 			[
 				new ToolAntiPattern(
-					"Using datasource paths like PDS.Priority in rule.condition.conditions[*].leftExpression.path.",
-					"Page business rules use declared view-model attribute names from bundle.viewModelConfig.attributes so the generated metadata and triggers match the page runtime.")
+					"Using a virtual view-model attribute, a lookup path (PDS.Account.Owner) or a forward reference in rule.condition.conditions[*].leftExpression.path.",
+					"Page business rules read only direct columns of a page data source, page parameters and component state; the rejection says which kind the path is. Put a data condition in an entity business rule and view-model state in a page handler, never in a view-config binding the Freedom UI Designer can overwrite.")
 			],
 			[
 				"Call get-guidance with name business-rules before calling create-page-business-rules.",
@@ -3758,11 +3788,11 @@ internal static class ToolContractCatalog {
 	private static ToolContractValidator[] PageBusinessRuleActionValidators() =>
 		[
 			new ToolContractValidator("page-attribute", "unsupported-condition-attribute", "rules[*].condition.conditions[*].leftExpression.path",
-				Context: "leftExpression.path accepts: (1) a declared page attribute name from bundle.viewModelConfig.attributes (e.g. PDS_Priority); (2) a data source column NOT surfaced on the page, addressed as '<dataSource>.<column>' (e.g. ContactDS.Account) with data source names from bundle.modelConfig.dataSources; (3) a page parameter, addressed as 'PageParameters.<ParameterName>' (parameter list from bundle.parameters[]); (4) the active step of a named crt.Stepper in the page view config (compare it with a step name): the attribute its activeStep binds when bound to a plain '$Attr' ('$RentalStep' gives 'RentalStep') that the page declares in bundle.viewModelConfig.attributes without a data source, or the generated '<StepperName>_ActiveStep' when activeStep is unbound or a constant step name (a '.' in the stepper name becomes '_', so 'Quote.Stepper' gives 'Quote_Stepper_ActiveStep'); any other activeStep binding (a nested path, a converter, a property binding such as '$Attr:prop', an undeclared attribute or one bound to a record column) gives the stepper no active-step attribute. See guidance business-rules."),
+				Context: "leftExpression.path accepts: (1) a declared page attribute name from bundle.viewModelConfig.attributes (e.g. PDS_Priority); (2) a data source column NOT surfaced on the page, addressed as '<dataSource>.<column>' (e.g. ContactDS.Account) with data source names from bundle.modelConfig.dataSources; (3) a page parameter, addressed as 'PageParameters.<ParameterName>' (parameter list from bundle.parameters[]); (4) the active step of a named crt.Stepper in the page view config (compare it with a step name): the attribute its activeStep binds when bound to a plain '$Attr' ('$RentalStep' gives 'RentalStep') that the page declares in bundle.viewModelConfig.attributes without a data source, or the generated '<StepperName>_ActiveStep' when activeStep is unbound or a constant step name (a '.' in the stepper name becomes '_', so 'Quote.Stepper' gives 'Quote_Stepper_ActiveStep'); any other activeStep binding (a nested path, a converter, a property binding such as '$Attr:prop', an undeclared attribute or one bound to a record column) gives the stepper no active-step attribute. See guidance business-rules." + " " + PageBusinessRuleContractText.RejectedConditionAttributes),
 			new ToolContractValidator("page-attribute", "unsupported-right-attribute", "rules[*].condition.conditions[*].rightExpression.path",
 				Context: "Right-side AttributeValue accepts the same path forms as leftExpression.path (a declared page attribute name, a '<dataSource>.<column>' path, 'PageParameters.<ParameterName>', or a stepper's active step: its bound attribute or '<StepperName>_ActiveStep', a '.' in the stepper name becoming '_') and must resolve to the same data value type as the left attribute."),
 			new ToolContractValidator("enum", "unsupported-action", "rules[*].actions[*].type",
-				Context: $"Supported values: {BusinessRuleConstants.SupportedPageActionTypesDescription}."),
+				Context: $"Supported values: {BusinessRuleConstants.SupportedPageActionTypesDescription}. {PageBusinessRuleValidator.EntityOnlyLookupFilterRedirect}"),
 			new ToolContractValidator("page-element", "unknown-page-element", "rules[*].actions[*].items",
 				Context: "Use any named element from recursive get-page bundle.viewConfig.")
 		];
@@ -3899,7 +3929,8 @@ internal static class ToolContractCatalog {
 					.. EntityBusinessRuleActionValidators()
 				]),
 			BusinessRuleBatchOutput(
-				"Per-rule outcomes in input order; each item has name (the match key), success, ruleName, and error."),
+				"Per-rule outcomes in input order; each item has name (the match key), success, ruleName, and error. " +
+				StaticFilterResultFields),
 			CommonErrorContract,
 			[],
 			[],
@@ -4041,7 +4072,8 @@ internal static class ToolContractCatalog {
 					.. PageBusinessRuleActionValidators()
 				]),
 			BusinessRuleBatchOutput(
-				"Per-rule outcomes in input order; each item has name (the match key), success, ruleName, and error."),
+				"Per-rule outcomes in input order; each item has name (the match key), success, ruleName, and error.",
+				PageBusinessRuleWarningsDescription),
 			CommonErrorContract,
 			[
 				Alias(ParameterScope, PageSchemaNameFieldName, SchemaNameFieldName, AcceptedStatus,
@@ -4638,7 +4670,7 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, "Whether every sync-schemas operation succeeded."),
-				Field(ResultsFieldName, ArrayType, "Per-operation results for the operations that ran, keyed by canonical `type`. Each item carries `type`, `schema-name`, `success`, `status` (completed|failed), `operation-index` (zero-based index into the request operations, or the sentinel `-1` on a WHOLE-CALL rejection, where no operation was examined), an additive `outcome` discriminator (`created` | `reconciled` | `already-satisfied` | `collision`; omitted for seed-data and when null), and — only when the operation was retried for a transient fault — `attempts`. A durable collision — a same-name schema in a DIFFERENT package (except a create-entity op with `extend-parent: true`, where a same-name schema in another package is the replacement target and is classified `created`, not a collision), or a same-package schema whose parent/kind is incompatible with the request — fails that op with `success: false`, `outcome: collision`, a user-friendly `error`, and `collision-info` (the owning package); the batch then stops on first failure. An `update-entity` per-column type collision — an `add` naming a present column of a different type — also fails with `success: false` and `outcome: collision`, but carries no `collision-info` (that block names a colliding schema's package); its `error` names every colliding column and points at the explicit-`modify` remedy. A per-column modify-conflict rejected by the backend is NOT a collision: it fails with `success: false` + `error`, no `collision-info` and no `collision` outcome. Operations that never ran are NOT in this array; see `resume-plan`. The one exception is a WHOLE-CALL rejection - arguments that fail the top-level field-shape check, an omitted or empty `operations` array - where nothing ran at all: `results` then carries a SINGLE entry whose `type` is the tool name `sync-schemas` (not one of the canonical operation types), whose `operation-index` is `-1`, and no `resume-plan` is emitted, because the whole call is resubmitted after the fix."),
+				Field(ResultsFieldName, ArrayType, "Per-operation results for the operations that ran, keyed by canonical `type`. Each item carries `site-response` (on a failed item the site answered: status, and the site's own message and code) with `diagnostic` beside it (side-effect always unknown: an operation sends several writes and may be retried), `type`, `schema-name`, `success`, `status` (completed|failed), `operation-index` (zero-based index into the request operations, or the sentinel `-1` on a WHOLE-CALL rejection, where no operation was examined), an additive `outcome` discriminator (`created` | `reconciled` | `already-satisfied` | `collision`; omitted for seed-data and when null), and — only when the operation was retried for a transient fault — `attempts`. A durable collision — a same-name schema in a DIFFERENT package (except a create-entity op with `extend-parent: true`, where a same-name schema in another package is the replacement target and is classified `created`, not a collision), or a same-package schema whose parent/kind is incompatible with the request — fails that op with `success: false`, `outcome: collision`, a user-friendly `error`, and `collision-info` (the owning package); the batch then stops on first failure. An `update-entity` per-column type collision — an `add` naming a present column of a different type — also fails with `success: false` and `outcome: collision`, but carries no `collision-info` (that block names a colliding schema's package); its `error` names every colliding column and points at the explicit-`modify` remedy. A per-column modify-conflict rejected by the backend is NOT a collision: it fails with `success: false` + `error`, no `collision-info` and no `collision` outcome. Operations that never ran are NOT in this array; see `resume-plan`. The one exception is a WHOLE-CALL rejection - arguments that fail the top-level field-shape check, an omitted or empty `operations` array - where nothing ran at all: `results` then carries a SINGLE entry whose `type` is the tool name `sync-schemas` (not one of the canonical operation types), whose `operation-index` is `-1`, and no `resume-plan` is emitted, because the whole call is resubmitted after the fix."),
 				Field("resume-plan", ObjectType, "Present when the batch aborted before completing, and ALSO on a fully successful batch that deferred an inline seed (the deferred seed-data operations are carried in `operations`) — presence is not equivalent to failure. Carries `instruction`, `failed-operation` (operation-index/type/schema-name/error), `not-run-operation-indexes`, and `operations` — normally the failed operation followed by every not-run operation, echoed in re-submittable input shape. Exception: when the operation failed a FIELD-SHAPE check (an unbindable field name, an unbindable `type`, a missing `schema-name`, or a virtual `create-entity` carrying `seed-rows`) it is deliberately OMITTED from `operations`, because replaying it verbatim would just repeat the rejected payload; `instruction` then tells the caller to correct the field names first and resubmit it alongside the listed operations, and `operations` may be EMPTY when the shape-rejected operation was the last one and nothing was deferred — the plan is still emitted, because `failed-operation` and `not-run-operation-indexes` are what a recovering caller reads. Resubmit resume-plan.operations as a new sync-schemas call for the efficient path; resubmitting the whole batch verbatim is also safe for the convergent schema operations (they replay as already-satisfied/reconciled) but re-runs any seed-data, which is not replay-safe.")
 			),
 			CommonErrorContract,
@@ -4767,7 +4799,7 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, "Whether every page operation succeeded."),
-				Field(PagesFieldName, ArrayType, "Per-page results with `schema-name`, `success`, `body-length`, `validation`, `error`, `resources-registered` (new keys), `resources-updated` (existing keys whose en-US value changed), optional `page` metadata, optional `verified-body-file` when `verify=true`, and on a saved page a `digest` (validation, basis, components written, otherSections, checksum - the update-page digest) to confirm the save without get-page.")
+				Field(PagesFieldName, ArrayType, "Per-page results with `schema-name`, `success`, `body-length`, `validation`, `error`, `site-response` (on a failed item the site answered: status, and the site's own message and code) with `diagnostic` beside it (side-effect none only when the page's save was refused for its shape: HTTP 405, 413, 414 or 415 with an empty, page or plain-text body, not re-sent or redirected; never a 401 or 403), `resources-registered` (new keys), `resources-updated` (existing keys whose en-US value changed), optional `page` metadata, optional `verified-body-file` when `verify=true`, and on a saved page a `digest` (validation, basis, components written, otherSections, checksum - the update-page digest) to confirm the save without get-page.")
 			),
 			CommonErrorContract,
 			[],
@@ -4908,7 +4940,7 @@ internal static class ToolContractCatalog {
 				["MCP tool result isError == true"],
 				[
 					Field(PackagesFieldName, ArrayType,
-						"Packages in this page, each with name, version, maintainer, and uId."),
+						"Packages in this page, each with name, version, maintainer, uId, and - when the environment stores them - type (0 ordinary, 1 assembly package with its own csproj) and projectPath."),
 					Field(CountFieldName, NumberType, "Number of packages returned in this page."),
 					Field("total", NumberType, "Total packages matching the filter before paging."),
 					Field(OffsetFieldName, NumberType, "Applied zero-based offset."),
@@ -5462,18 +5494,19 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildCreateDataBinding() {
 		return new ToolContractDefinition(
 			CreateDataBindingTool.CreateDataBindingToolName,
-			"Creates or regenerates a local package data binding from a built-in template or a runtime entity schema. For workflow selection, call get-guidance with name `data-bindings`.",
+			"Creates or regenerates a local package data binding from a built-in template or a runtime entity schema, or with `from-environment` writes one existing DB binding to disk exactly as the platform package export does (only that binding folder; no environment-wide export). For workflow selection, call get-guidance with name `data-bindings`.",
 			new ToolInputSchemaContract(
-				[PackageNameFieldName, SchemaNameFieldName, WorkspacePathFieldName],
+				[PackageNameFieldName, WorkspacePathFieldName],
 				[
-					Field(EnvironmentNameFieldName, StringType, "Registered clio environment name. Required when schema-name is not SysSettings because the MCP tool does not expose a uri fallback."),
+					Field(EnvironmentNameFieldName, StringType, "Registered clio environment name. Required when schema-name is not SysSettings, and always with from-environment, because the MCP tool does not expose a uri fallback."),
 						Field(PackageNameFieldName, StringType, DataBindingPackageNameDescription),
-						Field(SchemaNameFieldName, StringType, "Entity schema name for the binding. The built-in offline template currently includes SysSettings."),
+						Field(SchemaNameFieldName, StringType, "Entity schema name for the binding. The built-in offline template currently includes SysSettings. Required unless `from-environment` is true; with it, it must match the binding's schema, and it names the binding when `binding-name` is omitted."),
 						Field(WorkspacePathFieldName, StringType, DataBindingWorkspacePathDescription),
 						Field(BindingNameFieldName, StringType, "Optional binding folder name; defaults to the schema name. A plain folder name, without path separators or '..'."),
 						Field("install-type", NumberType, "Optional descriptor install type; defaults to 0."),
 						Field(ValuesFieldName, StringType, "Optional JSON object keyed by column name for the initial row."),
-						Field("localizations", StringType, "Optional JSON object keyed by culture name (for example en-US) then column name. Localization-only columns are included in the descriptor without inventing base values. Input validation failures preserve existing binding files.")
+						Field("localizations", StringType, "Optional JSON object keyed by culture name (for example en-US) then column name. Localization-only columns are included in the descriptor without inventing base values. Input validation failures preserve existing binding files."),
+						Field(FromEnvironmentFieldName, BooleanType, "Optional. When true, writes the existing DB binding of `package-name` from `environment-name` to disk as the platform package export does: the DB binding UId, its columns, its stored rows and every culture's Localization file. The binding is `binding-name`, or `schema-name` when `binding-name` is omitted. Replaces only that binding folder. Requires `environment-name`; cannot be combined with `values` or `localizations`.")
 					],
 					Validators: [
 						new ToolContractValidator(
@@ -5484,6 +5517,26 @@ internal static class ToolContractCatalog {
 							EnvironmentNameFieldName
 						],
 						Context: "`environment-name` is required when `schema-name` is not `SysSettings` because this MCP tool only supports offline generation for built-in templates and does not expose `--uri`.",
+						Required: true),
+						new ToolContractValidator(
+							"require-schema-name-or-from-environment",
+							MissingRequiredParameterCode,
+						Fields: [
+							SchemaNameFieldName,
+							FromEnvironmentFieldName
+						],
+						Context: "`schema-name` is required unless `from-environment` is true.",
+						Required: true),
+						new ToolContractValidator(
+							"from-environment-requires-environment-and-binding",
+							MissingRequiredParameterCode,
+						Fields: [
+							FromEnvironmentFieldName,
+							EnvironmentNameFieldName,
+							BindingNameFieldName,
+							SchemaNameFieldName
+						],
+						Context: "`from-environment` reads the binding from the environment, so it requires `environment-name` and the binding: `binding-name`, or `schema-name` when the binding is named after its schema. It rejects `values` and `localizations`.",
 						Required: true)
 				]),
 			CommandExecutionOutput(),
@@ -5511,6 +5564,13 @@ internal static class ToolContractCatalog {
 						[PackageNameFieldName] = ExamplePackageName,
 						[SchemaNameFieldName] = ExampleTaskStatusSchemaName,
 						[WorkspacePathFieldName] = ExampleWorkspacePath
+					}),
+					Example("Write an existing DB binding to disk in file system mode", new Dictionary<string, object?> {
+						[EnvironmentNameFieldName] = ExampleEnvironmentName,
+						[PackageNameFieldName] = ExamplePackageName,
+						[BindingNameFieldName] = "UsrTaskStatus_Custom",
+						[WorkspacePathFieldName] = ExampleWorkspacePath,
+						[FromEnvironmentFieldName] = true
 					})
 				],
 			Flow(
@@ -6242,12 +6302,14 @@ internal static class ToolContractCatalog {
 				Field(CamelCaseSchemaNameFieldName, StringType, "Page schema name."),
 				Field("bodyLength", NumberType, "Saved body length."),
 				Field("dryRun", BooleanType, "Whether the call ran in validation mode."),
-				Field("appendProjection", ObjectType, "What the append merge did (dry run: WOULD do) to viewConfigDiff; absent for `replace`. Counts: `currentOperationCount`, `incomingOperationCount`, `projectedOperationCount`, `addedOperationCount`, `incoming{Model,ViewModel}ConfigDiffOperationCount`. THREE DISTINCT LOSS CHANNELS: `droppedOperations`/`droppedOperationCount` = SERVER-body entries the merge drops (the further-duplicate case in `mode`), each also a `warnings` entry; `collapsedIncomingOperations`/`collapsedIncomingOperationCount` = entries of YOUR fragment that a later entry in it supersedes (last spelling wins), data only, no warning; `viewConfigDiffApplied` = false: the web body lacks the SCHEMA_VIEW_CONFIG_DIFF marker pair, so the write discards what EVERY count describes - use `mode: replace`. `replacedOperations`/`replacedOperationCount` is NOT a loss: the operation keeps your values. Lists are capped; counts are exact. Covers viewConfigDiff ONLY: a non-empty sibling `*_DIFF` section with no stored marker pair, or an all-empty fragment, is rejected (use `mode: replace`). Handlers are NOT covered: the merge drops every current handler whose `request` your fragment carries (a `request` held twice keeps neither); check them yourself."),
+				Field("appendProjection", ObjectType, "What the append merge did (dry run: WOULD do) to viewConfigDiff; absent for `replace`. Counts: `currentOperationCount`, `incomingOperationCount`, `projectedOperationCount`, `addedOperationCount`, `incoming{Model,ViewModel}ConfigDiffOperationCount`. THREE DISTINCT LOSS CHANNELS: `droppedOperations`/`droppedOperationCount` = SERVER-body entries the merge drops (see `mode`), each also a `warnings` entry; `collapsedIncomingOperations`/`collapsedIncomingOperationCount` = entries of YOUR fragment that a later entry in it supersedes, data only, no warning; `viewConfigDiffApplied` = false: no SCHEMA_VIEW_CONFIG_DIFF marker pair, nothing written - use `mode: replace`. `replacedOperations`/`replacedOperationCount` is NOT a loss. Lists are capped; counts are exact. Covers viewConfigDiff ONLY: a non-empty sibling `*_DIFF` section with no stored marker pair, or an all-empty fragment, is rejected (use `mode: replace`). `removedHandlers`: per `request`, how many CURRENT handlers your fragment replaced (`removedCount`); `hadDuplicates: true` = several chained handlers, all gone - re-add the ones you need."),
 				Field("resourcesRegistered", NumberType, "New resource keys this save added."),
 				Field("resourcesUpdated", NumberType, "Existing keys whose en-US value this save changed."),
 				Field("digest", ObjectType, "Real save: written `components`, `otherSections`, post-save `checksum`; confirm the save from it."),
-				Field(WarningsFieldName, ArrayType, "Advisory non-fatal warnings; omitted when there are none. When `success` is true the save already succeeded - never retry on a warning. A rejected save (`success: false`, see `error`) can carry warnings too, and nothing was written. On a dry run, the viewModelConfigDiff/modelConfigDiff merges the runtime throws on are listed here as warnings that say the merge \"breaks the page\": the real save of the same body is rejected, so fix them first. Covers an operation the differ will silently drop because another operation for the same component name cancels it (see `mode`), an `insert` this body replaced with a `merge`/`move`/`remove`, an existing operation an `append` could not preserve because the fragment superseded an identity the page carried twice (re-read with get-page), an `append` whose merged viewConfigDiff cannot be written back at all because the current body has no marker pair (see `appendProjection.viewConfigDiffApplied`), a viewModelConfigDiff/modelConfigDiff `merge` whose `path` does not exist in the config the parent schemas and earlier merges produce (saved, but the differ skips it, so it has no effect: merge into an existing parent instead), page-body lint findings, and the best-effort Designer Presence push."),
-				Field(ErrorFieldName, StringType, FailureMessageDescription + " update-page also rejects a save, writing nothing, when a viewModelConfigDiff/modelConfigDiff `merge` would make the Creatio runtime throw so the page fails to build: a `path` that ends on a single value, a `path` whose first segment matches an element `_id` but whose rest does not exist under it, or a missing or null `values` on a target that exists. Each such merge is named here, one per line; fix or remove it and save again.")
+				Field(WarningsFieldName, ArrayType, "Advisory warnings, omitted when none. When `success` is true the save already succeeded - never retry on a warning. A rejected save (`success: false`, see `error`) can carry warnings too, and nothing was written. On a dry run, the viewModelConfigDiff/modelConfigDiff merges the runtime throws on are listed here as warnings that say the merge \"breaks the page\": the real save of the same body is rejected, so fix them first. Covers an operation the differ silently drops because another operation for the same component name cancels it (see `mode`), an `insert` this body replaced with a `merge`/`move`/`remove`, an existing operation an `append` could not preserve because the fragment superseded an identity the page carried twice (re-read with get-page), an `append` whose merged viewConfigDiff cannot be written back at all because the current body has no marker pair (see `appendProjection.viewConfigDiffApplied`), a viewModelConfigDiff/modelConfigDiff `merge` whose `path` does not exist in the config the parent schemas and earlier merges produce (saved, but the differ skips it: merge into an existing parent instead), page-body lint findings, and the best-effort Designer Presence push."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription + " update-page also rejects a save, writing nothing, when a viewModelConfigDiff/modelConfigDiff `merge` would make the Creatio runtime throw: a `path` that ends on a single value, a `path` whose first segment matches an element `_id` but whose rest does not exist under it, or a missing or null `values` on a target that exists. Each such merge is named here, one per line."),
+				Field(SiteResponseFieldName, ObjectType, SiteResponseShortDescription),
+				Field(DataWriteDiagnosticFieldName, ObjectType, SiteRefusalDiagnosticShortDescription)
 			),
 			CommonErrorContract,
 			[
@@ -6928,15 +6990,15 @@ internal static class ToolContractCatalog {
 				[
 					InstallProcessBuilderTool.InstallProcessBuilderToolName
 				],
-				"Once the user approves, install the package, then retry whichever process-designer tool sent you here - that retry IS the verification, because its package gate re-checks the environment and refuses again if the install did not take. The flow cannot name the follow-up tool: any gated process tool (create-business-process, modify-business-process, describe-business-process, list-user-tasks, validate-process-graph, modify-business-process-as-new-version, set-active-business-process-version, create-dynamic-case, describe-dynamic-case, modify-dynamic-case, and compile-creatio with process-name) may have sent the caller here, and only the caller knows which call to retry. The install's own success proves the package is COMPILED and serving - it asks the package's ungated Ping and fails unless it answers, which is the one question no database read can answer. It does NOT prove WHICH build is serving: on an upgrade a stale assembly that still answers passes, so treat a new version as verified only once the functionality works."),
+				"Once the user approves, install the package, then retry whichever process-designer tool sent you here - that retry IS the verification, because its package gate re-checks the environment and refuses again if the install did not take. The flow cannot name the follow-up tool: any gated process tool (create-business-process, modify-business-process, describe-business-process, list-user-tasks, validate-process-graph, modify-business-process-as-new-version, set-active-business-process-version, create-dynamic-case, describe-dynamic-case, modify-dynamic-case, modify-dynamic-case-as-new-version, set-active-dynamic-case-version, and compile-creatio with process-name) may have sent the caller here, and only the caller knows which call to retry. The install's own success proves the package is COMPILED and serving - it asks the package's ungated Ping and fails unless it answers, which is the one question no database read can answer. It does NOT prove WHICH build is serving: on an upgrade a stale assembly that still answers passes, so treat a new version as verified only once the functionality works."),
 			[],
 			[],
 			Preconditions: [
 				"The target environment is registered (see list-environments / reg-web-app).",
 				"The user approved this install on this environment after you warned them it builds the configuration and restarts the site for every connected user. A refusal, its hint, or an approval given earlier in the session is not that approval.",
-				"A process tool reported that the CrtProcessBuilder package is missing or older than required. Those tools (create-business-process, modify-business-process, describe-business-process, list-user-tasks, validate-process-graph, modify-business-process-as-new-version, set-active-business-process-version, create-dynamic-case, describe-dynamic-case, modify-dynamic-case, and compile-creatio with process-name) are long-tail like this one: absent from tools/list, discoverable through the get-tool-contract index, reachable through clio-run / clio-run-destructive.",
+				"A process tool reported that the CrtProcessBuilder package is missing or older than required. Those tools (create-business-process, modify-business-process, describe-business-process, list-user-tasks, validate-process-graph, modify-business-process-as-new-version, set-active-business-process-version, create-dynamic-case, describe-dynamic-case, modify-dynamic-case, modify-dynamic-case-as-new-version, set-active-dynamic-case-version, and compile-creatio with process-name) are long-tail like this one: absent from tools/list, discoverable through the get-tool-contract index, reachable through clio-run / clio-run-destructive.",
 				"The caller can install a package on the target environment, With DataService read access to SysPackage the downgrade check runs; WITHOUT it the install proceeds and says so, so a missing read permission is not a reason to decline this call.",
-				"NOTE for the follow-up call, not for this one: the process-designer tools additionally need the CanManageProcessDesign operation and a General (non-portal) user, which is the gate ProcessDesignService enforces. cliogate's broader CanManageSolution does NOT grant it. create-dynamic-case, describe-dynamic-case and modify-dynamic-case are gated differently: a General user with CanManageDcm, CanManageSolution and the right to add SysDcmSettings and SysDcmSchemaInSettings records (and to edit SysDcmSettings for a call with a filter); they do not need CanManageProcessDesign."
+				"NOTE for the follow-up call, not for this one: the process-designer tools additionally need the CanManageProcessDesign operation and a General (non-portal) user, which is the gate ProcessDesignService enforces. cliogate's broader CanManageSolution does NOT grant it. The dynamic-case tools (create-dynamic-case, describe-dynamic-case, modify-dynamic-case, modify-dynamic-case-as-new-version, set-active-dynamic-case-version) are gated differently: a General user with CanManageDcm, CanManageSolution and the right to add SysDcmSettings and SysDcmSchemaInSettings records (and to edit SysDcmSettings for a create-dynamic-case or modify-dynamic-case call with a filter); they do not need CanManageProcessDesign."
 			]);
 	}
 
@@ -7468,12 +7530,27 @@ internal static class ToolContractCatalog {
 			[
 				Field("exit-code", NumberType, "Process exit code."),
 				Field("execution-log-messages", ArrayType, "Structured log messages."),
-				Field("log-file-path", StringType, "Optional operation log path.")
+				Field("log-file-path", StringType, "Optional operation log path."),
+				Field(SiteResponseFieldName, ObjectType, SiteResponseDescription + " Present on the failed result of a "
+					+ "write tool: entity schema, page, data-binding, install, compile, restart and process writes."),
+				Field(DataWriteDiagnosticFieldName, ObjectType, SiteRefusalDiagnosticDescription)
 			]);
 	}
 
+	private const string StaticFilterResultFields =
+		"An apply-static-filter rule also carries filterMatchCount (how many records of the target lookup its filter " +
+		"matched on the environment) and, when the filter could not be run, warning.";
+
+	private const string PageBusinessRuleWarningsDescription =
+		" A saved item may also carry `warnings` (absent when none): advisory findings, the rule IS saved. "
+		+ "`subsumed` = another rule already applies the same state action to the same elements on a wider condition; "
+		+ "`inverse-redundant` = the rule only undoes another one (negated condition, opposite state action). "
+		+ "Page state rules undo themselves when their condition turns false, so delete the redundant rule unless "
+		+ "the element is read-only, required or hidden by default.";
+
 	private static ToolOutputContract BusinessRuleBatchOutput(string resultsDescription =
-		"Per-rule outcomes in input order; each item has name, success, ruleName, and error.") {
+		"Per-rule outcomes in input order; each item has name, success, ruleName, and error.",
+		string warningsDescription = "") {
 		return new ToolOutputContract(
 			"business-rule-batch-result",
 			null,
@@ -7484,7 +7561,7 @@ internal static class ToolContractCatalog {
 			[
 				Field("succeeded", NumberType, "Number of items that succeeded."),
 				Field("failed", NumberType, "Number of items that failed."),
-				Field(ResultsFieldName, ArrayType, resultsDescription),
+				Field(ResultsFieldName, ArrayType, resultsDescription + warningsDescription),
 				Field(ErrorFieldName, StringType, "Request-level error that prevented the whole batch from running. Note: when the requested environment cannot be resolved (unknown/unreachable), the tool instead returns the standard command-execution envelope (exit-code 1 with execution-log-messages referencing the environment) rather than this batch shape.")
 			]);
 	}
@@ -7511,7 +7588,8 @@ internal static class ToolContractCatalog {
 					+ "wrong type, or any value for a binary column - and that row is reported as false with "
 					+ "diagnostic side-effect none. A null record-created means Creatio failed the call "
 					+ "but may already have written the row - verify with odata-read before re-sending, a retry "
-					+ "duplicates it. " + ODataWriteForeignKeyHintDescription),
+					+ "duplicates it. A failed row the site answered also carries site-response. "
+					+ ODataWriteForeignKeyHintDescription),
 				Field(ErrorFieldName, StringType, "Request-level error that prevented any row from being attempted."),
 				Field("warnings", ArrayType, "Notes that did not stop the call, for example that payload was accepted as rows; absent when there is nothing to note."),
 				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription),

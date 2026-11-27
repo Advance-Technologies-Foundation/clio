@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.IO.Abstractions;
 using System.Linq;
@@ -54,6 +55,9 @@ public sealed class PageValidateTool(
 		string body = resolvedBody;
 		if (PageSchemaTypeExtensions.FromBody(body) == PageSchemaType.Mobile) {
 			return await ValidateMobileAsync(body, args, cancellationToken).ConfigureAwait(false);
+		}
+		if (TryValidateClientModule(body, out PageValidateResponse? moduleResponse)) {
+			return moduleResponse;
 		}
 		PageSyncValidationResult result = Validate(body, args.Resources);
 		// Registry-driven chart-widget validation needs the (async, version-scoped) component catalog,
@@ -215,6 +219,31 @@ public sealed class PageValidateTool(
 		}
 	};
 
+	// The first warning of a client-module result, so a caller can tell it from a page result.
+	internal const string ClientModuleNote =
+		"client-module: validated as a client module (define() without page-schema markers whose factory returns no "
+		+ "page sections); only the code-quality lint applies. Validate each module a page imports on its own.";
+
+	// A client module (`define("Name", [deps], function (...) { ... })` with no page-schema markers) holds the logic a
+	// page imports. It gets the code-quality lint and no page rule. A body that does not parse, or a page body that lost
+	// its markers (its factory returns page sections), goes down the page path, which reports what is wrong with it.
+	private static bool TryValidateClientModule(string body, [NotNullWhen(true)] out PageValidateResponse? response) {
+		response = null;
+		if (!PageBodyAstLinter.TryLintClientModuleBody(body, out IReadOnlyList<PageBodyLintFinding> findings)) {
+			return false;
+		}
+		response = new PageValidateResponse {
+			Valid = true,
+			Validation = new PageSyncValidationResult {
+				MarkersOk = true,
+				JsSyntaxOk = true,
+				ContentOk = true,
+				Warnings = [ClientModuleNote, ..findings.Select(PageBodyAstLinter.FormatFinding)]
+			}
+		};
+		return true;
+	}
+
 	// Folds an extra content-validation result's errors into the envelope and forces ContentOk=false; shared by the
 	// async chart-widget and run-process structural checks that run outside the static content-validation pipeline.
 	private static PageSyncValidationResult FoldInContentErrors(
@@ -319,7 +348,9 @@ public sealed class PageValidateTool(
 			SchemaDeps: RunContentValidation(contentResult,
 				() => SchemaValidationService.ValidateSchemaDepsCompleteness(body)),
 			ContextAwait: RunContentValidation(contentResult,
-				() => SchemaValidationService.ValidateContextAccessAwait(body)));
+				() => SchemaValidationService.ValidateContextAccessAwait(body)),
+			GridSelection: RunContentValidation(contentResult,
+				() => SchemaValidationService.ValidateGridSelectionWriteBack(body)));
 
 	private static PageSyncValidationResult BuildResult(
 		SchemaValidationResult markerResult,
@@ -344,6 +375,7 @@ public sealed class PageValidateTool(
 		}
 		warnings.AddRange(content.SchemaDeps.Warnings);
 		warnings.AddRange(content.ContextAwait.Warnings);
+		warnings.AddRange(content.GridSelection.Warnings);
 		bool contentOk = contentResult.IsValid && content.Field.IsValid && content.InsertSelfConsistency.IsValid &&
 			content.LocalizableText.IsValid &&
 			content.ConverterDecl.IsValid &&
@@ -401,7 +433,8 @@ public sealed class PageValidateTool(
 		SchemaValidationResult ValidatorDecl,
 		SchemaValidationResult ValidatorFactoryShape,
 		SchemaValidationResult SchemaDeps,
-		SchemaValidationResult ContextAwait);
+		SchemaValidationResult ContextAwait,
+		SchemaValidationResult GridSelection);
 }
 
 /// <summary>

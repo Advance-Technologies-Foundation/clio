@@ -37,6 +37,14 @@ namespace Clio.Command {
 
 		[Option("optional-properties", Required = false, HelpText = "JSON array of {key, value} objects to seed into the new schema optionalProperties (e.g. dashboard DashboardsEntitySchemaName/DashboardsElementName/DashboardsClientUnitSchemaUId)")]
 		public string? OptionalProperties { get; set; }
+
+		/// <summary>
+		/// When <c>true</c>, a page whose template shows its caption as the page header title
+		/// (<c>BaseHomePage</c>, <c>BaseDashboardTemplate</c>) must be given a <see cref="Caption"/> that differs
+		/// from <see cref="SchemaName"/>; otherwise the create is refused before any write. Not a CLI option: only
+		/// the MCP <c>create-page</c> tool sets it, so the CLI keeps defaulting the caption to the schema name.
+		/// </summary>
+		public bool RequireHeaderCaption { get; set; }
 	}
 
 	/// <summary>
@@ -95,23 +103,11 @@ namespace Clio.Command {
 					return false;
 				}
 				LogStep(ref stepNumber, totalSteps, $"Resolving template '{options.Template}'");
-				PageTemplateInfo template;
-				try {
-					template = _templateCatalog.FindTemplate(options.Template);
-				} catch (Exception ex) {
-					response = new PageCreateResponse { Success = false, Error = $"Failed to resolve template catalog: {ex.Message}" };
+				if (!TryResolveTemplate(options, out PageTemplateInfo template, out string templateError)) {
+					response = new PageCreateResponse { Success = false, Error = templateError };
 					LogFailure(response.Error);
 					return false;
 				}
-				if (template is null) {
-					response = new PageCreateResponse {
-						Success = false,
-						Error = $"Template '{options.Template}' is not supported. Use list-page-templates to discover valid values."
-					};
-					LogFailure(response.Error);
-					return false;
-				}
-				_logger.WriteInfo($"         template: {template.Name} (uId={template.UId}, group={template.GroupName}, type={DescribeSchemaType(template.SchemaType)})");
 				LogStep(ref stepNumber, totalSteps, $"Resolving package '{options.PackageName}'");
 				if (!TryResolvePackageUId(options.PackageName, out string packageUId, out string packageError)) {
 					response = new PageCreateResponse { Success = false, Error = packageError };
@@ -172,6 +168,54 @@ namespace Clio.Command {
 				LogFailure(response.Error);
 				return false;
 			}
+		}
+
+		/// <summary>
+		/// Resolves the requested template from the live catalog and applies the header-caption rule to it.
+		/// Returns <c>false</c> with the user-facing error when the catalog fails, the template is unknown,
+		/// or the caption does not satisfy <see cref="ValidateHeaderCaption"/>.
+		/// </summary>
+		private bool TryResolveTemplate(PageCreateOptions options, out PageTemplateInfo template, out string error) {
+			try {
+				template = _templateCatalog.FindTemplate(options.Template);
+			} catch (Exception ex) {
+				template = null;
+				error = $"Failed to resolve template catalog: {ex.Message}";
+				return false;
+			}
+			if (template is null) {
+				error = $"Template '{options.Template}' is not supported. Use list-page-templates to discover valid values.";
+				return false;
+			}
+			_logger.WriteInfo($"         template: {template.Name} (uId={template.UId}, group={template.GroupName}, type={DescribeSchemaType(template.SchemaType)})");
+			error = ValidateHeaderCaption(options, template);
+			return error is null;
+		}
+
+		private static readonly HashSet<string> HeaderCaptionTemplateNames = new(StringComparer.OrdinalIgnoreCase) {
+			SchemaTemplateCatalog.HomePageTemplateName,
+			SchemaTemplateCatalog.DashboardTemplateName
+		};
+
+		/// <summary>
+		/// ENG-107757: a home page or dashboard shows its caption as the page header title, and a caption left
+		/// to default to the schema name puts the technical name there. When the caller opts in
+		/// (<see cref="PageCreateOptions.RequireHeaderCaption"/>), refuse a missing caption or one equal to
+		/// schema-name before any write. Checked on the resolved template, so a template UId is covered too.
+		/// </summary>
+		internal static string ValidateHeaderCaption(PageCreateOptions options, PageTemplateInfo template) {
+			if (!options.RequireHeaderCaption || template is null || !HeaderCaptionTemplateNames.Contains(template.Name)) {
+				return null;
+			}
+			string hint = $"For a {template.Name} page the caption is the title shown in the page header. Pass `caption` "
+				+ "with the human-readable name the user asked for (for example \"Sales overview\"), not the schema name.";
+			if (string.IsNullOrWhiteSpace(options.Caption)) {
+				return $"caption is required for template '{template.Name}'. {hint}";
+			}
+			if (string.Equals(options.Caption.Trim(), options.SchemaName?.Trim(), StringComparison.OrdinalIgnoreCase)) {
+				return $"caption '{options.Caption.Trim()}' equals schema-name. {hint}";
+			}
+			return null;
 		}
 
 		/// <summary>
@@ -365,9 +409,10 @@ namespace Clio.Command {
 				["useFullHierarchy"] = false
 			};
 			string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetClientUnitDesignerSchema);
-			string responseJson = _applicationClient.ExecutePostRequest(url, request.ToString(Formatting.None));
-			var response = JObject.Parse(responseJson);
+			(JObject response, SiteHttpResponse answer) = PageSchemaMetadataHelper.PostDesignerRequest(_applicationClient,
+				url, request.ToString(Formatting.None));
 			if (!(response["success"]?.Value<bool>() ?? false) || response["schema"] is not JObject schema) {
+				SiteResponseCapture.RecordRefusal(answer);
 				error = response["errorInfo"]?["message"]?.ToString()
 					?? $"Failed to load template schema '{templateUId}' resources";
 				return false;
@@ -379,11 +424,13 @@ namespace Clio.Command {
 		private bool TrySaveSchema(JObject schemaToSave, out string error) {
 			error = null;
 			string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveClientUnitDesignerSchema);
-			string responseJson = _applicationClient.ExecutePostRequest(url, schemaToSave.ToString(Formatting.None));
-			var response = JObject.Parse(responseJson);
+			// The save is the page's one write, and its refusal ends the create.
+			(JObject response, SiteHttpResponse answer) = PageSchemaMetadataHelper.PostDesignerRequest(_applicationClient,
+				url, schemaToSave.ToString(Formatting.None), soleWrite: true);
 			if (response["success"]?.Value<bool>() ?? false) {
 				return true;
 			}
+			SiteResponseCapture.RecordRefusalOfSoleWrite(answer, PageSchemaMetadataHelper.DesignerRequestAttempts);
 			error = BuildSaveErrorMessage(response);
 			return false;
 		}

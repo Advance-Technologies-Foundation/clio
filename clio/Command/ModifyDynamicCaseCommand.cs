@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -53,21 +52,22 @@ public sealed class ModifyDynamicCaseOptions : EnvironmentOptions {
 	/// <summary>The user's yes to renaming a stage's lookup value for every record.</summary>
 	public bool ConfirmValueRename { get; set; }
 
+	/// <summary>The user's separate yes to an access-rights step without a filter, which changes every record of its object.</summary>
+	public bool ConfirmAllRecords { get; set; }
+
 	/// <summary>Run every check and return the planned change without writing anything.</summary>
 	public bool DryRun { get; set; }
 }
 
 /// <summary>
-/// Changes an existing dynamic case and reports the outcome: a one-line verdict, the result document, the notes to
-/// relay and the warnings. The exit code is 0 for <c>planned</c>, <c>modified</c> and <c>unchanged</c>, and 1 for
-/// everything else.
+/// Changes an existing dynamic case and reports the outcome in two lines: a one-line verdict that also counts the
+/// warnings, then the result document, whose <c>notes</c>, <c>warnings</c> and a refusal's <c>errorMessage</c> are the
+/// one copy of what to relay. The exit code is 0 for <c>planned</c>, <c>modified</c> and <c>unchanged</c>, and 1 for everything else.
 /// </summary>
 public class ModifyDynamicCaseCommand(IDynamicCaseService dynamicCaseService, ILogger logger)
 	: Command<ModifyDynamicCaseOptions> {
 
 	private const string NothingWritten = " Nothing was written.";
-
-	private const string NothingWrittenPhrase = "nothing was written";
 
 	private static readonly JsonSerializerOptions ResultJsonOptions = new() {
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -105,28 +105,17 @@ public class ModifyDynamicCaseCommand(IDynamicCaseService dynamicCaseService, IL
 			DynamicCaseModifyOutcomes.FailedLeftover => $"The change failed [{result.ErrorCode}] and the case could "
 				+ $"not be fully restored: {result.ErrorMessage} Left behind: {string.Join("; ", result.Leftovers ?? [])}.",
 			DynamicCaseModifyOutcomes.Unknown => result.ErrorMessage,
-			_ => $"Refused [{result.ErrorCode}]: {result.ErrorMessage}"
-				+ (SaysNothingWasWritten(result) ? string.Empty : NothingWritten)
+			_ => DynamicCaseRefusalVerdict.For(result.ErrorCode, result.ErrorMessage, NothingWritten)
 		};
 	}
 
-	// Some refusals already say it in their own words; repeating it would read as two separate claims.
-	private static bool SaysNothingWasWritten(ModifyDynamicCaseResult result) =>
-		result.ErrorMessage?.Contains(NothingWrittenPhrase, StringComparison.OrdinalIgnoreCase) == true;
-
 	private void Report(ModifyDynamicCaseResult result) {
-		string verdict = Verdict(result);
+		string verdict = Verdict(result) + DynamicCaseWarningsHint.For(result.Warnings, beforeAnyWrite: true);
 		if (result.Success) {
 			logger.WriteInfo(verdict);
 		} else {
 			logger.WriteError(verdict);
 		}
 		logger.WriteInfo(JsonSerializer.Serialize(result, ResultJsonOptions));
-		foreach (string note in (result.Notes ?? []).Where(note => !string.IsNullOrWhiteSpace(note))) {
-			logger.WriteInfo(note);
-		}
-		foreach (string warning in (result.Warnings ?? []).Where(warning => !string.IsNullOrWhiteSpace(warning))) {
-			logger.WriteWarning(warning);
-		}
 	}
 }

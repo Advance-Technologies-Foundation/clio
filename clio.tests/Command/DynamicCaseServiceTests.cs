@@ -6,6 +6,7 @@ using Clio.Common;
 using Clio.Package;
 using Clio.UserEnvironment;
 using FluentAssertions;
+using FluentAssertions.Execution;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
@@ -1009,6 +1010,7 @@ public sealed class DynamicCaseServiceTests {
 		options.ConfirmRunningInstances = true;
 		options.ConfirmStageRecords = true;
 		options.ConfirmValueRename = true;
+		options.ConfirmAllRecords = true;
 
 		// Act
 		_service.Modify(options);
@@ -1018,7 +1020,7 @@ public sealed class DynamicCaseServiceTests {
 			request.CaseName == "UsrOrderCase" && request.EntitySchemaName == null
 			&& request.ValidateOnly && request.ConfirmRunningInstances && request.Enabled == null
 			&& request.ConfirmStageRecords == true && request.ConfirmValueRename == true
-			&& request.Caption == "Order flow"
+			&& request.ConfirmAllRecords == true && request.Caption == "Order flow"
 			&& request.Stages.Count == 2
 			&& request.Stages[0].GroupSent && request.Stages[0].Group == null
 			&& !request.Stages[1].GroupSent && request.Stages[1].Caption == "Closed"
@@ -1038,7 +1040,8 @@ public sealed class DynamicCaseServiceTests {
 
 		// Assert
 		_session.Received(1).Modify(Arg.Is<ModifyCaseRequest>(request =>
-			request.ConfirmStageRecords == null && request.ConfirmValueRename == null));
+			request.ConfirmStageRecords == null && request.ConfirmValueRename == null
+			&& request.ConfirmAllRecords == null));
 	}
 
 	[Test]
@@ -1243,5 +1246,842 @@ public sealed class DynamicCaseServiceTests {
 			_session.Received(1).Modify(Arg.Is<ModifyCaseRequest>(request => request.Filter == null));
 		}
 		result.Settings.FilterColumnName.Should().Be("UsrType", because: "the settings block is passed through");
+	}
+
+	private const string VersionUId = "9a1b2c3d-0000-4000-8000-000000000001";
+	private const string DesignerPrefix = "http://sandbox/0/Nui/ViewModule.aspx?vm=DcmDesigner#case/";
+
+	private static ModifyDynamicCaseAsNewVersionOptions NewVersionOptions(bool dryRun = false) => new() {
+		Environment = Env, CaseName = "UsrOrderCase", DryRun = dryRun
+	};
+
+	private static SetActiveDynamicCaseVersionOptions ActivationOptions(bool dryRun = false) => new() {
+		Environment = Env, VersionName = "UsrOrderCaseCustom1", DryRun = dryRun
+	};
+
+	private static CaseVersionInfo NewVersion(bool active = false) => new() {
+		Name = "UsrOrderCaseCustom1", UId = VersionUId, Version = 2, PackageName = "UsrOrdersV2",
+		RootName = "UsrOrderCase", Active = active
+	};
+
+	private static CaseVersionInfo RootVersion() => new() {
+		Name = "UsrOrderCase", UId = CaseUId, Version = 1, PackageName = Package, RootName = "UsrOrderCase",
+		Active = true
+	};
+
+	private static CaseVersionMemberInfo Member(string name, string uId, int version, bool active) => new() {
+		Name = name, UId = uId, Version = version, PackageName = Package, PackageReadOnly = !active,
+		Active = active, RunningInstances = version * 3, HasLinkRow = active, IsDelivered = !active
+	};
+
+	private static ModifyCaseAsNewVersionResponse NewVersionResponse(string outcome, bool success) => new() {
+		Success = success,
+		Outcome = outcome,
+		ErrorCode = "code-" + outcome,
+		ErrorMessage = "message of " + outcome,
+		Version = NewVersion(),
+		Case = new BuildCaseCaseInfo {
+			Status = "existing", SchemaName = "UsrOrderCaseCustom1", SchemaUId = VersionUId, PackageName = "UsrOrdersV2",
+			EntitySchemaName = Entity, StageColumnName = "UsrStatus", Caption = "Orders v2",
+			Stages = [new DynamicCaseStage { Name = "Stage1", Value = "v1", Caption = "New" }],
+			Filter = new DynamicCaseFilter { Column = "UsrType" },
+			Versions = [Member("UsrOrderCase", CaseUId, 1, true), Member("UsrOrderCaseCustom1", VersionUId, 2, false)]
+		},
+		SourceName = "UsrOrderCase",
+		Diff = new DynamicCaseDiff { Added = [new DynamicCaseStageChange { Value = "v3", Caption = "Paid" }] },
+		Settings = new DynamicCaseSettings { Status = "reused", SysDcmSettingsId = "s1", Bindings = ["UsrOrdersV2"] },
+		Obligations = new DynamicCaseObligations { ReloadOpenPages = true },
+		Leftovers = ["UsrOrderCaseCustom1 schema"],
+		Notes = ["note"],
+		Warnings = ["warning"]
+	};
+
+	private void AnswerNewVersion(ModifyCaseAsNewVersionResponse response) =>
+		_session.ModifyAsNewVersion(Arg.Any<ModifyCaseAsNewVersionRequest>()).Returns(
+			new DynamicCaseReply<ModifyCaseAsNewVersionResponse>(DynamicCaseReplyKind.Envelope, response, null));
+
+	private void AnswerActivation(SetActiveCaseVersionResponse response) =>
+		_session.SetActiveVersion(Arg.Any<SetActiveCaseVersionRequest>()).Returns(
+			new DynamicCaseReply<SetActiveCaseVersionResponse>(DynamicCaseReplyKind.Envelope, response, null));
+
+	private static IEnumerable<string> NullMembers(object value) =>
+		value.GetType().GetProperties()
+			.Where(property => !property.PropertyType.IsValueType && property.GetValue(value) is null)
+			.Select(property => property.Name);
+
+	[Test]
+	[Description("A new-version call maps the call onto the request: the identity trimmed, the package, every stage member, the caption, the user's yes as true and dry-run as validateOnly, through one session.")]
+	public void ModifyAsNewVersion_ShouldMapTheCallOntoTheRequest() {
+		// Arrange
+		AnswerNewVersion(new ModifyCaseAsNewVersionResponse { Success = true, Outcome = "planned" });
+		ModifyDynamicCaseAsNewVersionOptions options = NewVersionOptions(dryRun: true);
+		options.CaseName = " UsrOrderCase ";
+		options.CaseUId = " ";
+		options.EntitySchemaName = " UsrOrder ";
+		options.PackageName = " UsrOrdersV2 ";
+		options.Caption = " Orders v2 ";
+		options.Stages = [
+			new DynamicCaseStageItem("New") { GroupSent = true, Group = null },
+			new DynamicCaseStageItem("Done") { Caption = "Closed", Color = "#FF0000", Successful = false }
+		];
+		options.ConfirmStageRecords = true;
+		options.ConfirmValueRename = true;
+
+		// Act
+		_service.ModifyAsNewVersion(options);
+
+		// Assert
+		_session.Received(1).ModifyAsNewVersion(Arg.Is<ModifyCaseAsNewVersionRequest>(request =>
+			request.CaseName == "UsrOrderCase" && request.CaseUId == null && request.EntitySchemaName == "UsrOrder"
+			&& request.PackageName == "UsrOrdersV2" && request.Caption == "Orders v2"
+			&& request.ValidateOnly && request.ConfirmStageRecords == true && request.ConfirmValueRename == true
+			&& request.Filter == null
+			&& request.Stages.Count == 2
+			&& request.Stages[0].Value == "New" && request.Stages[0].GroupSent && request.Stages[0].Group == null
+			&& !request.Stages[1].GroupSent && request.Stages[1].Caption == "Closed"
+			&& request.Stages[1].Color == "#FF0000" && request.Stages[1].Successful == false));
+		_client.Received(1).OpenSession(Env);
+		_session.Received(1).Dispose();
+	}
+
+	[TestCase(true)]
+	[TestCase(false)]
+	[Description("A new version that leaves out a stage a kept step's condition still targets is refused by the package as stage-is-condition-target, as on modify-dynamic-case: the removal reaches the package as the shorter stage list, and the refusal comes back with its code and text, no designer link, and not as a success.")]
+	public void ModifyAsNewVersion_ShouldPassStageIsConditionTargetThrough(bool dryRun) {
+		// Arrange
+		AnswerNewVersion(new ModifyCaseAsNewVersionResponse {
+			Success = false, Outcome = "refused", ErrorCode = "stage-is-condition-target",
+			ErrorMessage = "Stage Done is the next stage of a condition of step UsrApprove.", Version = NewVersion()
+		});
+		ModifyDynamicCaseAsNewVersionOptions options = NewVersionOptions(dryRun);
+		options.Stages = [new DynamicCaseStageItem("New"), new DynamicCaseStageItem("In progress")];
+
+		// Act
+		ModifyDynamicCaseAsNewVersionResult result = _service.ModifyAsNewVersion(options);
+
+		// Assert
+		_session.Received(1).ModifyAsNewVersion(Arg.Is<ModifyCaseAsNewVersionRequest>(request =>
+			request.ValidateOnly == dryRun && request.Stages.Count == 2
+			&& request.Stages[0].Value == "New" && request.Stages[1].Value == "In progress"));
+		result.Outcome.Should().Be(DynamicCaseVersionOutcomes.Refused,
+			because: "the package refused the removal before anything was written");
+		result.Success.Should().BeFalse(because: "a refusal is never a success");
+		result.ErrorCode.Should().Be("stage-is-condition-target",
+			because: "the package's code is the one the descriptions name, so the agent can act on it");
+		result.ErrorMessage.Should().Be("Stage Done is the next stage of a condition of step UsrApprove.",
+			because: "the package's text names the stage and the step whose condition targets it");
+		result.Version.DesignerUrl.Should().BeNull(because: "a refused version was not saved");
+	}
+
+	[Test]
+	[Description("A new-version call that names only the case sends no package, stages, caption or filter, leaves a yes not given out of the request rather than false, and writes.")]
+	public void ModifyAsNewVersion_ShouldLeaveOutWhatTheCallDoesNotName() {
+		// Arrange
+		AnswerNewVersion(new ModifyCaseAsNewVersionResponse { Success = true, Outcome = "version-created" });
+
+		// Act
+		_service.ModifyAsNewVersion(NewVersionOptions());
+
+		// Assert
+		_session.Received(1).ModifyAsNewVersion(Arg.Is<ModifyCaseAsNewVersionRequest>(request =>
+			request.CaseName == "UsrOrderCase" && request.PackageName == null && request.Stages == null
+			&& request.Caption == null && request.Filter == null
+			&& request.ConfirmStageRecords == null && request.ConfirmValueRename == null && !request.ValidateOnly));
+	}
+
+	[TestCase(true, false)]
+	[TestCase(false, true)]
+	[Description("A new-version call sends a removal as a patch without a filter (JSON null on the wire) and a new filter as a patch carrying it.")]
+	public void ModifyAsNewVersion_ShouldMapTheFilterChange(bool remove, bool set) {
+		// Arrange
+		AnswerNewVersion(new ModifyCaseAsNewVersionResponse { Success = true, Outcome = "planned" });
+		ModifyDynamicCaseAsNewVersionOptions options = NewVersionOptions(dryRun: true);
+		options.RemoveFilter = remove;
+		options.Filter = set ? new DynamicCaseFilterArgument("UsrType", ["B2B"], false) : null;
+
+		// Act
+		_service.ModifyAsNewVersion(options);
+
+		// Assert
+		if (remove) {
+			_session.Received(1).ModifyAsNewVersion(Arg.Is<ModifyCaseAsNewVersionRequest>(request =>
+				request.Filter != null && request.Filter.NewFilter == null));
+		} else {
+			_session.Received(1).ModifyAsNewVersion(Arg.Is<ModifyCaseAsNewVersionRequest>(request =>
+				request.Filter.NewFilter.Column == "UsrType" && request.Filter.NewFilter.Values[0] == "B2B"));
+		}
+	}
+
+	[Test]
+	[Description("The new-version result maps every field of the server's answer - nothing reference-typed is left null when the server sent it - and each field carries the server's value.")]
+	public void ModifyAsNewVersion_ShouldMapEveryFieldOfTheAnswer() {
+		// Arrange
+		ModifyCaseAsNewVersionResponse response = NewVersionResponse("version-created", success: true);
+		AnswerNewVersion(response);
+
+		// Act
+		ModifyDynamicCaseAsNewVersionResult result = _service.ModifyAsNewVersion(NewVersionOptions());
+
+		// Assert
+		NullMembers(result).Should().BeEmpty(because: "every field of a complete answer reaches the result");
+		NullMembers(result.Version).Should().BeEmpty(because: "every field of the version block reaches the result");
+		result.Success.Should().BeTrue(because: "version-created is a success");
+		result.Outcome.Should().Be("version-created", because: "the server's outcome is passed through");
+		result.ErrorCode.Should().Be("code-version-created", because: "the server's code is passed through");
+		result.ErrorMessage.Should().Be("message of version-created", because: "the server's text is passed through");
+		result.Version.Name.Should().Be("UsrOrderCaseCustom1", because: "the version's name is mapped");
+		result.Version.UId.Should().Be(VersionUId, because: "the version's UId is mapped");
+		result.Version.Version.Should().Be(2, because: "the stored version number is mapped");
+		result.Version.PackageName.Should().Be("UsrOrdersV2", because: "the version's package is mapped");
+		result.Version.RootName.Should().Be("UsrOrderCase", because: "the family root is mapped");
+		result.Version.Active.Should().BeFalse(because: "a new version is always inactive");
+		result.Case.SchemaName.Should().Be("UsrOrderCaseCustom1", because: "the version as a case is mapped");
+		result.Case.PackageName.Should().Be("UsrOrdersV2", because: "the case block's package is mapped");
+		result.Case.Caption.Should().Be("Orders v2", because: "the case caption is mapped");
+		result.Case.Filter.Column.Should().Be("UsrType", because: "the case filter is mapped");
+		result.Case.Versions.Select(member => member.Name).Should().Equal(["UsrOrderCase", "UsrOrderCaseCustom1"],
+			because: "the family listed in the case block is mapped in order");
+		result.SourceName.Should().Be("UsrOrderCase", because: "the source member is named");
+		result.Diff.Should().BeSameAs(response.Diff, because: "the diff is passed through");
+		result.Settings.Should().BeSameAs(response.Settings, because: "the link row block is passed through");
+		result.Obligations.Should().BeSameAs(response.Obligations, because: "the obligations are passed through");
+		result.Leftovers.Should().Equal(["UsrOrderCaseCustom1 schema"], because: "the leftovers are passed through");
+		result.Notes.Should().Equal(["note"], because: "the notes are relayed");
+		result.Warnings.Should().Equal(["warning"], because: "the warnings are relayed");
+	}
+
+	[Test]
+	[Description("The result's version blocks inherit the server's fields, so every server field must be MAPPED: each one is set to a value that is not its default, and the result must carry it, or a field added to the wire type for reading would reach the agent at its default (false, 0) as a fact.")]
+	public void VersionBlocks_ShouldMapEveryServerField() {
+		// Arrange
+		ModifyCaseAsNewVersionResponse created = NewVersionResponse("version-created", true);
+		CaseVersionInfo version = Filled<CaseVersionInfo>("version");
+		CaseVersionMemberInfo member = Filled<CaseVersionMemberInfo>("member");
+		CaseVersionInfo previous = Filled<CaseVersionInfo>("previous");
+		AnswerNewVersion(Rebuilt(created, version, member));
+		AnswerActivation(new SetActiveCaseVersionResponse {
+			Success = true, Outcome = "activated", ActiveVersion = version, PreviousActiveVersion = previous
+		});
+
+		// Act
+		ModifyDynamicCaseAsNewVersionResult saved = _service.ModifyAsNewVersion(NewVersionOptions());
+		SetActiveDynamicCaseVersionResult switched = _service.SetActiveVersion(ActivationOptions());
+
+		// Assert
+		using (new AssertionScope()) {
+			foreach (System.Reflection.PropertyInfo property in typeof(CaseVersionInfo).GetProperties()) {
+				property.GetValue(saved.Version).Should().Be(property.GetValue(version),
+					because: $"the new version's '{property.Name}' is a server field the mapping must carry");
+				property.GetValue(switched.ActiveVersion).Should().Be(property.GetValue(version),
+					because: $"the active version's '{property.Name}' is a server field the mapping must carry");
+				property.GetValue(switched.PreviousActiveVersion).Should().Be(property.GetValue(previous),
+					because: $"the previous version's '{property.Name}' is a server field the mapping must carry");
+			}
+			foreach (System.Reflection.PropertyInfo property in typeof(CaseVersionMemberInfo).GetProperties()) {
+				property.GetValue(saved.Case.Versions.Single()).Should().Be(property.GetValue(member),
+					because: $"a family member's '{property.Name}' is a server field the mapping must carry");
+			}
+		}
+	}
+
+	// Every property set to a value that differs from its default and from the same property of another instance.
+	private static T Filled<T>(string tag) where T : new() {
+		T value = new();
+		int index = 0;
+		foreach (System.Reflection.PropertyInfo property in typeof(T).GetProperties()) {
+			index++;
+			object filled = property.PropertyType == typeof(string) ? $"{tag}-{property.Name}"
+				: property.PropertyType == typeof(int) ? index + 40
+				: property.PropertyType == typeof(bool) ? true
+				: throw new InvalidOperationException($"No filler for {property.PropertyType} '{property.Name}'.");
+			property.SetValue(value, filled);
+		}
+		return value;
+	}
+
+	private static ModifyCaseAsNewVersionResponse Rebuilt(ModifyCaseAsNewVersionResponse response,
+		CaseVersionInfo version, CaseVersionMemberInfo member) => new() {
+		Success = response.Success, Outcome = response.Outcome, ErrorCode = response.ErrorCode,
+		ErrorMessage = response.ErrorMessage, Version = version,
+		Case = new BuildCaseCaseInfo {
+			Status = response.Case.Status, SchemaName = response.Case.SchemaName, SchemaUId = response.Case.SchemaUId,
+			PackageName = response.Case.PackageName, EntitySchemaName = response.Case.EntitySchemaName,
+			StageColumnName = response.Case.StageColumnName, Caption = response.Case.Caption,
+			Stages = response.Case.Stages, Filter = response.Case.Filter, Versions = [member]
+		},
+		SourceName = response.SourceName, Diff = response.Diff, Settings = response.Settings,
+		Obligations = response.Obligations, Leftovers = response.Leftovers, Notes = response.Notes,
+		Warnings = response.Warnings
+	};
+
+	[TestCase("version-created", true, true)]
+	[TestCase("failed-leftover", false, true)]
+	[TestCase("planned", true, false)]
+	[TestCase("failed-rolled-back", false, false)]
+	[TestCase("refused", false, false)]
+	[Description("Only a saved version gets a designer link, on the version and on the case block: version-created and failed-leftover; a dry run's UId names nothing yet and a rolled-back or refused one does not exist.")]
+	public void ModifyAsNewVersion_ShouldLinkTheDesigner_OnlyForASavedVersion(string outcome, bool success,
+		bool linked) {
+		// Arrange
+		AnswerNewVersion(NewVersionResponse(outcome, success));
+
+		// Act
+		ModifyDynamicCaseAsNewVersionResult result = _service.ModifyAsNewVersion(NewVersionOptions());
+
+		// Assert
+		result.Success.Should().Be(success, because: "only planned and version-created are a success");
+		if (linked) {
+			result.Version.DesignerUrl.Should().Be(DesignerPrefix + VersionUId,
+				because: "a saved version opens in the designer by its UId");
+			result.Case.DesignerUrl.Should().Be(DesignerPrefix + VersionUId,
+				because: "the version as a case opens in the designer too");
+		} else {
+			result.Version.DesignerUrl.Should().BeNull(because: "a version that was not saved has nothing to open");
+			result.Case.DesignerUrl.Should().BeNull(because: "a case that was not saved has nothing to open");
+		}
+		result.Case.Versions.Should().OnlyContain(
+			member => member.DesignerUrl == (member.HasLinkRow ? DesignerPrefix + member.UId : null),
+			because: "every member the family lists exists, but the designer opens only a member with its own link row");
+	}
+
+	[TestCase("planned")]
+	[TestCase("version-created")]
+	[Description("Regression guard for behaviour that already held: a version the server names without a UId - a dry run's planned version once the package omits it, a saved one never in practice - reaches the result without uId, and no designer link is built from the missing UId, on the version or on the case block; the name stays the handle.")]
+	public void ModifyAsNewVersion_ShouldBuildNoDesignerLink_WhenTheVersionHasNoUId(string outcome) {
+		// Arrange
+		ModifyCaseAsNewVersionResponse answered = NewVersionResponse(outcome, true);
+		AnswerNewVersion(new ModifyCaseAsNewVersionResponse {
+			Success = answered.Success, Outcome = answered.Outcome, SourceName = answered.SourceName,
+			Version = new CaseVersionInfo {
+				Name = "UsrOrderCaseCustom1", Version = 2, PackageName = "UsrOrdersV2", RootName = "UsrOrderCase"
+			},
+			Case = new BuildCaseCaseInfo {
+				Status = answered.Case.Status, SchemaName = answered.Case.SchemaName, SchemaUId = null,
+				PackageName = answered.Case.PackageName, EntitySchemaName = answered.Case.EntitySchemaName,
+				StageColumnName = answered.Case.StageColumnName, Caption = answered.Case.Caption,
+				Stages = answered.Case.Stages
+			},
+			Notes = answered.Notes, Warnings = answered.Warnings
+		});
+
+		// Act
+		ModifyDynamicCaseAsNewVersionResult result = _service.ModifyAsNewVersion(NewVersionOptions());
+
+		// Assert
+		result.Success.Should().BeTrue(because: "a missing UId does not change a successful outcome");
+		result.Version.Name.Should().Be("UsrOrderCaseCustom1", because: "the name is the version's handle");
+		result.Version.UId.Should().BeNull(because: "a UId the server did not name is not invented");
+		result.Version.DesignerUrl.Should().BeNull(because: "a designer link needs the UId it opens");
+		result.Case.SchemaUId.Should().BeNull(because: "the case block names the same version");
+		result.Case.DesignerUrl.Should().BeNull(because: "a designer link needs the UId it opens");
+	}
+
+	[TestCase(true)]
+	[TestCase(false)]
+	[Description("A new-version write answered without an outcome: a failed one is refused, so a refusal never passes as a write, and a successful one is unknown, because the version may have been saved and a blind retry makes another one.")]
+	public void ModifyAsNewVersion_ShouldReadAMissingOutcome_FromTheSuccessFlag(bool success) {
+		// Arrange
+		AnswerNewVersion(new ModifyCaseAsNewVersionResponse { Success = success, ErrorCode = "x", Version = NewVersion() });
+
+		// Act
+		ModifyDynamicCaseAsNewVersionResult result = _service.ModifyAsNewVersion(NewVersionOptions());
+
+		// Assert
+		result.Outcome.Should().Be(success ? DynamicCaseVersionOutcomes.Unknown : DynamicCaseVersionOutcomes.Refused,
+			because: "a failed answer without an outcome is a refusal, and a successful one may have written");
+		if (success) {
+			result.ErrorMessage.Should().Contain("Do NOT retry yet").And.Contain("describe-dynamic-case",
+				because: "a retry of a write whose result is unknown would make one more version");
+		}
+		result.Success.Should().BeFalse(because: "an answer that names no success outcome is never a success");
+		result.Version.DesignerUrl.Should().BeNull(because: "nothing says the version was saved");
+		result.Leftovers.Should().BeEmpty(because: "absent lists are answered empty");
+		result.Notes.Should().BeEmpty(because: "absent lists are answered empty");
+		result.Warnings.Should().BeEmpty(because: "absent lists are answered empty");
+	}
+
+	[TestCase(false, DynamicCaseVersionOutcomes.Unknown)]
+	[TestCase(true, DynamicCaseVersionOutcomes.Refused)]
+	[Description("An outcome clio does not know (a newer package) is unknown on a write and refused on a dry run, never a success and never a plain refusal of a write that may have saved a version.")]
+	public void ModifyAsNewVersion_ShouldReadAnUnknownOutcome_AsUnknownOnAWrite(bool dryRun, string expected) {
+		// Arrange
+		AnswerNewVersion(new ModifyCaseAsNewVersionResponse {
+			Success = true, Outcome = "version-created-elsewhere", Version = NewVersion()
+		});
+
+		// Act
+		ModifyDynamicCaseAsNewVersionResult result = _service.ModifyAsNewVersion(NewVersionOptions(dryRun));
+
+		// Assert
+		result.Outcome.Should().Be(expected, because: "only a dry run is known to have written nothing");
+		result.Success.Should().BeFalse(because: "an outcome clio cannot read is never a success");
+		result.ErrorCode.Should().Be(DynamicCaseErrorCodes.RequestFailed, because: "the answer could not be read");
+		result.ErrorMessage.Should().Contain("version-created-elsewhere", because: "the unread outcome is named");
+		result.Version.DesignerUrl.Should().BeNull(because: "nothing says the version was saved");
+	}
+
+	[TestCase(false, DynamicCaseActivationOutcomes.Unknown)]
+	[TestCase(true, DynamicCaseActivationOutcomes.Refused)]
+	[Description("An activation outcome clio does not know is unknown on a write and refused on a dry run, never a success.")]
+	public void SetActiveVersion_ShouldReadAnUnknownOutcome_AsUnknownOnAWrite(bool dryRun, string expected) {
+		// Arrange
+		AnswerActivation(new SetActiveCaseVersionResponse { Success = true, Outcome = "switched" });
+
+		// Act
+		SetActiveDynamicCaseVersionResult result = _service.SetActiveVersion(ActivationOptions(dryRun));
+
+		// Assert
+		result.Outcome.Should().Be(expected, because: "only a dry run is known to have written nothing");
+		result.Success.Should().BeFalse(because: "an outcome clio cannot read is never a success");
+		result.ErrorMessage.Should().Contain("switched", because: "the unread outcome is named");
+	}
+
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("A 404 to ModifyCaseAsNewVersion is refused as process-builder-without-case-change on a dry run and on a write alike: a missing route proves nothing ran.")]
+	public void ModifyAsNewVersion_ShouldReportProcessBuilderWithoutCaseChange_WhenTheRouteIsMissing(bool dryRun) {
+		// Arrange
+		_session.ModifyAsNewVersion(Arg.Any<ModifyCaseAsNewVersionRequest>()).Returns(
+			new DynamicCaseReply<ModifyCaseAsNewVersionResponse>(DynamicCaseReplyKind.RouteMissing, null,
+				"Endpoint not found."));
+
+		// Act
+		ModifyDynamicCaseAsNewVersionResult result = _service.ModifyAsNewVersion(NewVersionOptions(dryRun));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "the operation is missing");
+		result.Outcome.Should().Be(DynamicCaseVersionOutcomes.Refused, because: "a missing operation wrote nothing");
+		result.ErrorCode.Should().Be(DynamicCaseErrorCodes.ProcessBuilderWithoutCaseChange,
+			because: "only a 404 proves the installed package lacks the operation");
+		result.ErrorMessage.Should().Contain("ModifyCaseAsNewVersion").And.Contain("install-process-builder")
+			.And.Contain("Nothing was written.", because: "the operation, the remedy and the state are named");
+		_session.Received(1).Dispose();
+	}
+
+	[Test]
+	[Description("A request WCF could not read is refused with request-failed even on a write: no operation ran, so the outcome is known.")]
+	public void ModifyAsNewVersion_ShouldReportRequestFailed_WhenTheServerCannotReadTheRequest() {
+		// Arrange
+		_session.ModifyAsNewVersion(Arg.Any<ModifyCaseAsNewVersionRequest>()).Returns(
+			new DynamicCaseReply<ModifyCaseAsNewVersionResponse>(DynamicCaseReplyKind.NotAnEnvelope, null,
+				"The formatter threw an exception while trying to deserialize the message"));
+
+		// Act
+		ModifyDynamicCaseAsNewVersionResult result = _service.ModifyAsNewVersion(NewVersionOptions());
+
+		// Assert
+		result.Outcome.Should().Be(DynamicCaseVersionOutcomes.Refused, because: "an unread request ran nothing");
+		result.ErrorCode.Should().Be(DynamicCaseErrorCodes.RequestFailed, because: "the request could not be read");
+		result.ErrorMessage.Should().Contain("get-tool-contract modify-dynamic-case-as-new-version",
+			because: "the arguments are what to check");
+	}
+
+	[TestCase(DynamicCaseReplyKind.TransportFailure, "timeout")]
+	[TestCase(DynamicCaseReplyKind.NotAnEnvelope, "<html>")]
+	[Description("A write whose answer could not be read is outcome unknown with request-failed, and the message forbids a blind retry and sends the agent to describe-dynamic-case first, because a retry makes one more version no case tool deletes; a version that was saved is changed further in place with modify-dynamic-case.")]
+	public void ModifyAsNewVersion_ShouldReportUnknown_WhenAWriteReplyCannotBeRead(DynamicCaseReplyKind kind,
+		string detail) {
+		// Arrange
+		_session.ModifyAsNewVersion(Arg.Any<ModifyCaseAsNewVersionRequest>()).Returns(
+			new DynamicCaseReply<ModifyCaseAsNewVersionResponse>(kind, null, detail));
+
+		// Act
+		ModifyDynamicCaseAsNewVersionResult result = _service.ModifyAsNewVersion(NewVersionOptions());
+
+		// Assert
+		result.Outcome.Should().Be(DynamicCaseVersionOutcomes.Unknown, because: "the version may have been saved");
+		result.Success.Should().BeFalse(because: "an unknown outcome is not a success");
+		result.ErrorCode.Should().Be(DynamicCaseErrorCodes.RequestFailed, because: "the answer could not be read");
+		result.ErrorMessage.Should().Contain("UNKNOWN").And.Contain("Do NOT retry")
+			.And.Contain("Run describe-dynamic-case on the case first").And.Contain(detail,
+				because: "only the family's members tell whether the version was saved");
+		result.ErrorMessage.Should().NotContain("dry-run=true",
+			because: "every dry run plans one more version, so it cannot tell whether this one was saved");
+		result.ErrorMessage.Should().Contain("no case tool or Case-library action deletes one",
+			because: "a blind retry leaves a version behind that no case tool takes back")
+			.And.NotContain("toolkit cannot delete",
+				because: "an inactive version can be removed the way a case is undone, after the user's yes");
+		result.ErrorMessage.Should().Contain("they show whether the version exists and whether it is active",
+			because: "clio cannot know either, so the message sends the agent to describe for both");
+		result.ErrorMessage.Should().Contain(
+				"A further change to an existing inactive version is made in place with modify-dynamic-case by its case-name",
+				because: "a saved inactive version is changed again in place, not by another version")
+			.And.NotContain("never removed", because: "the message says what the toolkit cannot do, not what nobody can")
+			.And.NotContain("case library", because: "the case library offers no delete for a version");
+		result.Leftovers.Should().BeEmpty(because: "nothing is known to be left");
+		result.Notes.Should().BeEmpty(because: "there is no answer to relay");
+		result.Warnings.Should().BeEmpty(because: "there is no answer to relay");
+	}
+
+	[Test]
+	[Description("On a dry run an unreadable answer is refused with request-failed, not unknown: a dry run writes nothing.")]
+	public void ModifyAsNewVersion_ShouldReportRequestFailed_WhenADryRunReplyCannotBeRead() {
+		// Arrange
+		_session.ModifyAsNewVersion(Arg.Any<ModifyCaseAsNewVersionRequest>()).Returns(
+			new DynamicCaseReply<ModifyCaseAsNewVersionResponse>(DynamicCaseReplyKind.TransportFailure, null, "timeout"));
+
+		// Act
+		ModifyDynamicCaseAsNewVersionResult result = _service.ModifyAsNewVersion(NewVersionOptions(dryRun: true));
+
+		// Assert
+		result.Outcome.Should().Be(DynamicCaseVersionOutcomes.Refused, because: "a dry run writes nothing");
+		result.ErrorCode.Should().Be(DynamicCaseErrorCodes.RequestFailed, because: "the answer could not be read");
+		result.ErrorMessage.Should().Contain("nothing was written").And.Contain("timeout",
+			because: "the caller must know nothing changed, and why the call failed");
+	}
+
+	[Test]
+	[Description("An activation maps the call onto the request: the member trimmed, a blank identity left out and dry-run as validateOnly, through one session.")]
+	public void SetActiveVersion_ShouldMapTheCallOntoTheRequest() {
+		// Arrange
+		AnswerActivation(new SetActiveCaseVersionResponse { Success = true, Outcome = "planned" });
+		SetActiveDynamicCaseVersionOptions byName = ActivationOptions(dryRun: true);
+		byName.VersionName = " UsrOrderCaseCustom1 ";
+		byName.VersionUId = " ";
+		SetActiveDynamicCaseVersionOptions byUId = ActivationOptions();
+		byUId.VersionName = null;
+		byUId.VersionUId = " " + VersionUId + " ";
+
+		// Act
+		_service.SetActiveVersion(byName);
+		_service.SetActiveVersion(byUId);
+
+		// Assert
+		_session.Received(1).SetActiveVersion(Arg.Is<SetActiveCaseVersionRequest>(request =>
+			request.VersionName == "UsrOrderCaseCustom1" && request.VersionUId == null && request.ValidateOnly));
+		_session.Received(1).SetActiveVersion(Arg.Is<SetActiveCaseVersionRequest>(request =>
+			request.VersionName == null && request.VersionUId == VersionUId && !request.ValidateOnly));
+		_session.Received(2).Dispose();
+		_session.DidNotReceive().SetActiveVersion(Arg.Is<SetActiveCaseVersionRequest>(request =>
+			request.ConfirmPackagePosition != null));
+	}
+
+	[Test]
+	[Description("The package-position confirmation is sent as confirmPackagePosition=true only when the user gave it; otherwise the key is left out, so the server keeps refusing an outranked switch.")]
+	public void SetActiveVersion_ShouldSendThePackagePositionConfirmation_OnlyWhenGiven() {
+		// Arrange
+		AnswerActivation(new SetActiveCaseVersionResponse { Success = true, Outcome = "activated" });
+		SetActiveDynamicCaseVersionOptions confirmed = ActivationOptions();
+		confirmed.ConfirmPackagePosition = true;
+
+		// Act
+		_service.SetActiveVersion(confirmed);
+
+		// Assert
+		_session.Received(1).SetActiveVersion(Arg.Is<SetActiveCaseVersionRequest>(request =>
+			request.ConfirmPackagePosition == true));
+	}
+
+	[Test]
+	[Description("The activation result maps every field of the server's read-back and links the designer on the member the call named, which the answer says opens; the previously active member gets no link, since the answer carries no link-row fact for it.")]
+	public void SetActiveVersion_ShouldMapEveryFieldOfTheAnswer_WithTheDesignerLinks() {
+		// Arrange
+		SetActiveCaseVersionResponse response = new() {
+			Success = true,
+			Outcome = "activated",
+			ErrorCode = "code",
+			ErrorMessage = "message",
+			ActiveVersion = NewVersion(active: true),
+			PreviousActiveVersion = RootVersion(),
+			SiblingsStillFlagged = ["UsrOrderCaseCustom2"],
+			DecidedByPackagePosition = ["UsrOrderCaseVendor"],
+			LinkRow = new DynamicCaseSettings { Status = "reused", SysDcmSettingsId = "s2" },
+			Obligations = new DynamicCaseObligations { ReloadOpenPages = true },
+			Leftovers = ["link row"],
+			Notes = ["note"],
+			Warnings = ["warning"]
+		};
+		AnswerActivation(response);
+
+		// Act
+		SetActiveDynamicCaseVersionResult result = _service.SetActiveVersion(ActivationOptions());
+
+		// Assert
+		NullMembers(result).Should().BeEmpty(because: "every field of a complete read-back reaches the result");
+		NullMembers(result.ActiveVersion).Should().BeEmpty(because: "every field of the active member is mapped");
+		NullMembers(result.PreviousActiveVersion).Should().Equal(["DesignerUrl"],
+			because: "every server field of the previous member is mapped, and only the link is left out");
+		result.Success.Should().BeTrue(because: "activated is a success");
+		result.Outcome.Should().Be("activated", because: "the server's outcome is passed through");
+		result.ErrorCode.Should().Be("code", because: "the server's code is passed through");
+		result.ErrorMessage.Should().Be("message", because: "the server's text is passed through");
+		result.ActiveVersion.Name.Should().Be("UsrOrderCaseCustom1", because: "the active member is named");
+		result.ActiveVersion.Version.Should().Be(2, because: "the stored version number is mapped");
+		result.ActiveVersion.PackageName.Should().Be("UsrOrdersV2", because: "the member's package is mapped");
+		result.ActiveVersion.RootName.Should().Be("UsrOrderCase", because: "the family root is mapped");
+		result.ActiveVersion.Active.Should().BeTrue(because: "the read-back says it is active");
+		result.ActiveVersion.DesignerUrl.Should().Be(DesignerPrefix + VersionUId,
+			because: "the active member exists and opens in the designer");
+		result.PreviousActiveVersion.Name.Should().Be("UsrOrderCase", because: "the previous member is named");
+		result.PreviousActiveVersion.DesignerUrl.Should().BeNull(
+			because: "whether the previous member has its own link row is not in the answer, and the designer opens no "
+			+ "other; describe-dynamic-case links it when it opens");
+		result.SiblingsStillFlagged.Should().Equal(["UsrOrderCaseCustom2"], because: "still-flagged siblings are named");
+		result.DecidedByPackagePosition.Should().Equal(["UsrOrderCaseVendor"],
+			because: "members in read-only packages are named");
+		result.LinkRow.Should().BeSameAs(response.LinkRow, because: "the link row added for the member is passed through");
+		result.Obligations.Should().BeSameAs(response.Obligations, because: "the obligations are passed through");
+		result.Leftovers.Should().Equal(["link row"], because: "the leftovers are passed through");
+		result.Notes.Should().Equal(["note"], because: "the notes are relayed");
+		result.Warnings.Should().Equal(["warning"], because: "the warnings are relayed");
+	}
+
+	[TestCase(true)]
+	[TestCase(false)]
+	[Description("An activation write answered without an outcome: a failed one is refused, a successful one is unknown; absent lists are answered empty, and absent members stay absent.")]
+	public void SetActiveVersion_ShouldReadAMissingOutcome_FromTheSuccessFlag(bool success) {
+		// Arrange
+		AnswerActivation(new SetActiveCaseVersionResponse { Success = success, ErrorCode = "x" });
+
+		// Act
+		SetActiveDynamicCaseVersionResult result = _service.SetActiveVersion(ActivationOptions());
+
+		// Assert
+		result.Outcome.Should().Be(success ? DynamicCaseActivationOutcomes.Unknown : DynamicCaseActivationOutcomes.Refused,
+			because: "a failed answer without an outcome is a refusal, and a successful one may have switched");
+		result.Success.Should().BeFalse(because: "an answer that names no success outcome is never a success");
+		result.ActiveVersion.Should().BeNull(because: "a member the server did not name is not invented");
+		result.PreviousActiveVersion.Should().BeNull(because: "a member the server did not name is not invented");
+		result.SiblingsStillFlagged.Should().BeEmpty(because: "absent lists are answered empty");
+		result.DecidedByPackagePosition.Should().BeEmpty(because: "absent lists are answered empty");
+		result.Leftovers.Should().BeEmpty(because: "absent lists are answered empty");
+		result.Notes.Should().BeEmpty(because: "absent lists are answered empty");
+		result.Warnings.Should().BeEmpty(because: "absent lists are answered empty");
+	}
+
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("A 404 to SetActiveCaseVersion is refused as process-builder-without-case-change on a dry run and on a write alike.")]
+	public void SetActiveVersion_ShouldReportProcessBuilderWithoutCaseChange_WhenTheRouteIsMissing(bool dryRun) {
+		// Arrange
+		_session.SetActiveVersion(Arg.Any<SetActiveCaseVersionRequest>()).Returns(
+			new DynamicCaseReply<SetActiveCaseVersionResponse>(DynamicCaseReplyKind.RouteMissing, null,
+				"Endpoint not found."));
+
+		// Act
+		SetActiveDynamicCaseVersionResult result = _service.SetActiveVersion(ActivationOptions(dryRun));
+
+		// Assert
+		result.Outcome.Should().Be(DynamicCaseActivationOutcomes.Refused, because: "a missing operation wrote nothing");
+		result.ErrorCode.Should().Be(DynamicCaseErrorCodes.ProcessBuilderWithoutCaseChange,
+			because: "only a 404 proves the installed package lacks the operation");
+		result.ErrorMessage.Should().Contain("SetActiveCaseVersion").And.Contain("install-process-builder",
+			because: "the operation and the remedy are named");
+		_session.Received(1).Dispose();
+	}
+
+	[Test]
+	[Description("A request WCF could not read is refused with request-failed even on a write: no switch ran.")]
+	public void SetActiveVersion_ShouldReportRequestFailed_WhenTheServerCannotReadTheRequest() {
+		// Arrange
+		_session.SetActiveVersion(Arg.Any<SetActiveCaseVersionRequest>()).Returns(
+			new DynamicCaseReply<SetActiveCaseVersionResponse>(DynamicCaseReplyKind.NotAnEnvelope, null,
+				"The formatter threw an exception while trying to deserialize the message"));
+
+		// Act
+		SetActiveDynamicCaseVersionResult result = _service.SetActiveVersion(ActivationOptions());
+
+		// Assert
+		result.Outcome.Should().Be(DynamicCaseActivationOutcomes.Refused, because: "an unread request ran nothing");
+		result.ErrorCode.Should().Be(DynamicCaseErrorCodes.RequestFailed, because: "the request could not be read");
+		result.ErrorMessage.Should().Contain("get-tool-contract set-active-dynamic-case-version",
+			because: "the arguments are what to check");
+	}
+
+	[TestCase(DynamicCaseReplyKind.TransportFailure, "timeout")]
+	[TestCase(DynamicCaseReplyKind.NotAnEnvelope, "<html>")]
+	[Description("An activation whose answer could not be read is outcome unknown with request-failed, and the message sends the agent to describe-dynamic-case and says repeating the same activation is safe.")]
+	public void SetActiveVersion_ShouldReportUnknown_WhenAWriteReplyCannotBeRead(DynamicCaseReplyKind kind,
+		string detail) {
+		// Arrange
+		_session.SetActiveVersion(Arg.Any<SetActiveCaseVersionRequest>()).Returns(
+			new DynamicCaseReply<SetActiveCaseVersionResponse>(kind, null, detail));
+
+		// Act
+		SetActiveDynamicCaseVersionResult result = _service.SetActiveVersion(ActivationOptions());
+
+		// Assert
+		result.Outcome.Should().Be(DynamicCaseActivationOutcomes.Unknown, because: "the switch may have taken");
+		result.Success.Should().BeFalse(because: "an unknown outcome is not a success");
+		result.ErrorCode.Should().Be(DynamicCaseErrorCodes.RequestFailed, because: "the answer could not be read");
+		result.ErrorMessage.Should().Contain("UNKNOWN").And.Contain("Run describe-dynamic-case")
+			.And.Contain("repeating the same activation is safe").And.Contain(detail,
+				because: "an activation is idempotent, so a repeat answers unchanged once the member is active");
+		result.SiblingsStillFlagged.Should().BeEmpty(because: "nothing is known about the family");
+		result.DecidedByPackagePosition.Should().BeEmpty(because: "nothing is known about the family");
+		result.Leftovers.Should().BeEmpty(because: "nothing is known to be left");
+	}
+
+	[Test]
+	[Description("On a dry run an unreadable activation answer is refused with request-failed, not unknown: a dry run writes nothing.")]
+	public void SetActiveVersion_ShouldReportRequestFailed_WhenADryRunReplyCannotBeRead() {
+		// Arrange
+		_session.SetActiveVersion(Arg.Any<SetActiveCaseVersionRequest>()).Returns(
+			new DynamicCaseReply<SetActiveCaseVersionResponse>(DynamicCaseReplyKind.TransportFailure, null, "timeout"));
+
+		// Act
+		SetActiveDynamicCaseVersionResult result = _service.SetActiveVersion(ActivationOptions(dryRun: true));
+
+		// Assert
+		result.Outcome.Should().Be(DynamicCaseActivationOutcomes.Refused, because: "a dry run writes nothing");
+		result.ErrorCode.Should().Be(DynamicCaseErrorCodes.RequestFailed, because: "the answer could not be read");
+		result.ErrorMessage.Should().Contain("nothing was written", because: "the caller must know nothing changed");
+	}
+
+	[Test]
+	[Description("A described member that its family lists without a link row gets no designer link on the case block either: the case designer opens only a member that has one.")]
+	public void Describe_ShouldLeaveTheCaseLinkOut_WhenTheDescribedMemberHasNoLinkRow() {
+		// Arrange
+		BuildCaseCaseInfo draft = new() {
+			Status = "existing", SchemaName = "UsrOrderCaseCustom1", SchemaUId = VersionUId,
+			Stages = ExistingCase().Stages,
+			Versions = [Member("UsrOrderCase", CaseUId, 1, true), Member("UsrOrderCaseCustom1", VersionUId, 2, false)]
+		};
+		_session.Describe(Arg.Any<DescribeCaseRequest>()).Returns(new DynamicCaseReply<DescribeCaseResponse>(
+			DynamicCaseReplyKind.Envelope, new DescribeCaseResponse { Success = true, Cases = [draft] }, null));
+
+		// Act
+		DescribeDynamicCaseResult result = _service.Describe(DescribeOptions());
+
+		// Assert
+		result.Cases[0].DesignerUrl.Should().BeNull(
+			because: "the described member has no link row, so a link to it would not open");
+		result.Cases[0].Versions[0].DesignerUrl.Should().Be(DesignerPrefix + CaseUId,
+			because: "the member that has a link row keeps its link");
+	}
+
+	[TestCase("planned", true, "planned", false)]
+	[TestCase("planned", true, null, true)]
+	[TestCase("activated", false, "reused", true)]
+	[TestCase("activated", false, null, true)]
+	[Description("The target gets a designer link only when it has its own link row: not while a dry run only plans one (status planned), but when the switch created one or the answer adds none because it had one; the previously active member gets none, since the answer says nothing of its link row.")]
+	public void SetActiveVersion_ShouldLinkTheTarget_OnlyWhenItHasALinkRow(string outcome, bool dryRun,
+		string linkRowStatus, bool linked) {
+		// Arrange
+		AnswerActivation(new SetActiveCaseVersionResponse {
+			Success = true, Outcome = outcome, ActiveVersion = NewVersion(active: true),
+			PreviousActiveVersion = RootVersion(),
+			LinkRow = linkRowStatus is null ? null : new DynamicCaseSettings { Status = linkRowStatus, SysDcmSettingsId = "s2" }
+		});
+
+		// Act
+		SetActiveDynamicCaseVersionResult result = _service.SetActiveVersion(ActivationOptions(dryRun));
+
+		// Assert
+		result.ActiveVersion.DesignerUrl.Should().Be(linked ? DesignerPrefix + VersionUId : null,
+			because: "the case designer opens only a member that has its own link row");
+		result.PreviousActiveVersion.DesignerUrl.Should().BeNull(
+			because: "the answer carries no link-row fact for a member other than the target");
+	}
+
+	[Test]
+	[Description("A failed-not-restored switch that left another member active links neither member: the target's link row says nothing of the member really active, and the previously active one carries no link-row fact either.")]
+	public void SetActiveVersion_ShouldLinkNoMember_WhenTheActiveOneIsNotTheTarget() {
+		// Arrange
+		AnswerActivation(new SetActiveCaseVersionResponse {
+			Success = false, Outcome = "failed-not-restored", ErrorCode = "write-failed",
+			ActiveVersion = RootVersion(), PreviousActiveVersion = RootVersion()
+		});
+
+		// Act
+		SetActiveDynamicCaseVersionResult result = _service.SetActiveVersion(ActivationOptions());
+
+		// Assert
+		result.ActiveVersion.Name.Should().Be("UsrOrderCase", because: "the member really active is named");
+		result.ActiveVersion.DesignerUrl.Should().BeNull(
+			because: "the member really active is not the one the call named, so its link row is not known");
+		result.PreviousActiveVersion.DesignerUrl.Should().BeNull(
+			because: "the answer carries no link-row fact for a member other than the target");
+	}
+
+	[TestCase(null)]
+	[TestCase("D")]
+	[TestCase("B")]
+	[TestCase("N")]
+	[Description("The repeat after failed-not-restored names the target as both the active and the previous member; being the target, both blocks get its link once the answer says it has a link row, whether the call named it by name or by UId in any GUID format the server accepts.")]
+	public void SetActiveVersion_ShouldLinkThePreviousMember_WhenItIsTheTarget(string uIdFormat) {
+		// Arrange
+		AnswerActivation(new SetActiveCaseVersionResponse {
+			Success = true, Outcome = "activated", ActiveVersion = NewVersion(active: true),
+			PreviousActiveVersion = NewVersion(active: true)
+		});
+		SetActiveDynamicCaseVersionOptions options = ActivationOptions();
+		if (uIdFormat is not null) {
+			options.VersionName = null;
+			options.VersionUId = Guid.Parse(VersionUId).ToString(uIdFormat).ToUpperInvariant();
+		}
+
+		// Act
+		SetActiveDynamicCaseVersionResult result = _service.SetActiveVersion(options);
+
+		// Assert
+		result.ActiveVersion.DesignerUrl.Should().Be(DesignerPrefix + VersionUId,
+			because: "the target had its own link row, so the answer added none");
+		result.PreviousActiveVersion.DesignerUrl.Should().Be(DesignerPrefix + VersionUId,
+			because: "the previous member is the target itself, whose link row the answer vouches for");
+	}
+
+	[Test]
+	[Description("A describe maps each case's version family with every member field and a designer link per member that has its own link row, and leaves versions absent for a case that lists none.")]
+	public void Describe_ShouldMapTheVersions_WithADesignerLinkPerMember() {
+		// Arrange
+		BuildCaseCaseInfo withFamily = ExistingCase();
+		BuildCaseCaseInfo family = new() {
+			Status = withFamily.Status, SchemaName = withFamily.SchemaName, SchemaUId = withFamily.SchemaUId,
+			Stages = withFamily.Stages,
+			Versions = [Member("UsrOrderCase", CaseUId, 1, true), Member("UsrOrderCaseCustom1", VersionUId, 2, false)]
+		};
+		_session.Describe(Arg.Any<DescribeCaseRequest>()).Returns(new DynamicCaseReply<DescribeCaseResponse>(
+			DynamicCaseReplyKind.Envelope, new DescribeCaseResponse {
+				Success = true, Cases = [family, ExistingCase()]
+			}, null));
+
+		// Act
+		DescribeDynamicCaseResult result = _service.Describe(DescribeOptions());
+
+		// Assert
+		List<DynamicCaseVersionMember> versions = result.Cases[0].Versions;
+		versions.Should().HaveCount(2, because: "every member of the family is listed");
+		NullMembers(versions[1]).Should().Equal(["DesignerUrl"],
+			because: "every field of a member reaches the result, and only the link is left out for a member the designer cannot open");
+		versions[0].Name.Should().Be("UsrOrderCase", because: "the member's name is mapped");
+		versions[0].UId.Should().Be(CaseUId, because: "the member's UId is mapped");
+		versions[0].Version.Should().Be(1, because: "the stored version number is mapped");
+		versions[0].PackageName.Should().Be(Package, because: "the member's package is mapped");
+		versions[0].PackageReadOnly.Should().BeFalse(because: "the member's package accepts changes");
+		versions[0].Active.Should().BeTrue(because: "the platform's pick is mapped");
+		versions[0].RunningInstances.Should().Be(3, because: "the member's running cases are mapped");
+		versions[0].HasLinkRow.Should().BeTrue(because: "the member's link row is mapped");
+		versions[0].IsDelivered.Should().BeFalse(because: "the stored IsDelivered is mapped");
+		versions[1].PackageReadOnly.Should().BeTrue(because: "a read-only package is reported");
+		versions[1].Active.Should().BeFalse(because: "an inactive member is reported");
+		versions[1].RunningInstances.Should().Be(6, because: "each member's own running cases are mapped");
+		versions[1].HasLinkRow.Should().BeFalse(because: "a member without a link row is reported");
+		versions[1].IsDelivered.Should().BeTrue(because: "the stored IsDelivered is mapped");
+		versions[0].DesignerUrl.Should().Be(DesignerPrefix + CaseUId, because: "a member with a link row opens in the designer");
+		versions[1].DesignerUrl.Should().BeNull(because: "the case designer opens only a member that has its own link row");
+		result.Cases[1].Versions.Should().BeNull(
+			because: "a case that is the only member of its family lists no versions");
+	}
+
+	[Test]
+	[Description("A modify passes the link row the server added for an inactive member through, and leaves it absent when the server sent none.")]
+	public void Modify_ShouldPassTheLinkRowThrough() {
+		// Arrange
+		DynamicCaseSettings linkRow = new() { Status = "reused", SysDcmSettingsId = "s2", Bindings = ["UsrOrders"] };
+		_session.Modify(Arg.Any<ModifyCaseRequest>()).Returns(
+			new DynamicCaseReply<ModifyCaseResponse>(DynamicCaseReplyKind.Envelope,
+				new ModifyCaseResponse { Success = true, Outcome = "modified", Case = ExistingCase(), LinkRow = linkRow },
+				null),
+			new DynamicCaseReply<ModifyCaseResponse>(DynamicCaseReplyKind.Envelope,
+				new ModifyCaseResponse { Success = true, Outcome = "modified", Case = ExistingCase() }, null));
+
+		// Act
+		ModifyDynamicCaseResult withLinkRow = _service.Modify(ModifyOptions());
+		ModifyDynamicCaseResult withoutLinkRow = _service.Modify(ModifyOptions());
+
+		// Assert
+		withLinkRow.LinkRow.Should().BeSameAs(linkRow, because: "the designer needs the added link row to open the member");
+		withoutLinkRow.LinkRow.Should().BeNull(because: "a member that had a link row gets none added");
 	}
 }

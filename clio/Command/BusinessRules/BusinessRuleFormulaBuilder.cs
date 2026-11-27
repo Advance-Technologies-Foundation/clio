@@ -150,7 +150,7 @@ internal static class BusinessRuleFormulaBuilder {
 		string path,
 		string fieldName) {
 		if (!attributeMap.TryGetValue(path, out BusinessRuleAttributeDescriptor? descriptor)) {
-			throw new ArgumentException($"Unknown attribute '{path}' in {fieldName}.");
+			throw new UnknownBusinessRuleAttributeException(path, fieldName);
 		}
 		return descriptor;
 	}

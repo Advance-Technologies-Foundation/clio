@@ -711,10 +711,31 @@ http.createServer((request, response) => {
         // hand-rolled split answer the wrong value, and the parser also does the percent-decoding.
         const query = new URL(url, "http://127.0.0.1").searchParams;
         const splitList = (value) => (value ? value.split(",") : []);
+        // $expand splits on top-level commas only: Account($select=Id,Name),Owner is two entries, and an
+        // entry's nested $select names the columns of the expanded record (ENG-107610).
+        const splitExpand = (value) => {
+          if (!value) { return []; }
+          const entries = [];
+          let depth = 0;
+          let start = 0;
+          for (let index = 0; index < value.length; index++) {
+            const character = value[index];
+            if (character === "(") { depth++; }
+            else if (character === ")") { depth--; }
+            else if (character === "," && depth === 0) { entries.push(value.slice(start, index)); start = index + 1; }
+          }
+          entries.push(value.slice(start));
+          return entries.map((entry) => {
+            const open = entry.indexOf("(");
+            if (open < 0) { return { nav: entry, columns: [] }; }
+            const options = entry.slice(open + 1, -1);
+            return { nav: entry.slice(0, open), columns: options.replace("$select=", "").split(",") };
+          });
+        };
         const projection = splitList(query.get("$select"));
-        const expanded = splitList(query.get("$expand"));
+        const expanded = splitExpand(query.get("$expand"));
         const fragment = config.ODataEntity + "("
-          + projection.concat(expanded.map((nav) => nav + "()")).join(",") + ")";
+          + projection.concat(expanded.map((entry) => entry.nav + "(" + entry.columns.join(",") + ")")).join(",") + ")";
         // Object.create(null) so a column literally named __proto__ or constructor becomes an own
         // property of the answer instead of mutating/ignoring an inherited one.
         const record = Object.assign(Object.create(null), { Id: "00000000-0000-0000-0000-000000000001" });
@@ -723,8 +744,14 @@ http.createServer((request, response) => {
             record[column] = "probe";
           }
         }
-        for (const nav of expanded) {
-          record[nav] = { Id: "00000000-0000-0000-0000-000000000002", Name: "probe" };
+        for (const entry of expanded) {
+          const nested = Object.assign(Object.create(null), { Id: "00000000-0000-0000-0000-000000000002" });
+          for (const column of (entry.columns.length > 0 ? entry.columns : ["Name"])) {
+            if (column !== "Id") {
+              nested[column] = "probe";
+            }
+          }
+          record[entry.nav] = nested;
         }
         sendJson(response, 200, {
           "@odata.context": "http://127.0.0.1/odata/$metadata#" + fragment,

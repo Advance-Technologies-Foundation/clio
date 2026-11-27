@@ -87,6 +87,118 @@ public sealed class CreateBusinessProcessServiceTests {
 		return new CreateBusinessProcessService(settings, factory, urlBuilder, Substitute.For<IProcessPageFactsChecker>(), Substitute.For<ILogger>());
 	}
 
+	[TestCase(200, "{\"BuildProcessResult\":{\"success\":false,\"errorMessage\":\"Element 'Start1' has no outgoing flow\"}}",
+		"Element 'Start1' has no outgoing flow", "json",
+		TestName = "BuildProcess_ShouldRecordTheSiteAnswer_WhenTheServerRefusesTheBuild")]
+	[TestCase(500, "<html><title>500 - Internal server error.</title></html>", null, "html",
+		TestName = "BuildProcess_ShouldRecordTheSiteAnswer_WhenTheAnswerIsAnHtmlPage")]
+	[TestCase(502, "", null, "empty", TestName = "BuildProcess_ShouldRecordTheSiteAnswer_WhenTheAnswerIsEmpty")]
+	[Description("A refused build records the site's own answer: its status and, from the wrapped envelope, its message")]
+	public void BuildProcess_ShouldRecordTheSiteAnswer(int status, string body, string message, string kind) {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient, IStatusPreservingApplicationClient>();
+		((IStatusPreservingApplicationClient)client)
+			.SendKeepingStatus(default, default, default, default, default, default, default)
+			.ReturnsForAnyArgs(new SiteHttpResponse(status, body));
+		CreateBusinessProcessService service = CreateService(client, out _);
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin();
+
+		// Act
+		Action act = () => service.BuildProcess(Env, new CreateBusinessProcessRequest(SampleDescriptor));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>();
+		capture.Last.Should().BeEquivalentTo(new SiteResponse(status, message, null, kind));
+	}
+
+	[TestCase(413, "<html>Request Entity Too Large</html>", true, true,
+		TestName = "BuildProcess_ShouldProveNotCreated_WhenTheDeclaredBuildIsRefusedWithoutProcessing")]
+	[TestCase(414, "", true, true, TestName = "BuildProcess_ShouldProveNotCreated_WhenA414RefusesTheDeclaredBuild")]
+	[TestCase(413, "<html>Request Entity Too Large</html>", false, false,
+		TestName = "BuildProcess_ShouldNotProve_WhenTheCaptureIsNotDeclared")]
+	[Description("BuildProcess is create-business-process's one write: a refusal without processing says NOT created and, in the declared capture, proves it")]
+	public void BuildProcess_ShouldSayNotCreated_WhenRefusedWithoutProcessing(int status, string body, bool declared,
+		bool proves) {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient, IStatusPreservingApplicationClient>();
+		((IStatusPreservingApplicationClient)client)
+			.SendKeepingStatus(default, default, default, default, default, default, default)
+			.ReturnsForAnyArgs(new SiteHttpResponse(status, body));
+		CreateBusinessProcessService service = CreateService(client, out _);
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin(soleWriteCall: declared);
+
+		// Act
+		Action act = () => service.BuildProcess(Env, new CreateBusinessProcessRequest(SampleDescriptor));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage(
+			$"The environment refused BuildProcess without processing it (HTTP {status}), so the process was NOT created.*",
+			because: "the status proves BuildProcess did not run, so the result must not read as unknown");
+		capture.LastProvesNothingApplied.Should().Be(proves);
+	}
+
+	[TestCase(403, "<html>Forbidden</html>", TestName = "BuildProcess_ShouldNotSayNotCreated_WhenA403PageAnswers")]
+	[TestCase(401, "", TestName = "BuildProcess_ShouldNotSayNotCreated_WhenAnEmpty401Answers")]
+	[TestCase(401, "{\"Message\":\"Authentication failed.\",\"StackTrace\":null,\"ExceptionType\":\"System.Security.Authentication.AuthenticationException\"}", TestName = "BuildProcess_ShouldNotSayNotCreated_WhenTheAuthenticationEnvelopeAnswers")]
+	[Description("A 403 can follow a backend that ran, and a 401 answers creatio.client's hidden second send: neither proves BuildProcess did not run")]
+	public void BuildProcess_ShouldNotSayNotCreated_WhenTheStatusProvesNothing(int status, string body) {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient, IStatusPreservingApplicationClient>();
+		((IStatusPreservingApplicationClient)client)
+			.SendKeepingStatus(default, default, default, default, default, default, default)
+			.ReturnsForAnyArgs(new SiteHttpResponse(status, body));
+		CreateBusinessProcessService service = CreateService(client, out _);
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin(soleWriteCall: true);
+
+		// Act
+		Action act = () => service.BuildProcess(Env, new CreateBusinessProcessRequest(SampleDescriptor));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().Where(exception => !exception.Message.Contains("NOT created"),
+			because: "such an answer can follow a process that was saved");
+		capture.LastProvesNothingApplied.Should().BeFalse();
+	}
+
+	[Test]
+	[Description("A 403 that carries BuildProcess's own envelope is read as that envelope, never as proof of no write")]
+	public void BuildProcess_ShouldReadTheEnvelope_WhenA403CarriesIt() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient, IStatusPreservingApplicationClient>();
+		((IStatusPreservingApplicationClient)client)
+			.SendKeepingStatus(default, default, default, default, default, default, default)
+			.ReturnsForAnyArgs(new SiteHttpResponse(403,
+				"{\"BuildProcessResult\":{\"success\":false,\"errorMessage\":\"No rights to the package\"}}"));
+		CreateBusinessProcessService service = CreateService(client, out _);
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin(soleWriteCall: true);
+
+		// Act
+		Action act = () => service.BuildProcess(Env, new CreateBusinessProcessRequest(SampleDescriptor));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("No rights to the package*");
+		capture.LastProvesNothingApplied.Should().BeFalse(
+			because: "the application wrote that envelope, so it may have saved part of the process first");
+	}
+
+	[Test]
+	[Description("A successful build records nothing")]
+	public void BuildProcess_ShouldRecordNothing_WhenTheBuildSucceeds() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient, IStatusPreservingApplicationClient>();
+		((IStatusPreservingApplicationClient)client)
+			.SendKeepingStatus(default, default, default, default, default, default, default)
+			.ReturnsForAnyArgs(new SiteHttpResponse(200,
+				"{\"BuildProcessResult\":{\"success\":true,\"schemaName\":\"UsrP\",\"schemaUId\":\"5c58c4c4-134b-4744-9c67-96d9c69c9d55\"}}"));
+		CreateBusinessProcessService service = CreateService(client, out _);
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin();
+
+		// Act
+		service.BuildProcess(Env, new CreateBusinessProcessRequest(SampleDescriptor));
+
+		// Assert
+		capture.Last.Should().BeNull();
+	}
+
 	[Test]
 	[Description("Reads the server's warnings[] off a SUCCESSFUL build. The create side shipped this member with no test at all while the modify side had four, which is the asymmetry a review found: an undeclared or misspelled member deserializes to null with nothing red anywhere, so the channel would look plumbed and carry nothing. The classes it carries are connection notices and pre-configured-page sync notices - NOT the two formula cases the doc used to name, which went with the package's own validator.")]
 	public void BuildProcess_ShouldReadWarnings_WhenServerReportsThemOnASuccessfulBuild() {

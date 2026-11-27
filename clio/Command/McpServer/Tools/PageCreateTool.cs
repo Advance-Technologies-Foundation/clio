@@ -27,10 +27,11 @@ public sealed class PageCreateTool(
 	[Description("Create a new Freedom UI page schema from a supported template. Use `list-page-templates` first to discover valid template values. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
 		"To create a DASHBOARD, use `template` `BaseDashboardTemplate` and pass its link-back properties through `optional-properties` (DashboardsEntitySchemaName / DashboardsElementName / DashboardsClientUnitSchemaUId) — call get-guidance with name `dashboard-creation` FIRST to learn how to retrieve each value (including the root-schema UId rule). " +
 		"To create a HOME PAGE (template `BaseHomePage`), also bind it to a workplace (SysWorkplace.HomePageUId) — call get-guidance with name `home-page`. " +
+		"For `BaseHomePage` and `BaseDashboardTemplate` the `caption` is REQUIRED and must differ from `schema-name`: it is the title shown in the page header, so pass the human-readable name the user asked for. " +
 		"To create a DESKTOP (a desktop-selector workspace), use `template` `CentralAreaDesktopTemplate` — call get-guidance with name `desktop-page` FIRST. " +
 		"Page business rules (conditional visibility/editability/required) are separate artifacts — call get-guidance with name business-rules to learn more.")]
 	public PageCreateResponse CreatePage(
-		[Description("Parameters: schema-name, template, package-name (required); caption, description, entity-schema-name, optional-properties (optional); environment-name preferred; uri/login/password emergency fallback only.")]
+		[Description("Parameters: schema-name, template, package-name (required); caption (required for BaseHomePage and BaseDashboardTemplate, optional otherwise), description, entity-schema-name, optional-properties (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] PageCreateArgs args) {
 		PageCreateOptions options = new() {
 			SchemaName = args.SchemaName,
@@ -44,7 +45,8 @@ public sealed class PageCreateTool(
 			Login = args.Login,
 			Password = args.Password,
 			CaptionCulture = args.CaptionCulture,
-			OptionalProperties = args.OptionalProperties
+			OptionalProperties = args.OptionalProperties,
+			RequireHeaderCaption = true
 		};
 		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
 			return new PageCreateResponse {
@@ -74,7 +76,9 @@ public sealed class PageCreateTool(
 					: response.Note + " " + CommandExecutionResult.CompileNotRequiredNote;
 			}
 			return response;
-		});
+		// One create-page call sends one write, the save: the template, catalog and hierarchy reads come before
+		// it, and the design-package read after it runs only when it succeeded.
+		}, soleWriteCall: true);
 	}
 }
 
@@ -99,7 +103,7 @@ public sealed record PageCreateArgs(
 	string PackageName,
 
 	[property: JsonPropertyName("caption")]
-	[property: Description("Optional display caption. Defaults to schema-name when omitted.")]
+	[property: Description("Display caption: the page title shown in the page header. Pass the human-readable name the user asked for. REQUIRED for templates BaseHomePage and BaseDashboardTemplate, where a missing caption or one equal to schema-name is refused before any write. For other templates it is optional and defaults to schema-name.")]
 	string? Caption = null,
 
 	[property: JsonPropertyName("description")]

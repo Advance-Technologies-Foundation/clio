@@ -62,7 +62,7 @@ Rejected:
 ## Behaviour common to the seven
 
 - Request: `POST <site>[/0]/rest/SsoSecurityEventsSettingsService/<Method>`, routes registered in
-  `ServiceUrlBuilder.KnownRoute` 131-137; a JSON body with named members, a member without a value left out so the
+  `ServiceUrlBuilder.KnownRoute` 133-139; a JSON body with named members, a member without a value left out so the
   service uses its default.
 - A call that changes the site is sent once (`ExecuteNonReplayablePostRequest`, one attempt): a timed-out turn-off,
   test event or remove is never repeated behind the caller's back. `get-sso-security-events` keeps the command's

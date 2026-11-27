@@ -16,6 +16,14 @@ namespace Clio.Command.McpServer;
 /// </remarks>
 internal static class McpResultSize
 {
+	/// <summary>
+	/// The size a tool reply aims to stay within, in the bytes <see cref="Of{T}"/> measures: Copilot CLI hands a tool
+	/// result to the model whole up to 20,480 bytes and writes a larger one to a file, which the agent then reads back in
+	/// pieces, one model request per piece. 18,000 leaves about 2 KB under that line. A tool whose reply can grow with
+	/// the data (a WSDL, a web service, a response body) narrows or cuts it to this size.
+	/// </summary>
+	internal const int InlineReplyBudgetBytes = 18_000;
+
 	private static readonly JsonSerializerOptions SerializerOptions = BindingsModule.CreateMcpSerializerOptions();
 
 	/// <summary>

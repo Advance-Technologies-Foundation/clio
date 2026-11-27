@@ -103,7 +103,7 @@ public sealed class ODataReadTool(
 	private ODataReadResponse ReadCore(ODataReadArgs args, string correlationId) {
 		try {
 			string? argumentError = ValidateAndNormalizeArguments(args, ArgumentAliases, ValidArgumentsHint,
-				out string[]? selectColumns, out string[]? expandColumns);
+				out string[]? selectColumns, out ODataExpandEntry[]? expandEntries);
 			if (argumentError is not null) {
 				return ODataReadResponse.Failure(argumentError, ODataReadErrorCodes.Argument);
 			}
@@ -121,14 +121,14 @@ public sealed class ODataReadTool(
 			IApplicationClient client = commandResolver.Resolve<IApplicationClient>(options);
 			IServiceUrlBuilder urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
 
-			string url = urlBuilder.Build(BuildRequestPath(args, selectColumns, expandColumns));
+			string url = urlBuilder.Build(BuildRequestPath(args, selectColumns, expandEntries));
 
 			string responseJson = client.ExecuteGetRequest(url, 30_000);
 			ODataReadResponse response = ParseODataResponse(responseJson, args, correlationId);
 			//Only a rejected query pays for the multi-megabyte $metadata document: this tool runs in a
 			//per-call worker, so a pre-flight check would fetch it on every read. The explanation is appended
 			//to the rejection, never substituted for it; unavailable metadata leaves the rejection as it was.
-			return ODataReadColumnValidation.Explain(response, client, urlBuilder, args, selectColumns, expandColumns);
+			return ODataReadColumnValidation.Explain(response, client, urlBuilder, args, selectColumns, expandEntries);
 		} catch (Exception ex) {
 			//The transport swallows connection failures into an empty body, so what reaches here is
 			//mostly environment resolution and client construction - still a transport-class failure
@@ -198,13 +198,13 @@ public sealed class ODataReadTool(
 	/// <param name="argumentAliases">Alias map for the CALLING tool, whose accepted argument set may be wider.</param>
 	/// <param name="validArgumentsHint">The calling tool's list of accepted arguments, quoted in the rejection.</param>
 	/// <param name="selectColumns">The normalized $select list, or null when select was omitted.</param>
-	/// <param name="expandColumns">The normalized $expand list, or null when expand was omitted.</param>
+	/// <param name="expandEntries">The parsed $expand entries, or null when expand was omitted.</param>
 	/// <returns>The contract message when an argument is not accepted; otherwise null.</returns>
 	internal static string? ValidateAndNormalizeArguments(ODataReadArgs args,
 			IReadOnlyDictionary<string, string> argumentAliases, string validArgumentsHint,
-			out string[]? selectColumns, out string[]? expandColumns) {
+			out string[]? selectColumns, out ODataExpandEntry[]? expandEntries) {
 		selectColumns = null;
-		expandColumns = null;
+		expandEntries = null;
 		if (args.ExtensionData?.ContainsKey("filter") == true) {
 			return "Argument 'filter' is unsupported because raw filter strings are not accepted. " +
 				"Use a structured filter, for example: " +
@@ -224,13 +224,14 @@ public sealed class ODataReadTool(
 		if (!TryNormalizeColumnList(args.Select, "select", out selectColumns, out string? selectError)) {
 			return selectError;
 		}
-		if (!TryNormalizeColumnList(args.Expand, "expand", out expandColumns, out string? expandError)) {
+		//expand is parsed entry by entry (navigation path + optional nested $select), which holds it to the
+		//member-path rule and refuses every other nested option in the same pass.
+		if (!TryNormalizeExpandList(args.Expand, out expandEntries, out string? expandError)) {
 			return expandError;
 		}
-		//Validated on the NORMALIZED lists so both accepted shapes - the array and the comma-separated
+		//Validated on the NORMALIZED list so both accepted shapes - the array and the comma-separated
 		//string - are held to the same member-path rule.
-		string? projectionError = ValidateMemberList("select", selectColumns)
-			?? ValidateMemberList("expand", expandColumns)
+		string? projectionError = ValidateSelectList(selectColumns)
 			?? ValidateOrderBy(args.OrderBy);
 		if (projectionError is not null) {
 			return projectionError;
@@ -267,8 +268,9 @@ public sealed class ODataReadTool(
 	}
 
 	/// <summary>
-	/// Applies the filter-field rule to <c>select</c> and <c>expand</c>: every element must be a plain
-	/// OData member path.
+	/// Applies the filter-field rule to <c>select</c>: every element must be a plain OData member path.
+	/// <c>expand</c> is held to the same rule by <see cref="ODataExpandEntry.TryParse"/>, which additionally
+	/// admits a nested <c>$select</c> of plain names.
 	/// </summary>
 	/// <remarks>
 	/// These were the only caller-supplied names that reached the query string unchecked, and since
@@ -278,13 +280,13 @@ public sealed class ODataReadTool(
 	/// with a message the caller is not allowed to read. It runs on the NORMALIZED list, so the
 	/// comma-separated string form is split into names first and each name is then held to the same rule.
 	/// </remarks>
-	private static string? ValidateMemberList(string argumentName, IReadOnlyList<string>? members) {
+	private static string? ValidateSelectList(IReadOnlyList<string>? members) {
 		if (members is null) {
 			return null;
 		}
 		for (int index = 0; index < members.Count; index++) {
 			if (!ODataKeyFormatter.IsValidMemberPath(members[index])) {
-				return $"{argumentName}[{index}] must be an OData member path containing only letters, digits, "
+				return $"select[{index}] must be an OData member path containing only letters, digits, "
 					+ "underscores, and '/' separators; nested query options are not supported.";
 			}
 		}
@@ -333,7 +335,47 @@ public sealed class ODataReadTool(
 	/// <param name="error">The contract message when the shape is not accepted.</param>
 	/// <returns><see langword="false"/> when the supplied shape is not accepted.</returns>
 	internal static bool TryNormalizeColumnList(JsonElement? value, string argumentName,
-			out string[]? columns, out string? error) {
+			out string[]? columns, out string? error) =>
+		TryNormalizeList(value, argumentName,
+			raw => raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+			out columns, out error);
+
+	/// <summary>
+	/// Normalizes and parses <c>expand</c>: the same two shapes as <see cref="TryNormalizeColumnList"/>, except
+	/// that the string form splits only on top-level commas, so <c>"Account($select=Id,Name),Owner"</c> is two
+	/// entries. Each entry must be a navigation path with an optional nested <c>$select</c> of plain names
+	/// (<see cref="ODataExpandEntry.TryParse"/>); any other nested option is refused.
+	/// </summary>
+	/// <param name="value">The raw JSON value supplied for expand, if any.</param>
+	/// <param name="entries">The parsed entries, or null when expand was omitted or empty.</param>
+	/// <param name="error">The contract message when the value or one of its entries is not accepted.</param>
+	/// <returns><see langword="false"/> when expand is not accepted.</returns>
+	internal static bool TryNormalizeExpandList(JsonElement? value, out ODataExpandEntry[]? entries,
+			out string? error) {
+		entries = null;
+		if (!TryNormalizeList(value, "expand", ODataExpandEntry.SplitTopLevel, out string[]? texts, out error)) {
+			return false;
+		}
+		if (texts is null) {
+			return true;
+		}
+		var parsed = new ODataExpandEntry[texts.Length];
+		for (int index = 0; index < texts.Length; index++) {
+			if (!ODataExpandEntry.TryParse(texts[index], out ODataExpandEntry? entry)) {
+				error = $"expand[{index}] must be a navigation path containing only letters, digits, underscores, "
+					+ "and '/' separators, optionally followed by a nested select in the form "
+					+ $"{ODataExpandEntry.AcceptedForm} whose names are plain field names; "
+					+ $"not supported: {ODataExpandEntry.RejectedNestedOptions}.";
+				return false;
+			}
+			parsed[index] = entry;
+		}
+		entries = parsed;
+		return true;
+	}
+
+	private static bool TryNormalizeList(JsonElement? value, string argumentName,
+			Func<string, IEnumerable<string>> splitString, out string[]? columns, out string? error) {
 		columns = null;
 		error = null;
 		if (value is not { } element || element.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null) {
@@ -344,8 +386,7 @@ public sealed class ODataReadTool(
 			case JsonValueKind.String:
 				string? raw = element.GetString();
 				if (!string.IsNullOrWhiteSpace(raw)) {
-					parsed.AddRange(raw.Split(',',
-						StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+					parsed.AddRange(splitString(raw));
 				}
 				break;
 			case JsonValueKind.Array:
@@ -497,12 +538,13 @@ public sealed class ODataReadTool(
 	/// <summary>Builds the OData request path both read paths issue, including the query string.</summary>
 	/// <param name="args">The bound tool arguments.</param>
 	/// <param name="selectColumns">Normalized $select list, or null.</param>
-	/// <param name="expandColumns">Normalized $expand list, or null.</param>
-	internal static string BuildRequestPath(ODataReadArgs args, string[]? selectColumns, string[]? expandColumns) =>
-		$"odata/{args.Entity.Trim()}{BuildQueryString(args, selectColumns, expandColumns)}";
+	/// <param name="expandEntries">Parsed $expand entries, or null.</param>
+	internal static string BuildRequestPath(ODataReadArgs args, string[]? selectColumns,
+			IReadOnlyList<ODataExpandEntry>? expandEntries) =>
+		$"odata/{args.Entity.Trim()}{BuildQueryString(args, selectColumns, expandEntries)}";
 
 	private static string BuildQueryString(ODataReadArgs args, string[]? selectColumns,
-			string[]? expandColumns) {
+			IReadOnlyList<ODataExpandEntry>? expandEntries) {
 		var parts = new List<string>();
 
 		string? effectiveFilter = args.Filters is not null ? BuildFilterFromStructured(args.Filters) : null;
@@ -514,8 +556,9 @@ public sealed class ODataReadTool(
 			parts.Add($"$select={Uri.EscapeDataString(string.Join(",", selectColumns))}");
 		}
 
-		if (expandColumns is { Length: > 0 }) {
-			parts.Add($"$expand={Uri.EscapeDataString(string.Join(",", expandColumns))}");
+		if (expandEntries is { Count: > 0 }) {
+			//Rebuilt from the parsed identifiers, never pasted from the caller's text.
+			parts.Add($"$expand={Uri.EscapeDataString(string.Join(",", expandEntries.Select(entry => entry.ToQueryText())))}");
 		}
 
 		if (!string.IsNullOrWhiteSpace(args.OrderBy)) {
@@ -799,8 +842,10 @@ public sealed class ODataReadTool(
 	/// transcript. It is also what makes it USEFUL - the server's text is withheld, so without this the
 	/// caller cannot tell which of several names the server rejected. Filter FIELDS have additionally
 	/// passed <c>ODataKeyFormatter.IsValidMemberPath</c> (letters, digits, underscore and '/') before
-	/// reaching here; select, expand and order-by are echoed exactly as the caller sent them, which is
-	/// safe for the same reason it is useful - they are the caller's own text going back to the caller.
+	/// reaching here; select and order-by are echoed exactly as the caller sent them, which is safe for
+	/// the same reason it is useful - they are the caller's own text going back to the caller. expand is
+	/// echoed in the canonical form rebuilt from its parsed, validated identifiers
+	/// (<c>Account($select=Id,Name)</c>), the same text the request carried.
 	/// </remarks>
 	private static string? DescribeCallerQuery(ODataReadArgs args, ODataErrorKind kind) {
 		//ONLY a classified query-shape failure earns any of this. On an unregistered entity set the query
@@ -822,8 +867,8 @@ public sealed class ODataReadTool(
 		if (TryNormalizeColumnList(args.Select, "select", out string[]? select, out _) && select is { Length: > 0 }) {
 			sentParts.Add($"select: {string.Join(", ", select)}");
 		}
-		if (TryNormalizeColumnList(args.Expand, "expand", out string[]? expand, out _) && expand is { Length: > 0 }) {
-			sentParts.Add($"expand: {string.Join(", ", expand)}");
+		if (TryNormalizeExpandList(args.Expand, out ODataExpandEntry[]? expand, out _) && expand is { Length: > 0 }) {
+			sentParts.Add($"expand: {string.Join(", ", expand.Select(entry => entry.ToQueryText()))}");
 		}
 		if (!string.IsNullOrWhiteSpace(args.OrderBy)) {
 			sentParts.Add($"order-by: {args.OrderBy.Trim()}");
@@ -932,8 +977,10 @@ public record ODataReadArgs {
 	[Description(
 		"Navigation properties to expand ($expand). " +
 		"Remove 'Id' suffix from a lookup field to get the navigation name: AccountId → Account. " +
-		"Accepts an array or a comma-separated string. " +
-		"Example: [\"Account\",\"Owner\"] or \"Account,Owner\"")]
+		"An entry may limit the expanded fields with a nested select, " + ODataExpandEntry.AcceptedForm + "; " +
+		"not accepted: " + ODataExpandEntry.RejectedNestedOptions + ". " +
+		"Accepts an array or a comma-separated string; the string form splits only on commas outside parentheses. " +
+		"Example: [\"Account($select=Id,Name)\",\"Owner\"] or \"Account($select=Id,Name),Owner\"")]
 	public JsonElement? Expand { get; init; }
 
 	/// <summary>OData $orderby clause.</summary>

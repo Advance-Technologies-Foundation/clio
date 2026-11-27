@@ -59,6 +59,110 @@ public sealed class PageSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Each page reports only the site's answer to its own save: a refused page and a saved page in one batch")]
+	public async Task SyncPages_ShouldNotCarryOnePagesSiteResponseOntoAnother() {
+		// Arrange - the first save is refused, the second succeeds.
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient, IStatusPreservingApplicationClient>();
+		PageUpdateCommand updateCommand = ConfigureSuccessfulPageUpdateCommand(applicationClient, schemaType: 9);
+		Queue<SiteHttpResponse> saves = new([
+			new SiteHttpResponse(403, "{\"success\":false,\"errorInfo\":{\"message\":\"No rights to save\"}}"),
+			new SiteHttpResponse(200, "{\"success\":true}")
+		]);
+		((IStatusPreservingApplicationClient)applicationClient)
+			.SendKeepingStatus(default, default, default, default, default, default, default)
+			.ReturnsForAnyArgs(callInfo => callInfo.ArgAt<string>(1).Contains("SaveSchema", StringComparison.Ordinal)
+				? saves.Dequeue()
+				: new SiteHttpResponse(200, new JObject {
+					["success"] = true,
+					["schema"] = new JObject { ["body"] = "original" }
+				}.ToString()));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(),
+			new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
+		PageSyncArgs args = new("dev", [
+			new PageSyncPageInput("UsrMobile_FormPage", MobileBodyWithHandlers),
+			new PageSyncPageInput("UsrMobile_ListPage", MobileBodyWithHandlers)
+		], Validate: false);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args);
+
+		// Assert
+		response.Pages[0].SiteResponse.Should().BeEquivalentTo(new SiteResponse(403, "No rights to save", null,
+			SiteResponse.JsonBody));
+		response.Pages[1].Success.Should().BeTrue();
+		response.Pages[1].SiteResponse.Should().BeNull(because: "the first page's refusal must not reach the second");
+		response.Pages[0].Diagnostic!.SideEffect.Should().Be("unknown",
+			because: "the 403 carries the designer's own envelope, so the application answered and may have worked");
+		response.Pages[1].Diagnostic.Should().BeNull(because: "the diagnostic goes only beside a site response");
+	}
+
+	[TestCase(414, "", "none", TestName = "SyncPages_ShouldReportSideEffectNone_WhenThePageSaveIsRefusedWithAnEmpty414")]
+	[TestCase(431, "", "unknown", TestName = "SyncPages_ShouldReportSideEffectUnknown_WhenThePageSaveIsAnsweredWithAnEmpty431")]
+	[TestCase(401, "", "unknown", TestName = "SyncPages_ShouldReportSideEffectUnknown_WhenThePageSaveIsAnsweredWithAnEmpty401")]
+	[TestCase(403, "", "unknown", TestName = "SyncPages_ShouldReportSideEffectUnknown_WhenThePageSaveIsAnsweredWithAnEmpty403")]
+	[TestCase(403, "{\"success\":false,\"errorInfo\":{\"message\":\"No rights\"}}", "unknown",
+		TestName = "SyncPages_ShouldReportSideEffectUnknown_WhenA403CarriesTheDesignersEnvelope")]
+	[TestCase(413, "<html>Request Entity Too Large</html>", "none",
+		TestName = "SyncPages_ShouldReportSideEffectNone_WhenThePageSaveIsTooLarge")]
+	[TestCase(200, "{\"success\":false,\"errorInfo\":{\"message\":\"Schema is locked\"}}", "unknown",
+		TestName = "SyncPages_ShouldReportSideEffectUnknown_WhenTheSaveRefusesInA200Body")]
+	[TestCase(502, "", "unknown", TestName = "SyncPages_ShouldReportSideEffectUnknown_WhenAGatewayAnswersTheSave")]
+	[Category("Unit")]
+	[Description("Through the real update-page save: a page's save is its one write, so only a refusal without processing proves the page applied nothing")]
+	public async Task SyncPages_ShouldReportThePagesProvenSideEffect(int status, string body, string sideEffect) {
+		// Arrange
+		PageUpdateCommand updateCommand = CreatePageUpdateCommandWithSaveAnswer(new SiteHttpResponse(status, body));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(),
+			new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
+		PageSyncArgs args = new("dev", [new PageSyncPageInput("UsrMobile_FormPage", MobileBodyWithHandlers)],
+			Validate: false);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args);
+
+		// Assert
+		response.Pages[0].Success.Should().BeFalse();
+		response.Pages[0].SiteResponse!.Status.Should().Be(status);
+		response.Pages[0].Diagnostic!.SideEffect.Should().Be(sideEffect);
+		System.Text.Json.JsonSerializer.Serialize(response.Pages[0]).Should().Contain("\"diagnostic\":{");
+	}
+
+	[TestCase(200, "{\"success\":false,\"errorInfo\":{\"message\":\"Schema is locked by another user\"}}",
+		"Schema is locked by another user", "json", TestName = "SyncPages_ShouldCarryTheSiteResponse_WhenTheSaveIsRefused")]
+	[TestCase(500, "<html><title>500 - Internal server error.</title></html>", null, "html",
+		TestName = "SyncPages_ShouldCarryTheSiteResponse_WhenTheSaveIsAnsweredWithAnHtmlPage")]
+	[TestCase(502, "", null, "empty", TestName = "SyncPages_ShouldCarryTheSiteResponse_WhenTheSaveIsAnsweredWithAnEmptyBody")]
+	[Category("Unit")]
+	[Description("A page whose save the site refuses carries the site's answer on its own result")]
+	public async Task SyncPages_ShouldCarryTheSiteResponse_OnTheFailedPage(int status, string body, string message,
+		string kind) {
+		// Arrange
+		PageUpdateCommand updateCommand = CreatePageUpdateCommandWithSaveAnswer(new SiteHttpResponse(status, body));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(),
+			new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
+		PageSyncArgs args = new("dev", [new PageSyncPageInput("UsrMobile_FormPage", MobileBodyWithHandlers)],
+			Validate: false);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args);
+
+		// Assert
+		response.Pages[0].Success.Should().BeFalse();
+		response.Pages[0].SiteResponse.Should().BeEquivalentTo(new SiteResponse(status, message, null, kind),
+			because: "the failed page reports what the site answered to its save");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("sync-pages validate=false propagates onto PageUpdateOptions: the command-level mobile CONTENT chain is skipped, so a mobile body carrying a 'handlers' section still saves.")]
 	public async Task SyncPages_ShouldPropagateValidateFalse_ToPageUpdateOptions() {
 		// Arrange
@@ -861,6 +965,38 @@ public sealed class PageSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("A code-quality finding (a catch block that only logs) reaches the sync-pages result as a warning and does not stop the save")]
+	public async Task SyncPages_Should_Save_And_Warn_When_Body_Breaks_A_Code_Quality_Rule() {
+		// Arrange
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
+			.Returns(updateCommand);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(),
+			new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
+		string body = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[{request:'usr.SaveRequest',handler:async (request, next)=>{ " +
+			"try { await request.$context.save(); } catch (e) { console.error(e); } return next?.handle(request); }}]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		PageSyncArgs args = new("dev", [new PageSyncPageInput("UsrTodo_FormPage", body, null)], Validate: true);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "code-quality rules are warnings and never reject a save");
+		response.Pages[0].Validation!.Warnings.Should().Contain(warning => warning.Contains(PageBodyAstLinter.RuleCatchLogOnly),
+			because: "the save-time lint must tell the agent the catch block swallows the error");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Passes page resources through sync-pages and returns the registered resource count from update-page.")]
 	public async Task SyncPages_Should_Surface_Registered_Resources() {
 		// Arrange
@@ -1567,6 +1703,21 @@ public sealed class PageSyncToolTests {
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(new JObject { ["success"] = true }.ToString());
 		return new PageUpdateCommand(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), CreateHierarchyClientFor("test-uid"), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
+	}
+
+	// A page update whose designer client keeps the status: GetSchema loads, SaveSchema is answered with saveAnswer.
+	private static PageUpdateCommand CreatePageUpdateCommandWithSaveAnswer(SiteHttpResponse saveAnswer) {
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient, IStatusPreservingApplicationClient>();
+		PageUpdateCommand command = ConfigureSuccessfulPageUpdateCommand(applicationClient, schemaType: 9);
+		((IStatusPreservingApplicationClient)applicationClient)
+			.SendKeepingStatus(default, default, default, default, default, default, default)
+			.ReturnsForAnyArgs(callInfo => callInfo.ArgAt<string>(1).Contains("SaveSchema", StringComparison.Ordinal)
+				? saveAnswer
+				: new SiteHttpResponse(200, new JObject {
+					["success"] = true,
+					["schema"] = new JObject { ["body"] = "original" }
+				}.ToString()));
+		return command;
 	}
 
 	private static PageUpdateCommand CreatePageUpdateCommandWithFailureForSchema(string failSchemaName) {

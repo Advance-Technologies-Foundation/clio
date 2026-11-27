@@ -63,12 +63,15 @@ public sealed class CreatePackageToolSandboxE2ETests : McpContractFixtureBase {
 					because: "the stored name is the requested one, prefixed when the environment has a prefix");
 				created.Editable.Should().BeTrue(because: "a created package is editable, unlike one pushed from a workspace");
 				created.InstallType.Should().Be(0, because: "InstallType 0 is the editable state");
+				created.Type.Should().Be(0, because: "create-package creates an ordinary package and reports the stored type");
 				created.Dependencies.Should().Contain("CrtBase", because: "the requested dependency is applied after creation");
 				created.Maintainer.Should().NotBeNullOrWhiteSpace(because: "the environment assigns the maintainer");
 			});
 			AllureApi.Step("Assert the package is listed and accepted as a write target", () => {
 				listed.Select(package => package.Name).Should().Contain(created.PackageName,
 					because: "a created package appears in list-packages");
+				listed.Single(package => package.Name == created.PackageName).Type.Should().Be(0,
+					because: "list-packages reports the created package as an ordinary package");
 				target.Success.Should().BeTrue(because: target.Error ?? "get-target-package accepts the created package");
 			});
 			AllureApi.Step("Assert a repeated name is refused without changes", () => {

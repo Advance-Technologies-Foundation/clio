@@ -5,21 +5,60 @@ using System.Text.Json.Serialization;
 
 namespace Clio.Command;
 
-/// <summary>The package floor of <c>describe-dynamic-case</c> and <c>modify-dynamic-case</c>.</summary>
+/// <summary>
+/// The package floor of <c>describe-dynamic-case</c>, <c>modify-dynamic-case</c>,
+/// <c>modify-dynamic-case-as-new-version</c> and <c>set-active-dynamic-case-version</c>.
+/// </summary>
 public static class DynamicCaseChangeRequirement {
 	/// <summary>
-	/// The first CrtProcessBuilder archive whose <c>DescribeCase</c> counts the records per stage and whose
-	/// <c>ModifyCase</c> reads <c>confirmStageRecords</c> and <c>confirmValueRename</c>.
+	/// The lowest CrtProcessBuilder version this clio accepts for the four tools: one that carries
+	/// <c>ModifyCaseAsNewVersion</c> and <c>SetActiveCaseVersion</c>, whose <c>DescribeCase</c> lists a case's
+	/// <c>versions</c> and reads any family member by name, whose <c>ModifyCase</c> changes an inactive member in place,
+	/// and that behaves as every tool description of the four says. The first cut with the version operations was
+	/// 1.6.6.194; the remarks say why the floor is higher.
 	/// </summary>
 	/// <remarks>
-	/// The one place the floor of both tools is written. A version literal rather than presence: the two are
-	/// operations a package before 1.6.6.173 does not carry at all, so presence alone would let a call reach a package
-	/// that answers its route with a 404. 1.6.6.179 was the first shipped cut with case filters; 1.6.6.185 is the first
-	/// shipped cut whose stage rename renames the lookup value and whose describe reports <c>records</c>. Not 1.6.6.180:
-	/// that number is also another branch's cut without this code. An older package would ignore the two
-	/// confirmations, and a stage rename there would write a caption no one sees.
+	/// The one place the floor of the four tools is written. A version literal rather than presence: the version
+	/// operations are operations an older package does not carry at all, so presence alone would let a call reach a
+	/// package that answers its route with a 404. describe and modify share the floor because what they advertise
+	/// moved with the versions: an older package answers describe without <c>versions</c>, which an agent would read as
+	/// "this case has no versions", and refuses an inactive member that the tool descriptions say it accepts.
+	/// 1.6.6.185 was the floor before (stage value rename, records per stage); 1.6.6.194 was the first cut with the
+	/// versions (not 1.6.6.193: that number reached a shared test stand as a dev build of the same branch). 1.6.6.195
+	/// resolves an object named by a unique caption and lists <c>Name (caption)</c> candidates when it is not unique,
+	/// which the <c>entity-schema-name</c> descriptions of describe, modify and new-version promise. 1.6.6.196
+	/// stops promising that a disabled family's new records start a version, which the tool descriptions rely on.
+	/// 1.6.6.197 refuses an outranked activation without <c>confirmPackagePosition</c>, which
+	/// <c>set-active-dynamic-case-version</c> sends as <c>confirm-package-position</c>. 1.6.6.198 stops warning at
+	/// creation about a pinned member ranked below the version, a warning the new-version tool relays. 1.6.6.199 splits
+	/// the records in a removed stage by whether their case still runs and gates disabling on the family's running
+	/// cases, which the tool descriptions and the verdicts now defer to. 1.6.6.207 leaves the uIds out of a new-version
+	/// dry run, which the new-version description and its E2E rely on, and words every note the stand measured. 1.6.6.204
+	/// is the cut with the steps inside stages (ENG-107646): its stage item takes <c>steps</c> and <c>transitionType</c>
+	/// and its describe reports them; an older package refuses a stage's steps and shows a stage with steps as one without
+	/// them. 1.6.6.208 carries both: a stage with steps can be removed with them, and a new version refuses steps sent
+	/// with it. 1.6.6.209 also drops what a removed stage's steps leave in the version (transitions, mappings).
+	/// A step's <c>conditions</c> (ENG-107647) arrived on <c>main</c> in 1.6.6.206: an older package refuses a step's
+	/// conditions, and its describe would show a step with conditions as one without them. 1.6.6.210 is the first cut
+	/// that carries the versions and the conditions together: a stage removal takes its steps' conditions with it and is
+	/// refused only as <c>stage-is-condition-target</c>, and a new version copies the steps with their conditions and
+	/// reads back the change-stage tasks they need. 1.6.6.211 gives a new version's condition-target refusal a remedy
+	/// that changes the version, not the running case, and shows the copied steps in the new-version answer. 1.6.6.216
+	/// adds review round 1 and is numbered above 1.6.6.212-215 (another branch's cuts without the case versions).
+	/// 1.6.6.217 carries the run-5 remarks: a set-active dry run reports the planned active member, and a new-version dry
+	/// run previews the binding it adds, which the tool descriptions and the E2E rely on.
+	/// 1.6.6.218 carries the versions and the other step types together: approval, open edit page, sub-process, send
+	/// email and change access rights in a stage, and <c>confirmAllRecords</c> (ENG-107648); an older package refuses those
+	/// types as not supported and the flag as an unknown key. 1.6.6.212 to 1.6.6.215 were that branch's cuts without the
+	/// versions and before its review rounds, and reached no release. 1.6.6.219 takes a column of the case's record
+	/// (the designer's "Main record") in every step field the designer offers it for - hints, a purpose, a subject, a
+	/// role, a new record's pre-filled values - and links open-page and email steps to the case's record; 1.6.6.220 adds
+	/// a column path through the record's lookups, an activity's time from a column, a Perform task's subject apart
+	/// from its caption and a step's other connections; 1.6.6.222 checks a value taken from a column in every step
+	/// field (a role's column, text around a macro, a recipient's column, a page's record) and bounds a path's depth.
+	/// 1.6.6.218 to 1.6.6.221 reached no release.
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.185";
+	public const string MinimumProcessBuilderVersion = "1.6.6.222";
 }
 
 /// <summary>
@@ -144,6 +183,12 @@ public sealed record CaseStageEditRequest {
 
 	/// <summary>False for a final stage that ends the case unsuccessfully.</summary>
 	public bool? Successful { get; init; }
+
+	/// <summary>The stage's whole step list as JSON, sent as it is; <see langword="null"/> keeps the steps.</summary>
+	public string Steps { get; init; }
+
+	/// <summary>When the case moves on from the stage by itself; <see langword="null"/> keeps the stored one.</summary>
+	public string TransitionType { get; init; }
 }
 
 /// <summary>
@@ -176,6 +221,13 @@ public sealed class CaseStageEditRequestJsonConverter : JsonConverter<CaseStageE
 		if (value.Successful.HasValue) {
 			writer.WriteBoolean("successful", value.Successful.Value);
 		}
+		if (value.Steps is not null) {
+			writer.WritePropertyName("steps");
+			writer.WriteRawValue(value.Steps);
+		}
+		if (value.TransitionType is not null) {
+			writer.WriteString("transitionType", value.TransitionType);
+		}
 		writer.WriteEndObject();
 	}
 }
@@ -193,7 +245,7 @@ public sealed record ModifyCaseRequest {
 	[JsonPropertyName("caseUId")]
 	public string CaseUId { get; init; }
 
-	/// <summary>The object; accepted only when it has exactly one case.</summary>
+	/// <summary>The object's schema name, or a caption the package resolves when it names one object; accepted only when it has exactly one case.</summary>
 	[JsonPropertyName("entitySchemaName")]
 	public string EntitySchemaName { get; init; }
 
@@ -221,6 +273,11 @@ public sealed record ModifyCaseRequest {
 	/// <summary>The user's yes to renaming a stage's lookup value, which every record shares; null when not given.</summary>
 	[JsonPropertyName("confirmValueRename")]
 	public bool? ConfirmValueRename { get; init; }
+
+	/// <summary>The user's separate yes to an access-rights step without a filter, which changes the rights on every
+	/// record of its object each time a record enters the stage; null when not given.</summary>
+	[JsonPropertyName("confirmAllRecords")]
+	public bool? ConfirmAllRecords { get; init; }
 
 	/// <summary>True to run every check and answer the planned change without writing anything.</summary>
 	[JsonPropertyName("validateOnly")]
@@ -320,6 +377,14 @@ public sealed class DynamicCaseDiff {
 	/// <summary>The case filter change in words, when there is one; <c>none</c> for no filter.</summary>
 	[JsonPropertyName("filter")]
 	public DynamicCaseStageChange Filter { get; init; }
+
+	/// <summary>The steps the change adds, removes or changes, as the package lists them; absent when none.</summary>
+	[JsonPropertyName("steps")]
+	public JsonElement? Steps { get; init; }
+
+	/// <summary>The stages whose transitionType changes; absent when none.</summary>
+	[JsonPropertyName("transitionTypes")]
+	public List<DynamicCaseStageChange> TransitionTypes { get; init; }
 }
 
 /// <summary>Running cases that sit in one stage.</summary>
@@ -381,6 +446,11 @@ public sealed class ModifyCaseResponse {
 	/// <summary>The object's settings row when a first filter sets its filter column; absent otherwise.</summary>
 	[JsonPropertyName("settings")]
 	public DynamicCaseSettings Settings { get; init; }
+
+	/// <summary>The link row added for an inactive member that had none, which the case designer needs to open it;
+	/// absent when it had one.</summary>
+	[JsonPropertyName("linkRow")]
+	public DynamicCaseSettings LinkRow { get; init; }
 
 	/// <summary>What the caller owes after the call.</summary>
 	[JsonPropertyName("obligations")]
@@ -467,6 +537,11 @@ public sealed class ModifyDynamicCaseResult {
 	/// <summary>The object's settings row when a first filter sets its filter column; absent otherwise.</summary>
 	[JsonPropertyName("settings")]
 	public DynamicCaseSettings Settings { get; init; }
+
+	/// <summary>The link row added for an inactive member that had none, which the case designer needs to open it;
+	/// absent when it had one.</summary>
+	[JsonPropertyName("linkRow")]
+	public DynamicCaseSettings LinkRow { get; init; }
 
 	/// <summary>What the caller owes after the call, per artifact.</summary>
 	[JsonPropertyName("obligations")]

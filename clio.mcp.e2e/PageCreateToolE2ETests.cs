@@ -321,6 +321,66 @@ public sealed class PageCreateToolE2ETests : McpContractFixtureBase {
 		duplicateResponse.Error.Should().Contain(schemaName).And.Contain("already exists");
 	}
 
+	[Category("McpE2E.Sandbox")]
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("ENG-107757: create-page refuses a BaseHomePage page without a caption, or with a caption equal to schema-name, and writes nothing; with a human-readable caption it creates the page.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-page requires a human-readable caption for a home page")]
+	public async Task PageCreateTool_Should_Require_Human_Caption_For_Home_Page(bool captionEqualsSchemaName) {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
+		string schemaName = $"UsrE2E_HomePage_{Guid.NewGuid():N}".Substring(0, 40);
+		Dictionary<string, object?> refusedArgs = new() {
+			["schema-name"] = schemaName,
+			["template"] = "BaseHomePage",
+			["package-name"] = PackageName,
+			["environment-name"] = environmentName
+		};
+		if (captionEqualsSchemaName) {
+			refusedArgs["caption"] = schemaName;
+		}
+
+		// Act refused
+		CallToolResult refusedResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> { ["args"] = refusedArgs },
+			arrangeContext.CancellationTokenSource.Token);
+		PageCreateResponse refusedResponse = EntitySchemaStructuredResultParser.Extract<PageCreateResponse>(refusedResult);
+
+		// Assert refused
+		refusedResult.IsError.Should().NotBeTrue(because: "a refused create is a structured failure, not a protocol error");
+		refusedResponse.Success.Should().BeFalse(
+			because: "a home page header would otherwise show the technical schema name");
+		refusedResponse.Error.Should().Contain("caption").And.Contain("page header",
+			because: "the error must tell the agent to pass a human-readable caption");
+
+		// Act accepted: the refusal wrote nothing, so the same schema name is still free
+		CallToolResult createResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = schemaName,
+					["template"] = "BaseHomePage",
+					["package-name"] = PackageName,
+					["caption"] = "E2E home page",
+					["environment-name"] = environmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageCreateResponse createResponse = EntitySchemaStructuredResultParser.Extract<PageCreateResponse>(createResult);
+
+		// Assert accepted
+		createResult.IsError.Should().NotBeTrue();
+		createResponse.Success.Should().BeTrue(
+			because: $"the refused call must not have created '{schemaName}', and a human caption must be accepted. Error: {createResponse.Error}");
+		createResponse.Caption.Should().Be("E2E home page",
+			because: "the supplied caption is the home page header title");
+	}
+
 	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Reports readable failures when list-page-templates is called with an invalid schema-type.")]

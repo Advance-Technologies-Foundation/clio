@@ -64,7 +64,9 @@ and changes still confirm the write", so it is not read as a reason to describe 
 re-read a process right after writing it 41 times and parsed spilled describes with 169 shell calls. One read
 inside clio is cheaper than the agent's full describe plus its spill handling. The checksum and the change
 list ignore `position`/`size`/`geometry` because the server re-derives the layout on every structural edit, and ignore
-the version-family facts because they change when a sibling is saved.
+the version-family facts because they change when a sibling is saved. They ignore a timer start's `timer.scheduled`
+(ENG-91849) for the same reason as `tracing`: it is read from the platform scheduler, and it moves on every fire and
+when the process is enabled or another version is activated while the schema does not.
 
 **What breaks if you ignore it** — measuring the threshold in graph characters lets a quote-heavy graph spill
 again. A unit test that asserts `Received(1).Describe` on modify now sees two calls (before without version

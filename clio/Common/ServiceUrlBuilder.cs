@@ -491,42 +491,57 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		ModifyCase = 130,
 
 		/// <summary>
+		///     Changes a dynamic case (DCM) as a NEW, inactive version of it via the ProcessDesignService package: the
+		///     family's active member is copied, the change is applied to the copy, and the copy is saved. The body is
+		///     <c>{"request":{...}}</c> (WCF <c>BodyStyle = Wrapped</c>) and the answer is wrapped under
+		///     <c>ModifyCaseAsNewVersionResult</c>; <c>validateOnly: true</c> plans without writing.
+		/// </summary>
+		ModifyCaseAsNewVersion = 131,
+
+		/// <summary>
+		///     Makes one member of a dynamic case's version family the active one via the ProcessDesignService package.
+		///     The body is <c>{"request":{...}}</c> (WCF <c>BodyStyle = Wrapped</c>) and the answer is wrapped under
+		///     <c>SetActiveCaseVersionResult</c>; <c>validateOnly: true</c> plans without writing.
+		/// </summary>
+		SetActiveCaseVersion = 132,
+
+		/// <summary>
 		///     Reads the security-events state of one SSO provider, by code, from the SsoSecurityEvents package
 		///     (Creatio 10.2+). Answers with the feature off too (<c>reason</c> <c>FeatureOff</c>).
 		/// </summary>
-		SsoSecurityEventsGetProviderState = 131,
+		SsoSecurityEventsGetProviderState = 133,
 
 		/// <summary>
 		///     Turns security events on for one SSO provider, by code, as an operation: the site's card then says
 		///     the change came from Creatio support. Creates or reconciles the provider's stream.
 		/// </summary>
-		SsoSecurityEventsEnableEvents = 132,
+		SsoSecurityEventsEnableEvents = 134,
 
 		/// <summary>
 		///     Turns security events off for one SSO provider, by code, as an operation, and disables the site's own
 		///     stream at the provider.
 		/// </summary>
-		SsoSecurityEventsDisableEvents = 133,
+		SsoSecurityEventsDisableEvents = 135,
 
 		/// <summary>
 		///     Asks the provider for a verification event and optionally waits for it on the server (at most 60 s).
 		/// </summary>
-		SsoSecurityEventsSendTestEvent = 134,
+		SsoSecurityEventsSendTestEvent = 136,
 
 		/// <summary>
 		///     Stores a new site address for one SSO provider and optionally moves the site's own stream to it.
 		/// </summary>
-		SsoSecurityEventsSetSiteAddress = 135,
+		SsoSecurityEventsSetSiteAddress = 137,
 
 		/// <summary>
 		///     Creates an SSO provider, or updates an existing one in place (same row id), by code.
 		/// </summary>
-		SsoSecurityEventsUpsertProvider = 136,
+		SsoSecurityEventsUpsertProvider = 138,
 
 		/// <summary>
 		///     Removes an SSO provider by code: its own stream at the provider first, unless the call is local only.
 		/// </summary>
-		SsoSecurityEventsRemoveProvider = 137
+		SsoSecurityEventsRemoveProvider = 139
 
 	}
 
@@ -632,6 +647,8 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.BuildCase, "/rest/ProcessDesignService/BuildCase"},
 		{KnownRoute.DescribeCase, "/rest/ProcessDesignService/DescribeCase"},
 		{KnownRoute.ModifyCase, "/rest/ProcessDesignService/ModifyCase"},
+		{KnownRoute.ModifyCaseAsNewVersion, "/rest/ProcessDesignService/ModifyCaseAsNewVersion"},
+		{KnownRoute.SetActiveCaseVersion, "/rest/ProcessDesignService/SetActiveCaseVersion"},
 		{KnownRoute.SsoSecurityEventsGetProviderState, "/rest/SsoSecurityEventsSettingsService/GetProviderState"},
 		{KnownRoute.SsoSecurityEventsEnableEvents, "/rest/SsoSecurityEventsSettingsService/EnableEvents"},
 		{KnownRoute.SsoSecurityEventsDisableEvents, "/rest/SsoSecurityEventsSettingsService/DisableEvents"},

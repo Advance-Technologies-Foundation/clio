@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Clio.Command;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
@@ -112,17 +113,18 @@ public sealed class ModifyDynamicCaseToolTests {
 		options.ConfirmRunningInstances.Should().BeFalse(because: "the user's yes is never assumed");
 		options.ConfirmStageRecords.Should().BeFalse(because: "the user's yes is never assumed");
 		options.ConfirmValueRename.Should().BeFalse(because: "the user's yes is never assumed");
+		options.ConfirmAllRecords.Should().BeFalse(because: "the user's yes is never assumed");
 		options.DryRun.Should().BeFalse(because: "a call writes unless it asks for a dry run");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("dry-run, the three confirmations, enabled and caption map onto the options the service sends (dry-run becomes validateOnly there).")]
+	[Description("dry-run, the four confirmations, enabled and caption map onto the options the service sends (dry-run becomes validateOnly there).")]
 	public void ModifyDynamicCase_ShouldMapTheFlags() {
 		// Arrange
 		ModifyDynamicCaseArgs args = Args("{" + Identity
 			+ ",\"dry-run\":true,\"confirm-running-instances\":true,\"confirm-stage-records\":true,"
-			+ "\"confirm-value-rename\":true,\"enabled\":false,\"caption\":\" Orders \"}");
+			+ "\"confirm-value-rename\":true,\"confirm-all-records\":true,\"enabled\":false,\"caption\":\" Orders \"}");
 
 		// Act
 		_tool.ModifyDynamicCase(args);
@@ -132,6 +134,7 @@ public sealed class ModifyDynamicCaseToolTests {
 		_resolved.Captured.ConfirmRunningInstances.Should().BeTrue(because: "the user's yes is passed through");
 		_resolved.Captured.ConfirmStageRecords.Should().BeTrue(because: "the user's yes is passed through");
 		_resolved.Captured.ConfirmValueRename.Should().BeTrue(because: "the user's yes is passed through");
+		_resolved.Captured.ConfirmAllRecords.Should().BeTrue(because: "the user's yes is passed through");
 		_resolved.Captured.Enabled.Should().BeFalse(because: "enabled=false disables the case");
 		_resolved.Captured.Caption.Should().Be("Orders", because: "the caption is forwarded trimmed");
 	}
@@ -183,17 +186,42 @@ public sealed class ModifyDynamicCaseToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("A stage carrying steps is refused as steps-not-supported and the command is never resolved.")]
-	public void ModifyDynamicCase_ShouldRefuseSteps() {
+	[Description("A stage's steps travel to the package as sent (the package owns their rules), with transitionType; a stage without them keeps its steps.")]
+	public void ModifyDynamicCase_ShouldForwardStepsAndTransitionType() {
 		// Arrange
-		ModifyDynamicCaseArgs args = Args("{" + Identity + ",\"stages\":[{\"value\":\"New\",\"steps\":[]}]}");
+		ModifyDynamicCaseArgs args = Args("{" + Identity + ",\"stages\":[{\"value\":\"New\",\"transitionType\":"
+			+ "\"afterRequired\",\"steps\":[{\"type\":\"performTask\",\"caption\":\"Check\",\"required\":true,"
+			+ "\"future\":1}]},{\"value\":\"Done\"}]}");
 
 		// Act
 		CommandExecutionResult result = _tool.ModifyDynamicCase(args);
 
 		// Assert
-		result.ExitCode.Should().Be(1, because: "a stage with steps cannot be changed yet");
-		TextOf(result).Should().Contain("[steps-not-supported]", because: "the stable code is named");
+		result.ExitCode.Should().Be(0, because: "steps and transitionType are declared stage members");
+		DynamicCaseStageItem stage = _resolved.Captured!.Stages[0];
+		stage.TransitionType.Should().Be("afterRequired", because: "transitionType is forwarded");
+		JsonNode.Parse(stage.Steps!)!.ToJsonString().Should().Be(
+			"[{\"type\":\"performTask\",\"caption\":\"Check\",\"required\":true,\"future\":1}]",
+			because: "the step items reach the package as sent, an undeclared step key included, which the package names");
+		_resolved.Captured.Stages[1].Steps.Should().BeNull(because: "a stage without steps keeps its stored steps");
+		_resolved.Captured.Stages[1].TransitionType.Should().BeNull(because: "an absent transitionType keeps the stored one");
+	}
+
+	[TestCase("{}")]
+	[TestCase("[1]")]
+	[TestCase("\"step\"")]
+	[Category("Unit")]
+	[Description("A stage's steps must be an array of step objects; anything else is refused as invalid-request and the command is never resolved.")]
+	public void ModifyDynamicCase_ShouldRefuseStepsThatAreNotAStepList(string stepsJson) {
+		// Arrange
+		ModifyDynamicCaseArgs args = Args("{" + Identity + ",\"stages\":[{\"value\":\"New\",\"steps\":" + stepsJson + "}]}");
+
+		// Act
+		CommandExecutionResult result = _tool.ModifyDynamicCase(args);
+
+		// Assert
+		result.ExitCode.Should().Be(1, because: "the stage's steps cannot be read as a step list");
+		TextOf(result).Should().Contain("[invalid-request]", because: "the stable code is named");
 		_resolver.DidNotReceiveWithAnyArgs().Resolve<ModifyDynamicCaseCommand>(default!);
 	}
 
@@ -348,8 +376,11 @@ public sealed class ModifyDynamicCaseToolTests {
 		firstSentence.Length.Should().BeLessThanOrEqualTo(120, because: "the compact index cuts the purpose at 120");
 		description.Should().Contain("Read get-guidance name=process-dynamic-case-change first.",
 			because: "the change article owns the workflow of changing a case");
-		description.Should().Contain("cancelled at their record's next stage change",
-			because: "a disable next to another enabled case cancels running cases (measured, dev testing X7)");
+		description.Should().Contain("cancelled at their record's next change of an enabled case's stage or filter "
+			+ "column, and the record then starts the enabled case it fits, if any",
+			because: "a disable next to another enabled case cancels running cases at a stage-column change and at a "
+			+ "filter-column change, and the record then starts the case it fits (both measured)")
+			.And.NotContain("next stage change", because: "a filter-column change cancels them too");
 		description.Should().Contain("a stage caption renames that value for every record",
 			because: "a stage shows its value's name, so a stage rename renames the value (dev testing A6)");
 		description.Should().Contain("describe-dynamic-case").And.Contain("dry-run=true")
@@ -359,6 +390,43 @@ public sealed class ModifyDynamicCaseToolTests {
 		description.Should().Contain("send enabled alone", because: "enabled is a save of its own");
 		description.Should().Contain("no compile-creatio and no restart").And.Contain("reload",
 			because: "a case is interpreted, but open pages keep the old case");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The tool description and the stages argument name every step type token the bundled package takes, as one list, so an agent that has not read the guide yet still sends a type the package knows.")]
+	public void Descriptions_ShouldNameEveryStepType() {
+		// Arrange
+		// The whole list, not each token alone: "approval" also occurs in "after user approval", so a per-token check
+		// would pass for the tool description without the list.
+		const string stepTypes = "performTask, approval, openEditPage, subProcess, sendEmail or changeAccessRights";
+
+		// Act
+		string description = Description();
+		string stages = ParameterDescription("stages");
+
+		// Assert
+		description.Should().Contain(stepTypes,
+			because: "the tool description lists the step types, while the guide owns each type's shape");
+		stages.Should().Contain(stepTypes,
+			because: "the stages argument is where a step is written, so it names the type tokens too");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The stages argument says a stored stage left out is removed with its steps and their conditions, and that the removal is refused stage-is-condition-target while a kept step's condition still moves records to it.")]
+	public void Stages_ShouldSayARemovedConditionTargetIsRefused() {
+		// Arrange
+		string stages = ParameterDescription("stages");
+
+		// Act
+		string normalized = string.Join(' ', stages.Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
+
+		// Assert
+		normalized.Should().Contain("A stored stage left out is removed with its steps and their conditions",
+			because: "a step's conditions go with the step when its stage is removed");
+		normalized.Should().Contain("refused stage-is-condition-target while a kept step's condition still moves "
+			+ "records to it", because: "the package refuses removing a stage a kept condition targets");
 	}
 
 	[Test]
@@ -385,6 +453,19 @@ public sealed class ModifyDynamicCaseToolTests {
 		// Assert
 		description.Should().StartWith($"LEAVE IT OUT unless the user said yes to {subject}",
 			because: "the flag stands for the user's consent, not the agent's");
+		description.Should().Contain("never set it on your own", because: "an agent must not consent for the user");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("confirm-all-records, the widest of the consents (rights on every record of an object), tells the agent to leave it out unless the user said yes separately, as the other confirmations do.")]
+	public void ConfirmAllRecords_ShouldBeDescribedAsTheUsersSeparateYesOnly() {
+		// Arrange & Act
+		string description = ParameterDescription("confirm-all-records");
+
+		// Assert
+		description.Should().StartWith("LEAVE IT OUT unless the user said yes, SEPARATELY, to an access-rights step",
+			because: "the flag stands for the user's separate consent, not the agent's");
 		description.Should().Contain("never set it on your own", because: "an agent must not consent for the user");
 	}
 

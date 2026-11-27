@@ -15,9 +15,6 @@ namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 /// </summary>
 internal static class DynamicCaseStageArguments {
 
-	/// <summary>Error code of a stage item that carries steps; the guidance names it with its remedy.</summary>
-	internal const string StepsNotSupportedCode = "steps-not-supported";
-
 	/// <summary>Error code of a stage item that carries an undeclared key.</summary>
 	internal const string UnknownKeysCode = "unknown-keys";
 
@@ -29,7 +26,8 @@ internal static class DynamicCaseStageArguments {
 	internal const string ColorKey = "color";
 	internal const string GroupKey = "group";
 	internal const string SuccessfulKey = "successful";
-	private const string StepsKey = "steps";
+	internal const string StepsKey = "steps";
+	internal const string TransitionTypeKey = "transitionType";
 
 	/// <summary>
 	/// Normalizes <c>stages</c>.
@@ -93,18 +91,19 @@ internal static class DynamicCaseStageArguments {
 		string itemShape, out DynamicCaseStageItem stage, out CommandExecutionResult refusal) {
 		stage = null;
 		refusal = null;
-		if (entry.ContainsKey(StepsKey)) {
-			refusal = Refuse($"stages[{index}] carries steps: steps inside stages are not supported yet. "
-				+ "Leave them out.", StepsNotSupportedCode);
-			return false;
-		}
 		string[] unknown = entry.Select(property => property.Key)
 			.Where(key => !allowedKeys.Contains(key, StringComparer.Ordinal))
 			.Select(McpToolArgumentSupport.DescribeCallerKey)
 			.ToArray();
 		if (unknown.Length > 0) {
+			// A case is built with empty stages (D1 of ENG-107646): its steps are added by a change once it exists.
+			// Only when steps is among the UNKNOWN keys: a tool that declares steps never needs the hint.
+			string stepsHint = entry.Select(property => property.Key)
+				.Any(key => key == StepsKey && !allowedKeys.Contains(key, StringComparer.Ordinal))
+				? " Add steps with modify-dynamic-case once the case exists."
+				: "";
 			refusal = Refuse($"stages[{index}] carries unknown keys: {McpToolArgumentSupport.JoinCallerKeys(unknown)}. "
-				+ $"A stage is {itemShape}.", UnknownKeysCode);
+				+ $"A stage is {itemShape}.{stepsHint}", UnknownKeysCode);
 			return false;
 		}
 		if (entry[ValueKey] is not JsonValue valueNode || !valueNode.TryGetValue(out string text)) {
@@ -116,7 +115,10 @@ internal static class DynamicCaseStageArguments {
 			|| !TryOptionalText(entry, CaptionKey, index, "the stage caption in the case", out string caption,
 				out refusal)
 			|| !TryOptionalText(entry, ColorKey, index, "#RRGGBB", out string color, out refusal)
-			|| !TrySuccessful(entry, index, out bool? successful, out refusal)) {
+			|| !TrySuccessful(entry, index, out bool? successful, out refusal)
+			|| !TrySteps(entry, index, out JsonArray steps, out refusal)
+			|| !TryOptionalText(entry, TransitionTypeKey, index, "none, afterRequired or afterAll",
+				out string transitionType, out refusal)) {
 			stage = null;
 			return false;
 		}
@@ -133,9 +135,28 @@ internal static class DynamicCaseStageArguments {
 			Color = color,
 			GroupSent = groupSent,
 			Group = group,
-			Successful = successful
+			Successful = successful,
+			Steps = steps?.ToJsonString(),
+			TransitionType = transitionType
 		};
 		return true;
+	}
+
+	// The step items are the package's contract: they travel as sent, and the package refuses an undeclared step key
+	// and every rule of a step with the stage and the step named.
+	private static bool TrySteps(JsonObject entry, int index, out JsonArray steps, out CommandExecutionResult refusal) {
+		steps = null;
+		refusal = null;
+		if (!entry.TryGetPropertyValue(StepsKey, out JsonNode node) || node is null) {
+			return true;
+		}
+		if (node is JsonArray array && array.All(item => item is JsonObject)) {
+			steps = array;
+			return true;
+		}
+		refusal = Refuse($"stages[{index}].steps must be an array of step objects, the whole step list of the stage.",
+			InvalidRequestCode);
+		return false;
 	}
 
 	private static bool TryValue(string text, int index, out DynamicCaseStageItem stage,

@@ -30,6 +30,9 @@ DESCRIPTION
     duplicate-key defect ("IU_Name_Manager_Package") this command exists to avoid, and
     the two cannot be told apart from here. Pass --allow-new-layer to do it
     deliberately, or point --package-name at the owning package to replace instead.
+    On Creatio 10.3.1146 and later the platform can still refuse --allow-new-layer
+    when a schema with the bundle's UId exists in another package; its message names
+    both packages.
 
     The import saves the schema but does not build it. Run 'clio compile-configuration'
     when the schema carries source code, and 'clio update-db-structure' when it changes
@@ -50,7 +53,8 @@ OPTIONS
     -e, --environment                  Environment name
 
 REQUIREMENTS
-    cliogate 2.0.0.46 or newer must be installed on the environment.
+    cliogate 2.0.0.54 or newer must be installed on the environment. Older gates
+    cannot call the schema importer of Creatio 10.3.1146 and later.
     Install or update it with: clio install-gate -e <environment>
 
     The target package must be unlocked. Use 'clio unlock-package' when it is not.
