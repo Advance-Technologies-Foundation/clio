@@ -54,9 +54,10 @@ public static class DynamicCaseChangeRequirement {
 	/// (the designer's "Main record") in every step field the designer offers it for - hints, a purpose, a subject, a
 	/// role, a new record's pre-filled values - and links open-page and email steps to the case's record; 1.6.6.220 adds
 	/// a column path through the record's lookups, an activity's time from a column, a Perform task's subject apart
-	/// from its caption and a step's other connections. 1.6.6.218 and 1.6.6.219 reached no release.
+	/// from its caption and a step's other connections; 1.6.6.221 checks a role taken from a column before it is
+	/// stored. 1.6.6.218, 1.6.6.219 and 1.6.6.220 reached no release.
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.220";
+	public const string MinimumProcessBuilderVersion = "1.6.6.221";
 }
 
 /// <summary>
