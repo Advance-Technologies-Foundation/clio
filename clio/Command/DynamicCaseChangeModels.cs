@@ -64,9 +64,13 @@ public static class DynamicCaseChangeRequirement {
 	/// (<c>step-value-source-unsupported</c>) instead of the process's 'mappings' remedy, an Open edit page step's
 	/// refused pre-filled value shows the 'value' shape, and a step whose role comes from a column of the case's record
 	/// notes that the column must be filled on every record entering the stage. 1.6.6.223 was a cut of the first of
-	/// those fixes and reached no release.
+	/// those fixes and reached no release. 1.6.6.225 adds the gaps its review found: a step sent back as describe
+	/// returns it keeps waiting for its earlier step when the same change renames that step; a [[...]] placeholder in an
+	/// email subject, a macro or a placeholder in a recipient's 'value' and a macro in the approval author's address are
+	/// refused in the case's words; the 'leave conditions out' hint comes only when the old conditions are carried over;
+	/// and <c>stage-is-condition-target</c> words its remedies for one step as for several. 1.6.6.224 reached no release.
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.224";
+	public const string MinimumProcessBuilderVersion = "1.6.6.225";
 }
 
 /// <summary>
