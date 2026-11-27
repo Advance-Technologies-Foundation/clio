@@ -489,6 +489,10 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			CallToolResult echo = await ModifyAsync(context, created, new Dictionary<string, object?> {
 				["stages"] = WithDescribedSteps(stored, stored[1], described)
 			});
+			CallToolResult dropSource = await ModifyAsync(context, created, new Dictionary<string, object?> {
+				["stages"] = WithDescribedSteps(stored, stored[1], new JsonArray(described[1]!.DeepClone()))
+			});
+			JsonObject afterDrop = await DescribeCaseAsync(context, created);
 
 			// Assert
 			IgnoreWhenProcessBuilderIsBehind(ToolText(dryRun), CaseChangePackageVersion);
@@ -513,6 +517,15 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			ShouldHaveLanded(echo, "describe's steps sent back are taken as they are");
 			Text(ResultOf(echo), "outcome").Should().Be("unchanged",
 				because: "what only describe reports is ignored, and every block is what the step stores");
+			(ResultOf(echo)["warnings"] as JsonArray ?? []).Should().BeEmpty(
+				because: "what only describe reports on a step is ignored without a warning: the whole-list rule makes the copy routine");
+			ShouldHaveLanded(dropSource, "a step sent back as describe returns it may outlive the step it waited for");
+			ResultOf(dropSource)["diff"]!["steps"]!.AsArray().Select(change => Text(change!.AsObject(), "change"))
+				.Should().BeEquivalentTo(["startsWithStage", "removed"],
+					because: "the step left out is removed, and the step that waited for it starts with the stage");
+			List<JsonObject> left = StepsOf(StageOf(afterDrop, stored[1]));
+			left.Select(step => Text(step, "caption")).Should().Equal(["Send contract"], because: "only the kept step stays");
+			left[0]["after"].Should().BeNull(because: "the kept step starts with the stage once its earlier step is gone");
 		} finally {
 			await CleanUpAsync(context, created, null, null, string.Empty);
 		}
@@ -686,6 +699,8 @@ public sealed class CreateDynamicCaseToolE2ETests {
 				because: "an access-rights step without a filter and without the user's separate yes is not written");
 			Text(ResultOf(everyRecord), "errorCode").Should().Be("step-acts-on-all-records",
 				because: "without a filter the step changes the rights on every record of the object");
+			ResultOf(everyRecord)["diff"].Should().NotBeNull(
+				because: "a refusal that follows the plan carries the planned diff, so the user sees what the yes covers");
 			ShouldHaveLanded(dryRun, "an approval and a filtered access-rights step are valid steps");
 			Text(ResultOf(dryRun), "outcome").Should().Be("planned",
 				because: "a dry run with valid steps runs every check and only plans the change");

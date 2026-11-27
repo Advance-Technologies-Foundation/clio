@@ -72,17 +72,24 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>f422ee5b</c>, the
-	/// compile-marker restamp on the ENG-107648 branch <c>feature/ENG-107648-eng-106637-part-3-step-types</c>, tagged
-	/// <c>crtprocessbuilder-1.6.6.222</c>; the stamp is its child <c>895f5d32</c>). <c>main</c>'s 1.6.6.217 cut (the case
-	/// versions of ENG-106400, <c>8e865502</c>) is merged into the branch as <c>d57cd815</c>, so the cut carries everything
-	/// 1.6.6.217 carries plus the other step types (approval, open edit page, sub-process, send email, change access
-	/// rights) and <c>confirmAllRecords</c> of ENG-107648, with the fixes of its review rounds (<c>4eb9752d</c> is the
-	/// fourth, <c>cc36cbb9</c> to <c>2ed96b26</c> the fifth), and a column of the case's record (the designer's "Main record") in every step field the designer offers
-	/// it for (paths through its lookups, activity times, a Perform task's subject and other connections included), with open-page and email steps linked to the case's record (<c>e7a4abf6</c>, <c>5e32710d</c>, <c>6804da57</c>, <c>d3d44494</c>, <c>2d8e2b09</c>, <c>d4c054c0</c>).
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>8fd1fa87</c>, the
+	/// compile-marker restamp on the ENG-108121 branch <c>feature/ENG-108121-dev-testing-fixes</c>, tagged
+	/// <c>crtprocessbuilder-1.6.6.225</c>; the stamp is its child <c>1781a24c</c>). The branch starts at <c>main</c>'s
+	/// 1.6.6.222 release and merges the three held dev-testing fixes of the steps inside stages (ENG-106637): a step sent
+	/// back as describe returns it outlives the step it waited for, and describe-only step keys are ignored without a
+	/// warning (ENG-107646, <c>8f233993</c>); <c>stage-is-condition-target</c> names every blocking step in one refusal, a
+	/// category change says to leave the old conditions out, and the transition notes no longer promise a move to a later
+	/// stage (ENG-107647, <c>8e09639d</c>); an approval purpose or an email subject with text around a column is refused in
+	/// the case's words, an Open edit page step's pre-filled value refusal shows the 'value' shape, and a role taken from a
+	/// column of the case's record gets a note (ENG-107648, <c>7483caec</c>); <c>55a39114</c> simplifies them. The gaps
+	/// the review of that cut found follow: the case's words for a subject placeholder, a recipient value and the approval
+	/// author's address (<c>6abd14b2</c>); a renamed source stays a described step's source, the category hint only for
+	/// carried conditions, one wording of the condition-target remedies (<c>05476cfb</c>).
 	/// This cut is a SCRIPT cut (<c>rebundle-process-builder.ps1</c>): the producing commit carries the restamped compile
-	/// marker, the script stamped the package descriptor to 1.6.6.222 and packed that commit with it overlaid, and the
-	/// stamp was committed after it as the child commit <c>895f5d32</c>.
+	/// marker, the script stamped the package descriptor to 1.6.6.225 and packed that commit with it overlaid, and the
+	/// stamp was committed after it as the child commit <c>1781a24c</c>. 1.6.6.224 (<c>76b5e458</c>) was the first cut of
+	/// this branch and reached no release; 1.6.6.223 is burned: a cut of the first fix alone (<c>aec91bc2</c>) reached
+	/// test stands. 1.6.6.222 (<c>f422ee5b</c>) is the cut the previous release shipped.
 	/// 1.6.6.193 is skipped: a dev build of the same branch numbered 1.6.6.193 reached a shared test stand, so that
 	/// number names other bytes there. 1.6.6.194 (<c>c2ee4c6d</c>), 1.6.6.195 (<c>b7635268</c>), 1.6.6.196 (<c>3958ae40</c>), 1.6.6.197 (<c>9d14d885</c>), 1.6.6.198 (<c>34a89779</c>), 1.6.6.199 (<c>f4015423</c>), 1.6.6.207 (<c>546ead35</c>), 1.6.6.208 (<c>39b646d3</c>), 1.6.6.209 (<c>fda07911</c>), 1.6.6.210 (<c>6c10708d</c>), 1.6.6.211 (<c>a6281ca1</c>), 1.6.6.216 (<c>803cc246</c>) and 1.6.6.217 (<c>8e865502</c>, the last one <c>master</c> shipped) are the ENG-106400 branch's cuts,
 	/// and 1.6.6.212, 1.6.6.213, 1.6.6.214, 1.6.6.215 (<c>04de52de</c>), 1.6.6.218 (<c>d05d5650</c>), 1.6.6.219 (<c>e75554cd</c>), 1.6.6.220 (<c>4dfb0e54</c>) and 1.6.6.221 (<c>2a25b352</c>) this branch's earlier ones, all superseded by this one.
@@ -197,7 +204,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"67972621C8148548758501629728FC5160259D3A743A057767A7DEF42AAB4528";
+		"49183FDD82B14E43A45EE4527FF5671909944981BF5D56ADC8968850E27A33DC";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -225,7 +232,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.222";
+	private const string ExpectedArchiveVersion = "1.6.6.225";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
@@ -249,7 +256,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "f422ee5b7a63cbb339fa1c4eb3f6e1e21f68bb85";
+	private const string ExpectedProducingCommit = "8fd1fa878e74a604e7c323f5f4915b93b6d06acb";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -275,7 +282,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1795781100000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1795812508000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -290,7 +297,7 @@ public class BundledProcessBuilderPackageTests {
 	/// fixed, but nothing re-stamps a descriptor written before the fix — so the field with the worst record
 	/// was the only one with no guard.
 	/// </remarks>
-	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1795781070000)/";
+	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1795812414000)/";
 
 	/// <summary>
 	/// The authorization gate inside the shipped package. See
@@ -967,7 +974,7 @@ public class BundledProcessBuilderPackageTests {
 	}
 
 	[Test]
-	[Description("An archive that meets the case-change floor must read the three confirmations, report records, take a stage's steps and transitionType, take a step copied from describe, take a sub-process step's inputs and refuse an all-records access-rights step without the user's yes: a cut at or above the floor from a base without them (another branch's re-cut) would pass every pin while describe lost records and modify refused them as unknown keys.")]
+	[Description("An archive that meets the case-change floor must read the three confirmations, report records, take a stage's steps and transitionType, take a step copied from describe, take a sub-process step's inputs, refuse an all-records access-rights step without the user's yes, and carry the steps' dev-testing fixes (a described step that outlives its removed earlier step, every blocking step in one stage-is-condition-target, the note on a role from the record's column): a cut at or above the floor from a base without them (another branch's re-cut) would pass every pin while describe lost records and modify refused them as unknown keys.")]
 	public void BundledArchive_ShouldAcceptTheCaseChangeConfirmations_WhenItMeetsTheirFloor() {
 		// Arrange
 		PackageVersion bundledVersion = ReadBundledVersionThroughTheCatalog();
@@ -984,6 +991,11 @@ public class BundledProcessBuilderPackageTests {
 		bool readsAllRecords = archive.Contains("[DataMember(Name = \"confirmAllRecords\")]", StringComparison.Ordinal);
 		bool takesStepInputs = archive.Contains("class CaseStepInputRequest", StringComparison.Ordinal);
 		bool refusesAllRecordsWithoutYes = archive.Contains("\"step-acts-on-all-records\"", StringComparison.Ordinal);
+		bool startsDescribedStepWithStage = archive.Contains("public bool SourceRemoved { get; set; }", StringComparison.Ordinal);
+		bool namesEveryBlockingStep = archive.Contains("steps have conditions that move records to a stage this change removes",
+			StringComparison.Ordinal);
+		bool notesRoleColumn = archive.Contains("goes to the role in the record's column", StringComparison.Ordinal);
+		bool gatesCategoryHint = archive.Contains("public bool CarriesStoredConditions { get; set; }", StringComparison.Ordinal);
 
 		// Assert
 		if (bundledVersion >= floor) {
@@ -1004,6 +1016,18 @@ public class BundledProcessBuilderPackageTests {
 			refusesAllRecordsWithoutYes.Should().BeTrue(
 				because: $"the bundled {bundledVersion} meets the floor {floor}, raised for the access-rights step, whose "
 					+ "change on every record without the user's yes is refused as step-acts-on-all-records");
+			startsDescribedStepWithStage.Should().BeTrue(
+				because: $"the bundled {bundledVersion} meets the floor {floor}, raised for a step sent back as describe "
+					+ "returns it that outlives the step it waited for and starts with the stage");
+			namesEveryBlockingStep.Should().BeTrue(
+				because: $"the bundled {bundledVersion} meets the floor {floor}, raised for one stage-is-condition-target "
+					+ "that names every step whose condition leads to the removed stage");
+			notesRoleColumn.Should().BeTrue(
+				because: $"the bundled {bundledVersion} meets the floor {floor}, raised for the dev-testing fixes of the "
+					+ "step types, among them the note on a role taken from a column of the case's record");
+			gatesCategoryHint.Should().BeTrue(
+				because: $"the bundled {bundledVersion} meets the floor {floor}, raised for the gaps the review of the "
+					+ "dev-testing cut found, among them the category hint only for conditions carried over from describe");
 		}
 	}
 

@@ -56,9 +56,21 @@ public static class DynamicCaseChangeRequirement {
 	/// a column path through the record's lookups, an activity's time from a column, a Perform task's subject apart
 	/// from its caption and a step's other connections; 1.6.6.222 checks a value taken from a column in every step
 	/// field (a role's column, text around a macro, a recipient's column, a page's record) and bounds a path's depth.
-	/// 1.6.6.218 to 1.6.6.221 reached no release.
+	/// 1.6.6.218 to 1.6.6.221 reached no release. 1.6.6.224 carries the fixes of the steps' dev testing: a step sent
+	/// back as describe returns it outlives the step it waited for (it starts with the stage instead of being refused
+	/// <c>step-after-invalid</c>) and what only describe reports on a step is ignored without a warning, which the
+	/// guide's whole-list rule relies on; <c>stage-is-condition-target</c> names every step that blocks the removal in
+	/// one refusal; an approval purpose or an email subject with text around a column is refused in the case's words
+	/// (<c>step-value-source-unsupported</c>) instead of the process's 'mappings' remedy, an Open edit page step's
+	/// refused pre-filled value shows the 'value' shape, and a step whose role comes from a column of the case's record
+	/// notes that the column must be filled on every record entering the stage. 1.6.6.223 was a cut of the first of
+	/// those fixes and reached no release. 1.6.6.225 adds the gaps its review found: a step sent back as describe
+	/// returns it keeps waiting for its earlier step when the same change renames that step; a [[...]] placeholder in an
+	/// email subject, a macro or a placeholder in a recipient's 'value' and a macro in the approval author's address are
+	/// refused in the case's words; the 'leave conditions out' hint comes only when the old conditions are carried over;
+	/// and <c>stage-is-condition-target</c> words its remedies for one step as for several. 1.6.6.224 reached no release.
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.222";
+	public const string MinimumProcessBuilderVersion = "1.6.6.225";
 }
 
 /// <summary>
