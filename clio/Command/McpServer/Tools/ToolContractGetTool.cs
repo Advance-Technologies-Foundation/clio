@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Reflection;
@@ -3118,7 +3118,7 @@ internal static class ToolContractCatalog {
 				Field(ErrorFieldName, StringType, FailureMessageDescription + " " + ODataWriteForeignKeyHintDescription),
 				Field(SiteResponseFieldName, ObjectType, SiteResponseDescription),
 				Field("id", StringType, "GUID of the updated record."),
-				Field("verified", BooleanType, "true when the written fields were read back after the PATCH and compared; false when the read-back failed (the write still succeeded, see verification-note); absent when verify=false or nothing was written."),
+				Field("verified", BooleanType, "true when the written fields were read back after the PATCH and at least one was compared; false when the read-back failed or compared none of them (the write still succeeded, see verification-note); absent when verify=false or nothing was written."),
 				Field("diverged", ArrayType, DivergedFieldDescription),
 				Field("verification-note", StringType, "Why the read-back did not verify the write, or which sent fields it did not compare."),
 				Field("warnings", ArrayType, "Notes that did not stop the call, for example that values was accepted as data; absent when there is nothing to note."),
@@ -7575,6 +7575,7 @@ internal static class ToolContractCatalog {
 
 	private const string ReadBackScopeDescription =
 		"The read-back runs right after the write and compares only the sent fields, by their $metadata type when known (GUID case, date-time offset and number form are not differences); "
+		+ "a match only the column type or the server time zone could confirm (without the type: a GUID in another letter case, the same instant written another way; a date-only value sent to a date-time column) is not counted as compared and is named in verification-note; "
 		+ "a value an asynchronous business process changes later is not seen. A lookup set through @odata.bind, a navigation path and a binary column "
 		+ "cannot be read back: they are named in verification-note, and a write in which no sent field could be compared is verified=false.";
 

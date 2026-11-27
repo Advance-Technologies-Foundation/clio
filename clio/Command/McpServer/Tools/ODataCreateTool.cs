@@ -302,8 +302,8 @@ public sealed class ODataCreateTool(
 		if (args.Verify == false) {
 			return ODataCreateBatchResponse.From(results);
 		}
-		results = VerifyCreatedRows(client, urlBuilder, entity, rows, results,
-			propertyTypes.IsValueCreated ? propertyTypes.Value : null, RemainingBudgetMs, cancellationToken);
+		results = VerifyCreatedRows(client, urlBuilder, entity, rows, results, propertyTypes, RemainingBudgetMs,
+			cancellationToken);
 		int divergedRows = results.Count(result => result.Diverged is not null);
 		return ODataCreateBatchResponse.From(results) with {
 			Diverged = divergedRows,
@@ -320,12 +320,16 @@ public sealed class ODataCreateTool(
 	/// <param name="entity">The OData entity set name.</param>
 	/// <param name="rows">The sent rows, indexed like the results.</param>
 	/// <param name="results">Per-row outcomes of the POSTs.</param>
-	/// <param name="propertyTypes">The entity type map when the batch already loaded it; never loaded for this.</param>
+	/// <param name="propertyTypes">
+	/// The batch's entity type map. Used as is when the batch already loaded it; otherwise loaded only when a stored
+	/// value matches the sent one in a form only its type can confirm, and only while the budget still covers the
+	/// metadata read.
+	/// </param>
 	/// <param name="remainingBudgetMs">Milliseconds left of the batch budget.</param>
 	/// <param name="cancellationToken">Caller token; once cancelled, no further chunk is read back.</param>
 	private List<ODataRowResult> VerifyCreatedRows(IApplicationClient client, IServiceUrlBuilder urlBuilder,
 		string entity, JsonElement rows, List<ODataRowResult> results,
-		IReadOnlyDictionary<string, string> propertyTypes, Func<int> remainingBudgetMs,
+		Lazy<IReadOnlyDictionary<string, string>> propertyTypes, Func<int> remainingBudgetMs,
 		CancellationToken cancellationToken) {
 		JsonElement[] sentRows = rows.EnumerateArray().ToArray();
 		List<ODataSentRecord> created = results
@@ -335,8 +339,11 @@ public sealed class ODataCreateTool(
 		// The verifier never throws: a failed read-back comes back as an unverified outcome per row.
 		IReadOnlyDictionary<string, ODataWriteVerification> outcomes = created.Count == 0
 			? new Dictionary<string, ODataWriteVerification>()
-			: _writeVerifier.VerifyRecords(client, urlBuilder, entity, created, propertyTypes, remainingBudgetMs,
-				cancellationToken);
+			: _writeVerifier.VerifyRecords(client, urlBuilder, entity, created,
+				propertyTypes.IsValueCreated ? propertyTypes.Value : null, remainingBudgetMs, cancellationToken,
+				() => remainingBudgetMs() >= ODataFieldValidation.OptionalMetadataTimeoutMs + ODataWriteVerifier.MinReadBudgetMs
+					? propertyTypes.Value
+					: null);
 		return results.Select(result => {
 			if (!result.Success) {
 				return result;

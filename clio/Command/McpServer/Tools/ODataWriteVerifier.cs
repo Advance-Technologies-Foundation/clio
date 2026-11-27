@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
+using System.Threading.Tasks;
 using Clio.Common;
 
 namespace Clio.Command.McpServer.Tools;
@@ -43,13 +44,23 @@ public interface IODataWriteVerifier {
 	/// <param name="entity">The OData entity set name.</param>
 	/// <param name="records">The written records: each Id with the JSON object that was sent for it.</param>
 	/// <param name="propertyTypes">The entity's property name to Edm type map, or <see langword="null"/> when unknown.</param>
-	/// <param name="remainingBudgetMs">Milliseconds left for the whole call; a chunk is not read below one second.</param>
+	/// <param name="remainingBudgetMs">
+	/// Milliseconds left for the whole call. A chunk is not read below one second, and a chunk's read - a session
+	/// recovery included - is abandoned when it outlasts the budget; no chunk is read after that.
+	/// </param>
 	/// <param name="cancellationToken">Caller token; once cancelled, no further chunk is read.</param>
+	/// <param name="loadPropertyTypes">
+	/// Loads the entity's type map when <paramref name="propertyTypes"/> is <see langword="null"/>, or returns
+	/// <see langword="null"/> when it cannot. Called at most once, and only when a stored value matches the sent
+	/// one in a form only the column type can confirm (a GUID in another letter case, the same instant written
+	/// another way); without it such a field is not reported as compared.
+	/// </param>
 	/// <returns>One outcome per record, keyed by its trimmed Id (case-insensitive).</returns>
 	IReadOnlyDictionary<string, ODataWriteVerification> VerifyRecords(IApplicationClient client,
 		IServiceUrlBuilder urlBuilder, string entity, IReadOnlyList<ODataSentRecord> records,
 		IReadOnlyDictionary<string, string>? propertyTypes, Func<int> remainingBudgetMs,
-		CancellationToken cancellationToken = default);
+		CancellationToken cancellationToken = default,
+		Func<IReadOnlyDictionary<string, string>?>? loadPropertyTypes = null);
 }
 
 /// <summary>A written record: its Id and the JSON object that was sent for it.</summary>
@@ -73,7 +84,7 @@ public sealed record ODataFieldDivergence(
 	JsonElement Stored);
 
 /// <summary>Outcome of reading a written record back.</summary>
-/// <param name="Verified">Whether the stored values were read and compared.</param>
+/// <param name="Verified">Whether the stored values were read and at least one sent field was compared.</param>
 /// <param name="Diverged">The sent fields stored with a different value; empty when every compared field matched.</param>
 /// <param name="Note">Why the record was not verified, or which sent fields were not compared; otherwise <see langword="null"/>.</param>
 public sealed record ODataWriteVerification(bool Verified, IReadOnlyList<ODataFieldDivergence> Diverged, string? Note) {
@@ -148,6 +159,13 @@ public sealed class ODataWriteVerifier : IODataWriteVerifier {
 	private const string NoRecordId =
 		"Creatio did not return a GUID Id for the created record, so it could not be read back.";
 
+	private const string ReadOutlastedBudget =
+		"the read-back did not answer within the batch time budget, so the stored values were not compared.";
+
+	private const string StoppedAfterSlowRead =
+		"an earlier read-back of this batch did not answer within the time budget, so this record was not read "
+		+ "back and the stored values were not compared.";
+
 	/// <inheritdoc />
 	public ODataWriteVerification VerifyRecord(IApplicationClient client, IServiceUrlBuilder urlBuilder,
 		string entity, string id, JsonElement sent, IReadOnlyDictionary<string, string>? propertyTypes) {
@@ -159,7 +177,7 @@ public sealed class ODataWriteVerifier : IODataWriteVerifier {
 			string url = urlBuilder.Build(ODataKeyFormatter.KeyPath(entity, id))
 				+ "?$select=" + Uri.EscapeDataString(string.Join(",", plan.Compared));
 			return TryRead(client, url, ReadBackTimeoutMs, out JsonElement root, out string failure)
-				? Compare(sent, root, plan, propertyTypes)
+				? Compare(sent, root, plan, new TypeSource(propertyTypes, null))
 				: ODataWriteVerification.Unverified(failure);
 		} catch (Exception ex) {
 			// The write already happened: nothing on the read-back path may surface as a failed write.
@@ -171,11 +189,12 @@ public sealed class ODataWriteVerifier : IODataWriteVerifier {
 	public IReadOnlyDictionary<string, ODataWriteVerification> VerifyRecords(IApplicationClient client,
 		IServiceUrlBuilder urlBuilder, string entity, IReadOnlyList<ODataSentRecord> records,
 		IReadOnlyDictionary<string, string>? propertyTypes, Func<int> remainingBudgetMs,
-		CancellationToken cancellationToken = default) {
+		CancellationToken cancellationToken = default,
+		Func<IReadOnlyDictionary<string, string>?>? loadPropertyTypes = null) {
 		Dictionary<string, ODataWriteVerification> outcomes = new(StringComparer.OrdinalIgnoreCase);
 		try {
-			VerifyRecordsCore(client, urlBuilder, entity, records, propertyTypes, remainingBudgetMs, cancellationToken,
-				outcomes);
+			VerifyRecordsCore(client, urlBuilder, entity, records, new TypeSource(propertyTypes, loadPropertyTypes),
+				remainingBudgetMs, cancellationToken, outcomes);
 		} catch (Exception ex) {
 			ODataWriteVerification failed = ODataWriteVerification.ReadBackFailed(ex);
 			foreach (ODataSentRecord record in records.Where(record => record.Id is not null)) {
@@ -203,14 +222,40 @@ public sealed class ODataWriteVerifier : IODataWriteVerifier {
 	/// <summary>A record to read back, with its fields worked out once.</summary>
 	private sealed record PendingRecord(string Id, JsonElement Sent, FieldPlan Plan);
 
+	/// <summary>
+	/// The entity's field types: the map known up front, and a loader tried once - only when a comparison needs a
+	/// type the map does not hold.
+	/// </summary>
+	private sealed class TypeSource(IReadOnlyDictionary<string, string>? known,
+		Func<IReadOnlyDictionary<string, string>?>? loader) {
+
+		private IReadOnlyDictionary<string, string>? _types = known;
+		private bool _loadTried = known is not null || loader is null;
+
+		/// <summary>The map as known now, without loading it.</summary>
+		public IReadOnlyDictionary<string, string>? Known => _types;
+
+		/// <summary>The field's Edm type as known now, or <see langword="null"/>.</summary>
+		public string? TypeOf(string field) => ODataWriteVerifier.TypeOf(field, _types);
+
+		/// <summary>Loads the map once; whether a map is available afterwards.</summary>
+		public bool TryLoad() {
+			if (!_loadTried) {
+				_loadTried = true;
+				_types = loader!();
+			}
+			return _types is not null;
+		}
+	}
+
 	private static void VerifyRecordsCore(IApplicationClient client, IServiceUrlBuilder urlBuilder, string entity,
-		IReadOnlyList<ODataSentRecord> records, IReadOnlyDictionary<string, string>? propertyTypes,
+		IReadOnlyList<ODataSentRecord> records, TypeSource types,
 		Func<int> remainingBudgetMs, CancellationToken cancellationToken,
 		Dictionary<string, ODataWriteVerification> outcomes) {
 		List<PendingRecord> pending = [];
 		foreach (ODataSentRecord record in records) {
 			string id = record.Id?.Trim() ?? string.Empty;
-			FieldPlan plan = PlanFields(record.Sent, propertyTypes);
+			FieldPlan plan = PlanFields(record.Sent, types.Known);
 			// The Id goes into $filter verbatim, so only a GUID is read back; anything else cannot address a record.
 			if (!ODataKeyFormatter.IsGuid(id)) {
 				outcomes[id] = ODataWriteVerification.Unverified(NoRecordId);
@@ -221,25 +266,76 @@ public sealed class ODataWriteVerifier : IODataWriteVerifier {
 			}
 		}
 		string collectionUrl = urlBuilder.Build(ODataKeyFormatter.CollectionPath(entity));
+		bool stopped = false;
 		foreach (List<PendingRecord> chunk in Chunk(pending)) {
 			int remaining = remainingBudgetMs();
-			if (cancellationToken.IsCancellationRequested || remaining < MinReadBudgetMs) {
-				string reason = cancellationToken.IsCancellationRequested ? Cancelled : BudgetSpent;
+			if (stopped || cancellationToken.IsCancellationRequested || remaining < MinReadBudgetMs) {
+				string reason = stopped ? StoppedAfterSlowRead
+					: cancellationToken.IsCancellationRequested ? Cancelled : BudgetSpent;
 				chunk.ForEach(record => outcomes[record.Id] = ODataWriteVerification.Unverified(reason));
 				continue;
 			}
 			string url = collectionUrl + "?" + BuildChunkQuery(chunk);
-			if (!TryRead(client, url, Math.Min(ReadBackTimeoutMs, remaining), out JsonElement root, out string failure)) {
+			ChunkRead read = ReadWithin(client, url, Math.Min(ReadBackTimeoutMs, remaining), cancellationToken,
+				out JsonElement root, out string failure);
+			if (read != ChunkRead.Answered) {
+				// An abandoned read may still be running: no further chunk shares the client with it.
+				stopped = read == ChunkRead.Abandoned;
 				chunk.ForEach(record => outcomes[record.Id] = ODataWriteVerification.Unverified(failure));
 				continue;
 			}
 			Dictionary<Guid, JsonElement> stored = StoredById(root);
 			foreach (PendingRecord record in chunk) {
 				outcomes[record.Id] = stored.TryGetValue(Guid.Parse(record.Id), out JsonElement row)
-					? Compare(record.Sent, row, record.Plan, propertyTypes)
+					? Compare(record.Sent, row, record.Plan, types)
 					: ODataWriteVerification.Unverified(NotReturned);
 			}
 		}
+	}
+
+	/// <summary>How a chunk's read-back ended.</summary>
+	private enum ChunkRead {
+
+		/// <summary>The read-back answered with a usable JSON object.</summary>
+		Answered,
+
+		/// <summary>The read-back answered or threw, but the answer is not usable.</summary>
+		Failed,
+
+		/// <summary>The read-back outlasted its deadline or the call was cancelled, and was left running.</summary>
+		Abandoned
+	}
+
+	/// <summary>
+	/// Reads one chunk within <paramref name="deadlineMs"/>. The synchronous GET re-authenticates and replays
+	/// itself when the session expired, with the timeout it was given, so the GET timeout alone does not bound the
+	/// read: the whole call is waited for with the deadline and abandoned past it. It is a read, so the abandoned
+	/// call changes nothing.
+	/// </summary>
+	private static ChunkRead ReadWithin(IApplicationClient client, string url, int deadlineMs,
+		CancellationToken cancellationToken, out JsonElement root, out string failure) {
+		root = default;
+		Task<string> read = Task.Run(() => client.ExecuteGetRequest(url, deadlineMs, 1), CancellationToken.None);
+		bool finished;
+		try {
+			finished = read.Wait(deadlineMs, cancellationToken);
+		} catch (OperationCanceledException) {
+			finished = false;
+		} catch (AggregateException) {
+			finished = true;
+		}
+		if (!finished) {
+			// Observed, so a later failure of the abandoned call is not an unobserved task exception.
+			_ = read.ContinueWith(task => _ = task.Exception, CancellationToken.None,
+				TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+			failure = cancellationToken.IsCancellationRequested ? Cancelled : ReadOutlastedBudget;
+			return ChunkRead.Abandoned;
+		}
+		if (read.IsFaulted) {
+			failure = ODataWriteVerification.ReadBackFailed(read.Exception!.GetBaseException()).Note!;
+			return ChunkRead.Failed;
+		}
+		return TryParse(read.Result, out root, out failure) ? ChunkRead.Answered : ChunkRead.Failed;
 	}
 
 	/// <summary>
@@ -289,7 +385,9 @@ public sealed class ODataWriteVerifier : IODataWriteVerifier {
 				filterLength = 0;
 				selectLength = EscapedLength("Id");
 				idLength = EscapedLength(IdTerm + record.Id);
-				addedSelect = SelectLengthOf(record.Plan.Compared);
+				// Measured against the reset set, which already holds Id: BuildChunkQuery writes each field once,
+				// so a sent Id counted again here would size a $select longer than the one it serializes.
+				addedSelect = SelectLengthOf(record.Plan.Compared.Where(field => !selected.Contains(field)));
 			}
 			current.Add(record);
 			selected.UnionWith(record.Plan.Compared);
@@ -328,7 +426,6 @@ public sealed class ODataWriteVerifier : IODataWriteVerifier {
 	private static bool TryRead(IApplicationClient client, string url, int timeoutMs, out JsonElement root,
 		out string failure) {
 		root = default;
-		failure = null!;
 		string body;
 		try {
 			body = client.ExecuteGetRequest(url, timeoutMs, 1);
@@ -336,6 +433,13 @@ public sealed class ODataWriteVerifier : IODataWriteVerifier {
 			failure = ODataWriteVerification.ReadBackFailed(ex).Note!;
 			return false;
 		}
+		return TryParse(body, out root, out failure);
+	}
+
+	/// <summary>Parses a read-back answer into its JSON root, or names why it is unusable.</summary>
+	private static bool TryParse(string body, out JsonElement root, out string failure) {
+		root = default;
+		failure = null!;
 		if (string.IsNullOrWhiteSpace(body)) {
 			failure = UnreadableAnswer;
 			return false;
@@ -372,29 +476,52 @@ public sealed class ODataWriteVerifier : IODataWriteVerifier {
 		return rows;
 	}
 
-	/// <summary>Compares each sent field with its stored value.</summary>
+	/// <summary>
+	/// Compares each sent field with its stored value. The record counts as verified only when at least one field
+	/// was compared: a read-back that returned none of them, or only values it could not confirm, checked nothing.
+	/// </summary>
 	private static ODataWriteVerification Compare(JsonElement sent, JsonElement stored, FieldPlan plan,
-		IReadOnlyDictionary<string, string>? propertyTypes) {
+		TypeSource types) {
 		List<ODataFieldDivergence> diverged = [];
 		List<string> notReturned = [];
+		List<string> unconfirmed = [];
+		int compared = 0;
 		foreach (string field in plan.Compared) {
 			JsonElement sentValue = sent.GetProperty(field);
 			if (!TryGetProperty(stored, field, out JsonElement storedValue)) {
 				notReturned.Add(field);
 				continue;
 			}
-			if (!ODataStoredValueComparer.AreEquivalent(sentValue, storedValue, TypeOf(field, propertyTypes))) {
-				diverged.Add(new ODataFieldDivergence(field, sentValue.Clone(), storedValue.Clone()));
+			ODataValueMatch match = ODataStoredValueComparer.Match(sentValue, storedValue, types.TypeOf(field));
+			if (match == ODataValueMatch.Unconfirmed && types.TypeOf(field) is null && types.TryLoad()
+				&& types.TypeOf(field) is { } loadedType) {
+				match = ODataStoredValueComparer.Match(sentValue, storedValue, loadedType);
 			}
+			switch (match) {
+				case ODataValueMatch.Unconfirmed:
+					unconfirmed.Add(field);
+					continue;
+				case ODataValueMatch.Different:
+					diverged.Add(new ODataFieldDivergence(field, sentValue.Clone(), storedValue.Clone()));
+					break;
+			}
+			compared++;
 		}
-		string? notReturnedNote = notReturned.Count == 0
-			? null
-			: "The read-back did not return " + string.Join(", ", notReturned.Select(field => $"'{field}'"))
-				+ ", so " + (notReturned.Count == 1 ? "it was" : "they were") + " not compared.";
-		string?[] notes = [notReturnedNote, plan.SkippedNote];
+		string?[] notes = [
+			NotComparedNote(notReturned, "The read-back did not return "),
+			NotComparedNote(unconfirmed, "The read-back returned ", " in another form that only the column type or "
+				+ "the server time zone could confirm as the sent value"),
+			plan.SkippedNote
+		];
 		string? note = notes.Any(part => part is not null) ? string.Join(" ", notes.Where(part => part is not null)) : null;
-		return new ODataWriteVerification(true, diverged, note);
+		return new ODataWriteVerification(compared > 0, diverged, note);
 	}
+
+	private static string? NotComparedNote(IReadOnlyList<string> fields, string prefix, string suffix = "") =>
+		fields.Count == 0
+			? null
+			: prefix + string.Join(", ", fields.Select(field => $"'{field}'")) + suffix
+				+ ", so " + (fields.Count == 1 ? "it was" : "they were") + " not compared.";
 
 	/// <summary>Reads a property by its exact name, then by a case-insensitive match.</summary>
 	private static bool TryGetProperty(JsonElement element, string name, out JsonElement value) {

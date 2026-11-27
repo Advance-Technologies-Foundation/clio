@@ -326,4 +326,183 @@ public sealed class ODataWriteVerifierTests {
 			because: "the sent fields are still compared against the full record");
 	}
 
+	[Test]
+	[Description("A record read back without any of the sent fields compared nothing, so the write is not reported as verified.")]
+	public void VerifyRecord_Should_Not_Claim_Verified_When_The_Read_Back_Returned_No_Sent_Field() {
+		// Arrange
+		_client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns($"{{\"Id\":\"{Id}\"}}");
+
+		// Act
+		ODataWriteVerification result = _verifier.VerifyRecord(_client, _urlBuilder, "ForecastSheet", Id,
+			Json("{\"Name\":\"Q1\"}"), null);
+
+		// Assert
+		result.Verified.Should().BeFalse(because: "no sent field was compared, so nothing was verified");
+		result.Diverged.Should().BeEmpty(because: "a missing field is not evidence of another stored value");
+		result.Note.Should().Contain("'Name'", because: "the caller is told which field was not compared");
+	}
+
+	[Test]
+	[Description("A created row read back without any of its sent fields is not reported as verified.")]
+	public void VerifyRecords_Should_Not_Claim_Verified_When_The_Row_Has_No_Sent_Field() {
+		// Arrange
+		string id = NewGuid();
+		_client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns($"{{\"value\":[{{\"Id\":\"{id}\"}}]}}");
+
+		// Act
+		IReadOnlyDictionary<string, ODataWriteVerification> outcomes = _verifier.VerifyRecords(_client, _urlBuilder,
+			"Account", [new ODataSentRecord(id, Json("{\"Name\":\"x\"}"))], null, () => 60_000);
+
+		// Assert
+		outcomes[id].Verified.Should().BeFalse(because: "the row came back, but none of its sent fields did");
+		outcomes[id].Note.Should().Contain("'Name'", because: "the caller is told which field was not compared");
+	}
+
+	[Test]
+	[Description("A date-only value whose match depends on the server's time zone is not counted as compared, so a write of only that field is not verified.")]
+	public void VerifyRecord_Should_Not_Count_A_Date_Only_Match_The_Server_Zone_Decides() {
+		// Arrange
+		_client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns($"{{\"Id\":\"{Id}\",\"DueDate\":\"2024-01-01T12:00:00Z\"}}");
+
+		// Act
+		ODataWriteVerification result = _verifier.VerifyRecord(_client, _urlBuilder, "Activity", Id,
+			Json("{\"DueDate\":\"2024-01-01\"}"), new Dictionary<string, string> { ["DueDate"] = "Edm.DateTimeOffset" });
+
+		// Assert
+		result.Verified.Should().BeFalse(because: "noon UTC is midnight only in some zones, and the server's is unknown");
+		result.Diverged.Should().BeEmpty(because: "it may still be the sent date");
+		result.Note.Should().Contain("'DueDate'", because: "the caller is told which field was not compared")
+			.And.Contain("time zone", because: "the caller is told what would have confirmed it");
+	}
+
+	[Test]
+	[Description("After a chunk rolls over, a sent Id is not counted twice in the $select length: every read-back query stays under the IIS limit.")]
+	public void VerifyRecords_Should_Keep_Every_Query_Under_The_Limit_When_A_Sent_Id_Rolls_Over() {
+		// Arrange - a $select of "Id" plus the sent fields escapes to 898 characters, just under the drop threshold
+		List<string> fields = Enumerable.Range(0, 68).Select(index => $"Column{index:D4}").Append("Extra1234").ToList();
+		Uri.EscapeDataString(string.Join(",", new[] { "Id" }.Concat(fields))).Length.Should().Be(898,
+			because: "the test needs a $select that is kept by serialization but over the limit when Id counts twice");
+		List<ODataSentRecord> records = Enumerable.Range(0, 60)
+			.Select(_ => NewGuid())
+			.Select(id => new ODataSentRecord(id,
+				Json("{\"Id\":\"" + id + "\"," + string.Join(",", fields.Select(field => $"\"{field}\":\"v\"")) + "}")))
+			.ToList();
+		List<string> urls = [];
+		_client.ExecuteGetRequest(Arg.Do<string>(urls.Add), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"value\":[]}");
+
+		// Act
+		_verifier.VerifyRecords(_client, _urlBuilder, "Account", records, null, () => 60_000);
+
+		// Assert
+		urls.Count.Should().BeGreaterThan(1, because: "60 ids with this $select do not fit one query");
+		urls.Should().OnlyContain(url => url.Contains("$select=", StringComparison.Ordinal),
+			because: "a $select under the threshold is serialized in every chunk");
+		urls.Select(url => url[(url.IndexOf('?') + 1)..].Length).Should()
+			.OnlyContain(length => length <= ODataWriteVerifier.MaxQueryLength,
+				because: "the chunk after a rollover is sized with the same $select it serializes");
+	}
+
+	[Test]
+	[Description("A chunk read that outlasts the batch budget (for example a session recovery replaying the GET) is abandoned: its rows are unverified and no later chunk is read.")]
+	public void VerifyRecords_Should_Abandon_A_Read_That_Outlasts_The_Budget() {
+		// Arrange
+		List<ODataSentRecord> records = Enumerable.Range(0, 100)
+			.Select(_ => new ODataSentRecord(NewGuid(), Json("{\"Name\":\"x\"}")))
+			.ToList();
+		using System.Threading.ManualResetEventSlim release = new(false);
+		_client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => {
+				release.Wait(TimeSpan.FromSeconds(30));
+				return "{\"value\":[]}";
+			});
+		System.Diagnostics.Stopwatch elapsed = System.Diagnostics.Stopwatch.StartNew();
+
+		// Act
+		IReadOnlyDictionary<string, ODataWriteVerification> outcomes = _verifier.VerifyRecords(_client, _urlBuilder,
+			"Account", records, null, () => ODataWriteVerifier.MinReadBudgetMs + 200);
+		elapsed.Stop();
+		release.Set();
+
+		// Assert
+		elapsed.ElapsedMilliseconds.Should().BeLessThan(10_000,
+			because: "the read is waited for no longer than the remaining budget");
+		_client.ReceivedWithAnyArgs(1).ExecuteGetRequest(null!, 0, 0, 0);
+		outcomes.Should().HaveCount(records.Count, because: "every row gets an outcome");
+		outcomes.Values.Should().OnlyContain(outcome => !outcome.Verified && outcome.Note!.Contains("time budget"),
+			because: "neither the slow chunk nor the ones after it were compared, and the caller is told why");
+	}
+
+	[Test]
+	[Description("Without a type map, a stored GUID in another letter case loads the types once; with them it is compared as a GUID, for every row.")]
+	public void VerifyRecords_Should_Load_The_Types_Once_When_A_Match_Needs_Them() {
+		// Arrange
+		string first = NewGuid();
+		string second = NewGuid();
+		_client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns($"{{\"value\":[{{\"Id\":\"{first}\",\"OwnerId\":\"{Product}\"}},{{\"Id\":\"{second}\",\"OwnerId\":\"{Product}\"}}]}}");
+		int loads = 0;
+
+		// Act
+		IReadOnlyDictionary<string, ODataWriteVerification> outcomes = _verifier.VerifyRecords(_client, _urlBuilder,
+			"Activity",
+			[
+				new ODataSentRecord(first, Json($"{{\"OwnerId\":\"{Product.ToUpperInvariant()}\"}}")),
+				new ODataSentRecord(second, Json($"{{\"OwnerId\":\"{Product.ToUpperInvariant()}\"}}"))
+			],
+			null, () => 60_000, default, () => {
+				loads++;
+				return new Dictionary<string, string> { ["OwnerId"] = "Edm.Guid" };
+			});
+
+		// Assert
+		loads.Should().Be(1, because: "the metadata read is paid at most once per batch");
+		outcomes.Values.Should().OnlyContain(outcome => outcome.Verified && outcome.Diverged.Count == 0,
+			because: "an Edm.Guid in another letter case is the sent value");
+	}
+
+	[Test]
+	[Description("When the types cannot be loaded, a GUID-shaped value back in another letter case is not counted as compared: in a text column it would be another value.")]
+	public void VerifyRecords_Should_Not_Count_A_Match_The_Type_Would_Decide_When_No_Types_Load() {
+		// Arrange
+		string id = NewGuid();
+		_client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns($"{{\"value\":[{{\"Id\":\"{id}\",\"Code\":\"{Product}\",\"Name\":\"x\"}}]}}");
+
+		// Act
+		IReadOnlyDictionary<string, ODataWriteVerification> outcomes = _verifier.VerifyRecords(_client, _urlBuilder,
+			"Account", [new ODataSentRecord(id, Json($"{{\"Code\":\"{Product.ToUpperInvariant()}\",\"Name\":\"x\"}}"))],
+			null, () => 60_000, default, () => null);
+
+		// Assert
+		outcomes[id].Verified.Should().BeTrue(because: "Name was compared");
+		outcomes[id].Diverged.Should().BeEmpty(because: "Code may still be the sent GUID");
+		outcomes[id].Note.Should().Contain("'Code'", because: "verified=true must not hide a field that was not compared");
+	}
+
+	[Test]
+	[Description("Values that match literally never load the type map: the metadata read is paid only when a comparison needs it.")]
+	public void VerifyRecords_Should_Not_Load_The_Types_When_The_Values_Match_Literally() {
+		// Arrange
+		string id = NewGuid();
+		_client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns($"{{\"value\":[{{\"Id\":\"{id}\",\"OwnerId\":\"{Product}\"}}]}}");
+		int loads = 0;
+
+		// Act
+		IReadOnlyDictionary<string, ODataWriteVerification> outcomes = _verifier.VerifyRecords(_client, _urlBuilder,
+			"Activity", [new ODataSentRecord(id, Json($"{{\"OwnerId\":\"{Product}\"}}"))], null, () => 60_000, default,
+			() => {
+				loads++;
+				return null;
+			});
+
+		// Assert
+		loads.Should().Be(0, because: "a literal match needs no type");
+		outcomes[id].Verified.Should().BeTrue(because: "the field was compared");
+	}
+
 }

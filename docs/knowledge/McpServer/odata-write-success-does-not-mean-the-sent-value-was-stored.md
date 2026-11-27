@@ -29,4 +29,12 @@ read-back off by default, or reporting a divergence as `success:false`, brings t
 write is re-sent, and for `odata-create` re-sending duplicates the row — the opposite misreport of
 ENG-101508). Comparing values literally reports false divergences (GUID letter case, `+02:00` vs `Z`,
 `1` vs `1.0`, a date-only literal stored as server-zone midnight), which teaches the agent to ignore the
-signal; `ODataStoredValueComparer` compares by the `$metadata` type for that reason.
+signal; `ODataStoredValueComparer` compares by the `$metadata` type for that reason. The opposite mistake
+hides a real change, so a match that only an unknown fact could confirm is `Unconfirmed`, not a match: the
+same GUID in another letter case or the same instant written another way when the column type is unknown
+(in a text column it is another value), and a date-only literal whose stored instant is midnight in SOME
+zone - the read-back does not know the server's zone, and noon UTC is both UTC+12:00 midnight and a rule's
+noon. `odata-create` loads `$metadata` (once per batch, only while the budget covers it) only when such an
+untyped match occurs, because the multi-megabyte CSDL is not worth reading for a batch that matches
+literally. A batch read-back GET is waited for with the remaining budget, not trusted to its own timeout:
+the synchronous GET re-signs-in and replays itself on an expired session with the timeout it was given.

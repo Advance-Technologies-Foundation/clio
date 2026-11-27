@@ -77,8 +77,8 @@ public sealed record ODataWriteResponse(
 
 	/// <summary>odata-update: whether the written fields were read back and compared; absent when verify=false or nothing was written.</summary>
 	[JsonPropertyName("verified"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	[Description("odata-update: true when the written fields were read back right after the write and compared with what was sent; "
-		+ "false when the read-back failed (the write itself still succeeded - see verification-note). Absent when verify=false or nothing was written.")]
+	[Description("odata-update: true when the written fields were read back right after the write and at least one was compared with what was sent; "
+		+ "false when the read-back failed or compared none of them (the write itself still succeeded - see verification-note). Absent when verify=false or nothing was written.")]
 	public bool? Verified { get; init; }
 
 	/// <summary>odata-update: the sent fields Creatio stored with a different value.</summary>

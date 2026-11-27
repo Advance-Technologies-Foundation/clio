@@ -100,8 +100,8 @@ public sealed record ODataRowResult {
 	/// <summary>Whether the created row was read back and compared; absent for a failed row or when verify=false.</summary>
 	[JsonPropertyName("verified")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	[Description("Created rows only: true when the row was read back after the batch and its fields compared with what was sent; "
-		+ "false when the read-back failed or the batch budget ran out (the row is still created - see verification-note). "
+	[Description("Created rows only: true when the row was read back after the batch and at least one of its fields compared with what was sent; "
+		+ "false when the read-back failed, compared none of them or the batch budget ran out (the row is still created - see verification-note). "
 		+ "Absent for a failed row and when verify=false.")]
 	public bool? Verified { get; init; }
 
