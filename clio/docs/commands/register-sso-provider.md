@@ -19,7 +19,8 @@ register a new OIDC single sign-on provider. The operation is **create-only**: i
 the given `--code` already exists, the server rejects the request and the command exits non-zero
 with the server error message. Use the SSO settings UI in Creatio, or
 [`update-sso-provider`](update-sso-provider.md) on Creatio 10.2+ with the SsoSecurityEvents package, to update an
-existing provider.
+existing provider. `update-sso-provider` and `enable-sso-security-events` are experimental: enable them with
+`clio experimental --name sso-security-events --enable`.
 
 Registering never turns security events on: the new provider has no security events stream until
 [`enable-sso-security-events`](enable-sso-security-events.md) or an administrator turns them on.

@@ -10,7 +10,9 @@ date: 2026-11-17
 `rest/SsoSecurityEventsSettingsService/<Method>`) never answers with an HTTP error for a problem it can name: refused
 rights (`AccessDenied`), the feature off (`FeatureOff`), a refused events address (`SiteAddressRefused`), and even an
 exception of the site itself (`Unavailable` with the exception type) all come back as `200` with a non-empty `reason`.
-An empty `reason` is success. Only a site without the package answers `404`.
+An empty `reason` is success. Only a site without the package answers `404`; clio refuses a site below Creatio 10.2
+before it calls, with exit code 78, so from clio a `404` means a 10.2 site without the package or the wrong runtime
+flag.
 
 **Why it is this way** — The package serves the provider card, onboarding and clio from one service; the card shows
 a message per reason code and must never fall into a generic failure (ENG-104753, accepted by the PO on 2026-11-11).

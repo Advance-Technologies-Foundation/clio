@@ -13,7 +13,9 @@ DESCRIPTION
     operation is create-only: if a provider with the given --code already exists,
     the server rejects the request and the command exits non-zero with the server
     error. Use the SSO settings UI in Creatio, or update-sso-provider on Creatio
-    10.2+ with the SsoSecurityEvents package, to update an existing provider.
+    10.2+ with the SsoSecurityEvents package, to update an existing provider
+    (update-sso-provider and enable-sso-security-events are experimental: enable
+    them with clio experimental --name sso-security-events --enable).
 
     Registering never turns security events on: the new provider has no security
     events stream until enable-sso-security-events or an administrator turns them

@@ -13,7 +13,10 @@ never turns events on.
 
 ## Decision
 
-Seven CLI commands, thin over the service, one per method the operations need. No MCP tools.
+Seven CLI commands, thin over the service, one per method the operations need. No MCP tools. All seven are
+internal operator commands: they are hidden behind the clio feature flag `sso-security-events` (off by default,
+`clio experimental --name sso-security-events --enable`) and require Creatio 10.2 (`[RequiresCreatioVersion]`
+on `SsoSecurityEventsOptions`), as the maintainer asked in review of PR #1977.
 
 | Command | Method | Changes the site |
 | --- | --- | --- |
@@ -64,13 +67,19 @@ Rejected:
 - A call that changes the site is sent once (`ExecuteNonReplayablePostRequest`, one attempt): a timed-out turn-off,
   test event or remove is never repeated behind the caller's back. `get-sso-security-events` keeps the command's
   ordinary retries.
-- Exit 1 with a message: a blank `--code` or another refused option (nothing sent); HTTP 404 (the site has no
-  service: "not supported", Creatio below 10.2 or the wrong runtime flag); an empty answer; an answer that is not a
+- Refused before any call: the flag `sso-security-events` off (the parser does not know the verb; exit 1), or a site
+  below Creatio 10.2, or a site whose version cannot be read (exit 78, `version-too-old` and the other version-gate
+  codes). A development build of Creatio (core version 0.0.0.x) is not checked, as for the theming commands
+  (`AllowDevelopmentBuild` keeps its default): no security property rests on the version, the site checks
+  `CanManageSso` itself, and a build without the package still answers 404.
+- Exit 1 with a message: a blank `--code` or another refused option (nothing sent); HTTP 404 (a 10.2 site without
+  the package, or the wrong runtime flag: "not supported"); an empty answer; an answer that is not a
   JSON object with a `reason` member (a login page, a platform error).
 - Output: text prints `reason: <code|none>` and one line per returned field; `--format json` prints the answer.
   No answer carries a secret; the secret `update-sso-provider` sends is never printed.
-- The client secret of `update-sso-provider` is resolved as `register-sso-provider` resolves it: file, option,
-  `CLIO_OIDC_CLIENT_SECRET`; none keeps the stored secret.
+- The client secret of `update-sso-provider` comes from `--oidc-client-secret-file` or `--oidc-client-secret` only;
+  unlike `register-sso-provider` it never reads `CLIO_OIDC_CLIENT_SECRET`, because no secret means "keep the stored
+  one" and a variable left in the shell would replace another provider's secret.
 
 ## Acceptance (from ENG-106080)
 
@@ -85,4 +94,6 @@ Rejected:
 - `clio.tests/Command/SsoSecurityEventsCommandsTests.cs`: request body and route per command, replay and attempts,
   reason printed with exit 0, 404 on both transports, foreign answers, refused options, secret never printed.
 - `clio.tests/Common/SsoSecurityEventsRouteTests.cs`: the seven routes on .NET Framework and .NET Core.
+- `clio.tests/Command/SsoSecurityEventsGateTests.cs`: each of the seven refused with the flag off and allowed with
+  it on; refused with `version-too-old` on a 10.1 site and allowed on 10.2; `register-sso-provider` stays ungated.
 - Stand: a 10.2 .NET Framework site with the package; a real stream needs a public https site Identity reaches.

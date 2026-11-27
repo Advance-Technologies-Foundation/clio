@@ -10,12 +10,47 @@ using CommandLine;
 
 namespace Clio.Command;
 
+#region Class: SsoSecurityEventsRequirement
+
+/// <summary>
+///     What the commands over the site's security-events settings service require before they run: the Creatio version
+///     that ships the service, and the clio feature flag that hides these operator commands by default.
+/// </summary>
+public static class SsoSecurityEventsRequirement
+{
+
+	/// <summary>
+	///     Minimum Creatio core version that ships the SsoSecurityEvents package and its settings service.
+	/// </summary>
+	public const string MinVersion = "10.2.0";
+
+	/// <summary>
+	///     Guidance shown when the target site runs an older Creatio.
+	/// </summary>
+	public const string MinVersionHint =
+		"The security events settings service ships with the SsoSecurityEvents package of Creatio 10.2.";
+
+	/// <summary>
+	///     Feature key that gates every security-events command; enable it with
+	///     <c>clio experimental --name sso-security-events --enable</c>.
+	/// </summary>
+	public const string FeatureName = "sso-security-events";
+
+}
+
+#endregion
+
 #region Class: SsoSecurityEventsOptions
 
 /// <summary>
 ///     Base options for the commands over the site's security-events settings service
 ///     (<c>SsoSecurityEventsSettingsService</c>, package SsoSecurityEvents, Creatio 10.2+).
 /// </summary>
+/// <remarks>
+///     The version floor is declared here and inherited by every command; the feature flag is declared on each
+///     command's own options class, because <see cref="FeatureToggleAttribute" /> is not inherited.
+/// </remarks>
+[RequiresCreatioVersion(SsoSecurityEventsRequirement.MinVersion, Hint = SsoSecurityEventsRequirement.MinVersionHint)]
 public abstract class SsoSecurityEventsOptions : IdentityCommandOptions
 {
 
@@ -39,6 +74,9 @@ public abstract class SsoSecurityEventsOptions : IdentityCommandOptions
 ///     The service answers every call with HTTP 200 and a reason code (<c>reason</c>, empty on success), never with a
 ///     failure. The commands therefore print the reason and exit 0 whatever it is; they exit 1 only when the call itself
 ///     failed: a refused option, no answer, an answer that is not the service's, or a site without the package (404).
+///     Before any of that, clio's dispatch refuses the command with its own exit code when the site runs Creatio below
+///     <see cref="SsoSecurityEventsRequirement.MinVersion" />, and refuses it outright while the
+///     <see cref="SsoSecurityEventsRequirement.FeatureName" /> flag is off.
 ///     A call that changes the site is sent once, never retried or replayed, so a timed-out turn-off, test event or
 ///     remove is not repeated behind the caller's back.
 /// </remarks>

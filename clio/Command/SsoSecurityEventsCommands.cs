@@ -14,6 +14,7 @@ namespace Clio.Command;
 /// </summary>
 [Verb("get-sso-security-events",
 	HelpText = "Read the security events state of an SSO provider (SsoSecurityEvents, Creatio 10.2+)")]
+[FeatureToggle(SsoSecurityEventsRequirement.FeatureName)]
 public class GetSsoSecurityEventsOptions : SsoSecurityEventsOptions
 {
 }
@@ -58,6 +59,7 @@ public class GetSsoSecurityEventsCommand : SsoSecurityEventsCommand<GetSsoSecuri
 [Verb("enable-sso-security-events",
 	HelpText = "Turn security events on for an SSO provider; the card records it as a Creatio support change "
 		+ "(SsoSecurityEvents, Creatio 10.2+)")]
+[FeatureToggle(SsoSecurityEventsRequirement.FeatureName)]
 public class EnableSsoSecurityEventsOptions : SsoSecurityEventsOptions
 {
 
@@ -128,6 +130,7 @@ public class EnableSsoSecurityEventsCommand : SsoSecurityEventsCommand<EnableSso
 [Verb("disable-sso-security-events",
 	HelpText = "Turn security events off for an SSO provider; the card records it as a Creatio support change "
 		+ "(SsoSecurityEvents, Creatio 10.2+)")]
+[FeatureToggle(SsoSecurityEventsRequirement.FeatureName)]
 public class DisableSsoSecurityEventsOptions : SsoSecurityEventsOptions
 {
 }
@@ -169,6 +172,7 @@ public class DisableSsoSecurityEventsCommand : SsoSecurityEventsCommand<DisableS
 [Verb("send-sso-security-test-event",
 	HelpText = "Ask the provider for a security events test event and optionally wait for it (SsoSecurityEvents, "
 		+ "Creatio 10.2+)")]
+[FeatureToggle(SsoSecurityEventsRequirement.FeatureName)]
 public class SendSsoSecurityTestEventOptions : SsoSecurityEventsOptions
 {
 
@@ -240,6 +244,7 @@ public class SendSsoSecurityTestEventCommand : SsoSecurityEventsCommand<SendSsoS
 [Verb("set-sso-security-events-address",
 	HelpText = "Store a new site address for the security events of an SSO provider and optionally move its stream "
 		+ "(SsoSecurityEvents, Creatio 10.2+)")]
+[FeatureToggle(SsoSecurityEventsRequirement.FeatureName)]
 public class SetSsoSecurityEventsAddressOptions : SsoSecurityEventsOptions
 {
 
@@ -304,6 +309,7 @@ public class SetSsoSecurityEventsAddressCommand : SsoSecurityEventsCommand<SetSs
 [Verb("update-sso-provider",
 	HelpText = "Update an SSO provider in place, keeping its row and its security events stream; creates it when "
 		+ "no provider has the code (SsoSecurityEvents, Creatio 10.2+)")]
+[FeatureToggle(SsoSecurityEventsRequirement.FeatureName)]
 public class UpdateSsoProviderOptions : SsoSecurityEventsOptions
 {
 
@@ -457,6 +463,7 @@ public class UpdateSsoProviderCommand : SsoSecurityEventsCommand<UpdateSsoProvid
 [Verb("remove-sso-provider",
 	HelpText = "Remove an SSO provider and its security events stream; --local-only leaves the stream at the "
 		+ "provider (a copied site) (SsoSecurityEvents, Creatio 10.2+)")]
+[FeatureToggle(SsoSecurityEventsRequirement.FeatureName)]
 public class RemoveSsoProviderOptions : SsoSecurityEventsOptions
 {
 

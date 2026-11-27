@@ -65,6 +65,7 @@ Text output is one "name: value" line per member the site returned: reason, reas
 
     0       The site answered; read the printed reason code
     1       The call failed: refused option, no or foreign answer, service not found (404)
+    78      Refused before the call: the site runs Creatio below 10.2, or its version could not be read
 
 ## Reason codes
 
@@ -97,9 +98,20 @@ Every command of the family answers with one of these codes in `reason`.
 - A provider registered with `register-sso-provider` has no stream record: `enabled` is false and no stream exists at the provider until `enable-sso-security-events` or an administrator turns events on.
 - The call is a read: it may be retried and replayed after a re-login.
 
+## Availability
+
+This command is experimental and hidden by default. Enable it before use:
+
+```bash
+clio experimental --name sso-security-events --enable
+```
+
+Before the call, clio reads the site's Creatio version and refuses the command on a site below 10.2 with exit code 78 (`version-too-old`); no request reaches the settings service.
+
 ## Prerequisites
 
 - A Creatio 10.2+ site with the SsoSecurityEvents package, registered with clio (`clio reg-web-app ...`)
+- The `sso-security-events` feature flag is enabled in clio (`clio experimental --name sso-security-events --enable`)
 - The authenticated user has the `CanManageSso` system operation right
 
 ## Related commands

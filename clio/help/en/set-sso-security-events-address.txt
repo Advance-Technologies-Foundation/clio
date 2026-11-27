@@ -30,6 +30,13 @@ DESCRIPTION
     site's whole answer. No answer carries a secret. Text from the site is printed
     on one line, with anything that looks like a credential removed.
 
+    This command is experimental and hidden by default. Enable it before use:
+        clio experimental --name sso-security-events --enable
+
+    Before the call, clio reads the site's Creatio version and refuses the
+    command on a site below 10.2 with exit code 78 (version-too-old); no request
+    reaches the settings service.
+
 SYNOPSIS
     set-sso-security-events-address --code <code> --site-address <url> [--move-stream] [options]
 
@@ -69,6 +76,7 @@ EXAMPLES
 RETURN VALUES
     0       The site answered; read the printed reason code
     1       The call failed: refused option, no or foreign answer, service not found (404)
+    78      Refused before the call: the site runs Creatio below 10.2, or its version could not be read
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio
