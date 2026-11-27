@@ -14,7 +14,8 @@ functions, 2 sequential independent awaits) also exist, under the same ids and w
 the `classic-to-freedom-migration` engine of `creatio-ai-app-development-toolkit`. There they are a
 BLOCKING `--verify` gate on the pages the migration builds; here they are save-time warnings only.
 Both sides also lint the client modules a page imports (`TryLintClientModule`, reached through
-`validate-page` with a module body) with the single-node and per-function rules: function length,
+`validate-page` with a module body and on every `update-client-unit-schema` save, which returns the
+findings as `warnings`) with the single-node and per-function rules: function length,
 log-only catches, bare numeric `comparisonType`, sequential independent loads and record ids. A record id
 held by a module's `const` data declaration (a literal, an object or array literal, `Object.freeze` of one)
 is the named constant the rule asks for and is not reported; one used in module code is. The toolkit
@@ -24,6 +25,16 @@ rules driven by a page's `handlers` section (`handler-too-many-nested-functions`
 A `define` is a page, not a module, when the object its factory returns (directly or through a `const`)
 has a view/model config section, or two or more of `handlers` / `converters` / `validators`; a module that
 exports one of those three alone is a shared client module.
+`handler-without-next` follows a block handler path by path. It accepts the handler when some `return`
+gives the result of `next.handle(request)`, the body never runs off its end, and on every path where that
+call may already have run every `return` gives the result. A `return` (or `throw`) reached before the call
+runs is a deliberate stop (`if (child) { return openChild(request, child); } return next?.handle(request);`),
+whichever branch it is written in; a path that runs off the end is not (a forgotten `else`). A switch case
+starts from the switch's entry and from the case that falls into it; `break` leaves the switch or loop;
+a loop body is judged from the loop's entry and again from "the call has run" when a pass can call next
+and go round, and an endless `while (true)` / `for (;;)` goes on past itself only through `break`. Both sides word the findings the same: no
+`return` gives the result, a `return` reached after the call does not give it, and the body can reach its
+end without a `return` (before or after the call).
 Nothing shares code between the two: the toolkit engine parses the built page itself with its own
 vendored acorn.
 

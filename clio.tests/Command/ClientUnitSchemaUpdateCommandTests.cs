@@ -134,6 +134,57 @@ internal class ClientUnitSchemaUpdateCommandTests : BaseCommandTests<ClientUnitS
 		_saveRequestBody.Should().BeNull(because: "dry-run must not reach SaveSchema");
 	}
 
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("A client-module body is linted on save, and its code-quality findings come back as warnings that do not block the save.")]
+	public void TryUpdateSchema_ShouldReturnModuleLintWarnings_WhenBodyIsAClientModule(bool dryRun) {
+		// Arrange
+		string body = McpServer.PageBodyAstLinterQualityTests.Fixture("UsrDemoV3App_ReturnNoteFormPageModule.js", "PageLintV3");
+		var options = new ClientUnitSchemaUpdateOptions { SchemaName = "UsrHelper", Body = body, DryRun = dryRun };
+
+		// Act
+		bool result = _command.TryUpdateSchema(options, out ClientUnitSchemaUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "a code-quality finding is a warning and never blocks the save");
+		response.Warnings.Should().ContainSingle(w => w.Contains("numeric-comparison-type"),
+			because: "the module's bare `comparisonType: 3` is reported the way validate-page reports it");
+		(_saveRequestBody is not null).Should().Be(!dryRun, because: "the lint changes nothing about whether the body is saved");
+	}
+
+	[TestCase(true)]
+	[TestCase(false)]
+	[Description("The MCP response (System.Text.Json) carries `warnings` only when there are findings.")]
+	public void ClientUnitSchemaUpdateResponse_ShouldSerializeWarnings_OnlyWhenPresent(bool withWarnings) {
+		// Arrange
+		var response = new ClientUnitSchemaUpdateResponse {
+			Success = true, SchemaName = "UsrHelper", Warnings = withWarnings ? ["numeric-comparison-type: line 20"] : null
+		};
+
+		// Act
+		string json = System.Text.Json.JsonSerializer.Serialize(response);
+
+		// Assert
+		json.Contains("\"warnings\"").Should().Be(withWarnings, because: "the key is omitted when there is nothing to report");
+	}
+
+	[TestCase("define('new');")]
+	[TestCase("define(\"UsrHelper\", [], function() { return { save: function() { return 1; } }; });")]
+	[TestCase("Terrasoft.configuration.Structures.UsrHelper = {};")]
+	[TestCase("define(\"UsrX_FormPage\", [], function() { return { viewConfigDiff: [], handlers: [], converters: {}, validators: {} }; });")]
+	[Description("A body that is not a client module, or a module that breaks no rule, gets no warnings.")]
+	public void TryUpdateSchema_ShouldReturnNoWarnings_WhenBodyHasNoModuleFindings(string body) {
+		// Arrange
+		var options = new ClientUnitSchemaUpdateOptions { SchemaName = "UsrHelper", Body = body };
+
+		// Act
+		bool result = _command.TryUpdateSchema(options, out ClientUnitSchemaUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "the schema resolves and the body is saved");
+		response.Warnings.Should().BeNull(because: "the warnings key is omitted when there is nothing to report");
+	}
+
 	[Test]
 	[Description("TryUpdateSchema reads the body from --body-file, which takes precedence over --body.")]
 	public void TryUpdateSchema_ShouldPreferBodyFile_OverInlineBody() {

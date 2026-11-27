@@ -82,12 +82,30 @@ internal static partial class PageBodyAstLinter {
 			findings = [];
 			return false;
 		}
+		findings = LintModuleFactory(factory);
+		return true;
+	}
+
+	/// <summary>
+	/// <see cref="TryLintClientModule"/> for a body as text. False, with no findings, when the body carries page-schema
+	/// markers (a page), has no <c>define</c>, does not parse, or is not a client module. validate-page and
+	/// update-client-unit-schema both decide through it, so they agree on what a client module is.
+	/// </summary>
+	public static bool TryLintClientModuleBody(string body, out IReadOnlyList<PageBodyLintFinding> findings) {
+		findings = [];
+		return !string.IsNullOrEmpty(body)
+			&& !body.Contains("/**SCHEMA_", StringComparison.Ordinal)
+			&& body.Contains(DefineGlobalName, StringComparison.Ordinal)
+			&& PageBodySyntaxValidator.ValidateAndParse(body, out Script ast).IsValid
+			&& TryLintClientModule(ast, out findings);
+	}
+
+	private static IReadOnlyList<PageBodyLintFinding> LintModuleFactory(IFunction factory) {
 		LintFindingBudget budget = new();
 		CheckSectionNode(factory.Body, new QualityScope(IsElementId: false, InModule: true, InConstantData: false), depth: 0, budget);
 		CheckSequentialAwaits(factory.Body, depth: 0, budget);
 		budget.AppendSummaries();
-		findings = budget.Findings;
-		return true;
+		return budget.Findings;
 	}
 
 	// The config sections only a page factory returns. `handlers`, `converters` and `validators` (SectionPropertyNames)
@@ -306,16 +324,22 @@ internal static partial class PageBodyAstLinter {
 				+ "chain is the point.");
 	}
 
+	private const string NoReturnOfNext = "calls `next.handle(request)` but no `return` gives its result";
+	private const string ReturnAfterNext =
+		"calls `next.handle(request)` but a `return` reached after that call does not give its result";
+	private const string EndWithoutReturn =
+		"can reach its end without a `return`, which ends the chain on that path without handing the request on";
+	private const string EndAfterNext =
+		"calls `next.handle(request)` but can reach its end after that call without a `return`, which drops the result";
+
 	// Null when the handler hands the request on: it takes `next` (a defaulted parameter counts), its own body (not a
 	// callback inside it) calls `next.handle(...)`, and the result reaches the caller - an arrow's expression body
-	// gives it, or every `return` of a block body does (directly or through a variable assigned from it) and the body
-	// does not run off its end.
+	// gives it, or a block body returns it (directly or through a variable assigned from it), never runs off its end,
+	// and on every path where the call may already have run every `return` gives it. A `return` (or `throw`) reached
+	// before the call runs is a deliberate stop, such as a record that opens its own child page before the request is
+	// handed on; running off the end is not.
 	private static string NextProblem(IFunction handler) {
-		string next = handler.Params.Count > 1 ? handler.Params[1] switch {
-			Identifier identifier => identifier.Name,
-			AssignmentPattern {Left: Identifier defaulted} => defaulted.Name,
-			_ => null
-		} : null;
+		string next = NextParameterName(handler);
 		if (next is null) {
 			return "takes no `next`";
 		}
@@ -324,6 +348,35 @@ internal static partial class PageBodyAstLinter {
 		if (!own.Any(node => IsNextHandleCall(node, next))) {
 			return "never calls `next.handle(request)`";
 		}
+		HashSet<string> fromNext = NamesFromNext(own, next);
+		if (handler.Body is not BlockStatement block) {
+			return GivesNextResult((Node)handler.Body, next, fromNext, depth: 0) ? null : NoReturnOfNext;
+		}
+		if (!own.OfType<ReturnStatement>().Any(r => r.Argument is not null && GivesNextResult(r.Argument, next, fromNext, depth: 0))) {
+			return NoReturnOfNext;
+		}
+		NextPathWalk walk = new(next, fromNext);
+		PathState end = walk.Walk(block, called: false, depth: 0);
+		if (walk.Problem is not null || !end.Normal) {
+			return walk.Problem;
+		}
+		return end.Called ? EndAfterNext : EndWithoutReturn;
+	}
+
+	// The name of a handler's `next` parameter (`next` or `next = null`), or null when it takes none.
+	private static string NextParameterName(IFunction handler) {
+		if (handler.Params.Count < 2) {
+			return null;
+		}
+		return handler.Params[1] switch {
+			Identifier identifier => identifier.Name,
+			AssignmentPattern {Left: Identifier defaulted} => defaulted.Name,
+			_ => null
+		};
+	}
+
+	// The variables a body assigns the chain's result to.
+	private static HashSet<string> NamesFromNext(List<Node> own, string next) {
 		HashSet<string> fromNext = new(StringComparer.Ordinal);
 		foreach (Node node in own) {
 			switch (node) {
@@ -335,37 +388,191 @@ internal static partial class PageBodyAstLinter {
 					break;
 			}
 		}
-		bool returned = handler.Body switch {
-			BlockStatement block => EndsInReturn(block, depth: 0)
-				&& own.OfType<ReturnStatement>().All(r => r.Argument is not null && GivesNextResult(r.Argument, next, fromNext, depth: 0)),
-			Node expressionBody => GivesNextResult(expressionBody, next, fromNext, depth: 0)
-		};
-		return returned ? null : "calls `next.handle(request)` but does not return its result";
+		return fromNext;
 	}
 
-	// Every path through the statement ends in a `return` or a `throw`.
-	private static bool EndsInReturn(Statement statement, int depth) {
-		if (statement is null || depth > MaxAstDepth) {
-			return false;
-		}
-		return statement switch {
-			ReturnStatement or ThrowStatement => true,
-			BlockStatement block => block.Body.Count > 0 && EndsInReturn(block.Body[^1], depth + 1),
-			IfStatement branch => EndsInReturn(branch.Consequent, depth + 1) && EndsInReturn(branch.Alternate, depth + 1),
-			TryStatement attempt => EndsInReturn(attempt.Finalizer, depth + 1)
-				|| (EndsInReturn(attempt.Block, depth + 1) && (attempt.Handler is null || EndsInReturn(attempt.Handler.Body, depth + 1))),
-			SwitchStatement choice => SwitchEndsInReturn(choice, depth + 1),
-			_ => false
-		};
-	}
+	// Where a walk stands after a statement. `Normal`: some path completes it and goes on to the next statement, and
+	// `Called` says whether `next.handle(...)` may have run on such a path. `Break`: the state of the paths that leave
+	// it through `break` / `continue` (null when none does), which the enclosing switch or loop takes over. A path that
+	// ends in a `return` or a `throw` is in neither.
+	internal readonly record struct PathState(bool Normal, bool Called, bool? Break);
 
-	// A switch ends in a return when it has a `default` and every case either falls through to the next one (no
-	// statements) or ends in a return or throw itself, the last one included.
-	private static bool SwitchEndsInReturn(SwitchStatement choice, int depth) {
-		if (!choice.Cases.Any(c => c.Test is null) || choice.Cases.Count == 0 || choice.Cases[^1].Consequent.Count == 0) {
-			return false;
+	// Follows a handler body path by path, so a `return` is judged by whether the call may have run before it on its own
+	// path, not by where it is written. A switch case starts from the switch's entry and from the case that falls into
+	// it; a loop body counts as run after itself. A statement past MaxAstDepth is reported.
+	private sealed class NextPathWalk(string next, HashSet<string> fromNext) {
+
+		internal string Problem { get; private set; }
+
+		internal PathState Walk(Statement statement, bool called, int depth) {
+			if (Problem is not null) {
+				return new PathState(false, called, null);
+			}
+			if (statement is null) {
+				return new PathState(true, called, null);
+			}
+			if (depth > MaxAstDepth) {
+				Problem = EndAfterNext;
+				return new PathState(false, called, null);
+			}
+			switch (statement) {
+				case ReturnStatement exit:
+					return WalkReturn(exit, called);
+				case ThrowStatement:
+					return new PathState(false, called, null);
+				case BreakStatement or ContinueStatement:
+					return new PathState(false, called, called);
+				case BlockStatement block:
+					return WalkAll(block.Body, called, depth + 1);
+				case LabeledStatement labeled:
+					return WalkLabeled(labeled, called, depth);
+				case IfStatement branch:
+					bool afterTest = called || CallsNext(branch.Test);
+					return Join(Walk(branch.Consequent, afterTest, depth + 1), Walk(branch.Alternate, afterTest, depth + 1));
+				case TryStatement attempt:
+					return WalkTry(attempt, called, depth);
+				case SwitchStatement choice:
+					return WalkSwitch(choice, called, depth);
+				case ForStatement or ForInStatement or ForOfStatement or WhileStatement or DoWhileStatement:
+					return WalkLoop(statement, called, depth);
+				default:
+					return new PathState(true, called || CallsNext(statement), null);
+			}
 		}
-		return choice.Cases.All(c => c.Consequent.Count == 0 || EndsInReturn(c.Consequent[^1], depth));
+
+		// A `return` reached after the call may have run must give its result; one reached before it is a stop.
+		private PathState WalkReturn(ReturnStatement exit, bool called) {
+			if (!Gives(exit.Argument) && (called || CallsNext(exit.Argument))) {
+				Problem = ReturnAfterNext;
+			}
+			return new PathState(false, called, null);
+		}
+
+		// A `break label` out of a labeled statement goes on after it.
+		private PathState WalkLabeled(LabeledStatement labeled, bool called, int depth) {
+			PathState inner = Walk(labeled.Body, called, depth + 1);
+			if (inner.Break is not { } broke) {
+				return inner;
+			}
+			return Join(inner with {Break = null}, new PathState(true, broke, null));
+		}
+
+		// The body is walked from the loop's entry, and once more from "the call has run" when a pass through it can
+		// call next and go round again, so a `return` a later pass reaches after the call is judged as such. The loop
+		// goes on past itself when its test can fail (an endless `while (true)` / `for (;;)` only through `break`; a
+		// `do` loop only after a pass that completes), with the call run on any path that completed a pass.
+		private PathState WalkLoop(Statement loop, bool called, int depth) {
+			bool entry = called || HeadCallsNext(loop);
+			PathState pass = Walk(LoopBody(loop), entry, depth + 1);
+			bool calledInPass = (pass.Normal && pass.Called) || pass.Break == true;
+			if (calledInPass && !entry) {
+				pass = Walk(LoopBody(loop), called: true, depth + 1);
+			}
+			bool passCompletes = pass.Normal || pass.Break is not null;
+			bool calledOnward = (pass.Normal && pass.Called) || pass.Break == true;
+			if (IsEndless(loop)) {
+				return pass.Break is { } broke ? new PathState(true, broke, null) : new PathState(false, entry, null);
+			}
+			if (loop is DoWhileStatement) {
+				return passCompletes ? new PathState(true, calledOnward, null) : new PathState(false, entry, null);
+			}
+			return new PathState(true, entry || calledOnward, null);
+		}
+
+		private static bool IsEndless(Statement loop) =>
+			loop switch {
+				WhileStatement w => w.Test is Literal {Value: true},
+				DoWhileStatement d => d.Test is Literal {Value: true},
+				ForStatement f => f.Test is null or Literal {Value: true},
+				_ => false
+			};
+
+		// What a loop runs before its first pass calls next: a `for` initializer or test, a `for-in/of` source, a
+		// `while` test.
+		private bool HeadCallsNext(Statement loop) =>
+			loop switch {
+				ForStatement f => CallsNext(f.Init) || CallsNext(f.Test),
+				ForInStatement f => CallsNext(f.Right),
+				ForOfStatement f => CallsNext(f.Right),
+				WhileStatement w => CallsNext(w.Test),
+				_ => false
+			};
+
+		private PathState WalkAll(IEnumerable<Statement> statements, bool called, int depth) {
+			bool? leaving = null;
+			foreach (Statement statement in statements) {
+				PathState state = Walk(statement, called, depth);
+				leaving = Or(leaving, state.Break);
+				if (!state.Normal) {
+					return new PathState(false, called, leaving);
+				}
+				called = state.Called;
+			}
+			return new PathState(true, called, leaving);
+		}
+
+		private PathState WalkTry(TryStatement attempt, bool called, int depth) {
+			PathState body = Walk(attempt.Block, called, depth + 1);
+			bool mayHaveRun = called || CallsNext(attempt.Block);
+			PathState handled = attempt.Handler is null ? body : Join(body, Walk(attempt.Handler.Body, mayHaveRun, depth + 1));
+			if (attempt.Finalizer is null) {
+				return handled;
+			}
+			PathState final = Walk(attempt.Finalizer, mayHaveRun || CallsNext(attempt.Handler?.Body), depth + 1);
+			return final.Normal
+				? new PathState(handled.Normal, handled.Called || final.Called, Or(handled.Break, final.Break))
+				: final;
+		}
+
+		// Cases in order: each starts from the switch's entry, or from the case before it when that one falls through.
+		// A `break`, the last case running off its end and, without a `default`, a value no case matches all leave
+		// the switch.
+		private PathState WalkSwitch(SwitchStatement choice, bool called, int depth) {
+			bool entry = called || CallsNext(choice.Discriminant);
+			bool? leaving = choice.Cases.Any(c => c.Test is null) ? null : entry;
+			bool? fallsThrough = null;
+			foreach (SwitchCase option in choice.Cases) {
+				PathState state = WalkAll(option.Consequent, entry || fallsThrough == true, depth + 1);
+				leaving = Or(leaving, state.Break);
+				fallsThrough = state.Normal ? state.Called : null;
+			}
+			leaving = Or(leaving, fallsThrough);
+			return leaving is { } onward ? new PathState(true, onward, null) : new PathState(false, entry, null);
+		}
+
+		private static PathState Join(PathState a, PathState b) =>
+			new(a.Normal || b.Normal, (a.Normal && a.Called) || (b.Normal && b.Called), Or(a.Break, b.Break));
+
+		private static bool? Or(bool? a, bool? b) {
+			if (a is null) {
+				return b;
+			}
+			if (b is null) {
+				return a;
+			}
+			return a.Value || b.Value;
+		}
+
+		private static Statement LoopBody(Statement loop) =>
+			loop switch {
+				ForStatement f => f.Body,
+				ForInStatement f => f.Body,
+				ForOfStatement f => f.Body,
+				WhileStatement w => w.Body,
+				DoWhileStatement d => d.Body,
+				_ => null
+			};
+
+		private bool Gives(Node argument) => argument is not null && GivesNextResult(argument, next, fromNext, depth: 0);
+
+		private bool CallsNext(Node node) {
+			if (node is null) {
+				return false;
+			}
+			List<Node> nodes = new();
+			CollectOwnNodes(node, nodes, depth: 0);
+			return nodes.Any(n => IsNextHandleCall(n, next));
+		}
 	}
 
 	// The nodes of a function body that run as part of it: a nested function is a callback with its own flow.

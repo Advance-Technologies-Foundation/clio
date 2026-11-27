@@ -229,9 +229,7 @@ public sealed class PageValidateTool(
 	// its markers (its factory returns page sections), goes down the page path, which reports what is wrong with it.
 	private static bool TryValidateClientModule(string body, [NotNullWhen(true)] out PageValidateResponse? response) {
 		response = null;
-		if (body.Contains("/**SCHEMA_", StringComparison.Ordinal)
-			|| !PageBodySyntaxValidator.ValidateAndParse(body, out Script ast).IsValid
-			|| !PageBodyAstLinter.TryLintClientModule(ast, out IReadOnlyList<PageBodyLintFinding> findings)) {
+		if (!PageBodyAstLinter.TryLintClientModuleBody(body, out IReadOnlyList<PageBodyLintFinding> findings)) {
 			return false;
 		}
 		response = new PageValidateResponse {

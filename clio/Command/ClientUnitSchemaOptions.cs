@@ -1,6 +1,9 @@
 namespace Clio.Command;
 
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using CommandLine;
 using Newtonsoft.Json;
@@ -186,14 +189,28 @@ public class ClientUnitSchemaUpdateCommand : Command<ClientUnitSchemaUpdateOptio
 		return false;
 	}
 
+	/// <summary>
+	/// The code-quality warnings of a client-module body (<c>define("Name", [deps], function(...) { ... })</c>), formatted
+	/// the way a page save returns them, so a module saved through this command is linted like the page that imports
+	/// it. Empty when the body is not a client module (or does not parse) or breaks no rule; the lint never blocks the
+	/// save.
+	/// </summary>
+	internal static List<string> ClientModuleLintWarnings(string body) {
+		PageBodyAstLinter.TryLintClientModuleBody(body, out IReadOnlyList<PageBodyLintFinding> findings);
+		return findings.Select(PageBodyAstLinter.FormatFinding).ToList();
+	}
+
+	// The body is linted only for a response that reports success: a save that fails returns before any lint work.
 	private static ClientUnitSchemaUpdateResponse CreateSuccessResponse(
 		ClientUnitSchemaUpdateOptions options,
 		bool dryRun) {
+		List<string> warnings = ClientModuleLintWarnings(options.Body);
 		return new ClientUnitSchemaUpdateResponse {
 			Success = true,
 			SchemaName = options.SchemaName,
 			BodyLength = options.Body.Length,
-			DryRun = dryRun
+			DryRun = dryRun,
+			Warnings = warnings.Count > 0 ? warnings : null
 		};
 	}
 }
@@ -220,4 +237,13 @@ public sealed class ClientUnitSchemaUpdateResponse {
 	[JsonProperty("error")]
 	[System.Text.Json.Serialization.JsonPropertyName("error")]
 	public string Error { get; set; }
+
+	/// <summary>
+	/// Code-quality warnings of a client-module body (the module lint of <c>validate-page</c>). They never block the
+	/// save; omitted when there are none or the body is not a client module.
+	/// </summary>
+	[JsonProperty("warnings", NullValueHandling = NullValueHandling.Ignore)]
+	[System.Text.Json.Serialization.JsonPropertyName("warnings")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public List<string> Warnings { get; set; }
 }
