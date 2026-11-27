@@ -1013,6 +1013,7 @@ public class BindingsModule {
 		services.AddSingleton<ICreatioArtifactMergeService, CreatioArtifactMergeService>();
 		services.AddTransient<CreatioArtifactMergeCommand>();
 		services.AddTransient<DeletePackageCommand>();
+		services.AddTransient<IPackageDeletionPreflight, PackageDeletionPreflight>();
 		services.AddTransient<GetPkgListCommand>();
 		services.AddTransient<RestoreWorkspaceCommand>();
 		services.AddTransient<CreateWorkspaceCommand>();

@@ -98,6 +98,7 @@
       {"argument": "confirmed", "value": "false", "effect": "read", "scope": "local"}
   ]},
   "delete-page-business-rules": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "delete-pkg-remote": {"effect": "destroy", "rebuilds-environment": true, "scope": "environment", "connections": "none"},
   "delete-schema": {"effect": "destroy", "rebuilds-environment": false, "scope": "machine", "connections": "none", "host-paths": [
       {"argument": "workspace-path", "kind": "folder", "access": "read"}
   ]},

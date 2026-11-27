@@ -63,7 +63,6 @@ clio/Command/ConfigureWorkspaceCommand.cs
 clio/Command/CreateInfrastructure.cs
 clio/Command/CustomizeDataProtection.cs
 clio/Command/DeleteInfrastructureCommand.cs
-clio/Command/DeletePackageCommand.cs
 clio/Command/DeployAppCommand.cs
 clio/Command/DeployInfrastructureCommand.cs
 clio/Command/DistributeLicenseCommand.cs
