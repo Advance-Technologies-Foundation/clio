@@ -22,7 +22,10 @@ clio self-update. A marker whose pid is no longer running is deleted by the scan
 The ordering is load-bearing: `ISettingsRepository.TryScheduleAutoupdate` advances `next-run` and
 saves it **as part of** answering "is this due", before the update callback runs. So the deferral has
 to wrap the whole `RunIfDue(..., AutoUpdateTarget.Clio, ...)` call. Knowledge and toolkit updates are
-not deferred - they replace no loaded assembly and no settings section.
+not deferred by a host - they replace no loaded assembly and no settings section.
+
+Since #1950 the same rule also covers the toolkit: its detached `update-toolkit` child loads `clio.dll`,
+so a run that launched the self-update skips the toolkit by never calling its `RunIfDue`.
 
 **Why it is this way** — nothing inside the resident host can answer this question, because the
 process that has to ask is a different one; a file in the shared clio home is the only channel the

@@ -17,8 +17,8 @@ namespace Clio.Tests.Command;
 [Property("Module", "Command")]
 public sealed class AutomaticUpdateStartupTests {
 	[Test]
-	[Description("Runs the existing clio, knowledge, and toolkit services independently when their schedules are due.")]
-	public void RunStartupUpdateCheck_ShouldStartExistingCommands_WhenSchedulesAreDue() {
+	[Description("Runs the clio and knowledge updates when due, and leaves the toolkit update due in a run that started the clio self-update.")]
+	public void RunStartupUpdateCheck_ShouldLeaveToolkitDue_WhenClioSelfUpdateWasLaunched() {
 		// Arrange
 		ISettingsRepository settings = Substitute.For<ISettingsRepository>();
 		settings.TryScheduleAutoupdate(Arg.Any<AutoUpdateTarget>(), Arg.Any<DateTimeOffset>()).Returns(true);
@@ -27,11 +27,13 @@ public sealed class AutomaticUpdateStartupTests {
 		IKnowledgeSourceManagementService knowledge = Substitute.For<IKnowledgeSourceManagementService>();
 		knowledge.When(service => service.Update(null)).Do(_ => throw new InvalidOperationException("unavailable"));
 		ISkillInstallService toolkit = Substitute.For<ISkillInstallService>();
+		IToolkitAutoUpdateLauncher launcher = Substitute.For<IToolkitAutoUpdateLauncher>();
 		ServiceProvider services = new ServiceCollection()
 			.AddSingleton(settings)
 			.AddSingleton(appUpdater)
 			.AddSingleton(knowledge)
 			.AddSingleton(toolkit)
+			.AddSingleton(launcher)
 			.BuildServiceProvider();
 
 		// Act
@@ -40,7 +42,37 @@ public sealed class AutomaticUpdateStartupTests {
 		// Assert
 		appUpdater.Received(1).UpdateInBackgroundAsync();
 		knowledge.Received(1).Update(null);
-		toolkit.Received(1).Update(null, null);
+		launcher.DidNotReceive().Launch();
+		settings.DidNotReceive().TryScheduleAutoupdate(AutoUpdateTarget.Toolkit, Arg.Any<DateTimeOffset>());
+		toolkit.DidNotReceiveWithAnyArgs().Update(default, default, default);
+	}
+
+	[Test]
+	[Description("A due toolkit update is launched as a detached child and never runs in-process on the command path.")]
+	public void RunStartupUpdateCheck_ShouldLaunchToolkitInBackground_WhenToolkitIsDue() {
+		// Arrange
+		ISettingsRepository settings = Substitute.For<ISettingsRepository>();
+		settings.TryScheduleAutoupdate(AutoUpdateTarget.Toolkit, Arg.Any<DateTimeOffset>()).Returns(true);
+		IAppUpdater appUpdater = Substitute.For<IAppUpdater>();
+		IKnowledgeSourceManagementService knowledge = Substitute.For<IKnowledgeSourceManagementService>();
+		ISkillInstallService toolkit = Substitute.For<ISkillInstallService>();
+		IToolkitAutoUpdateLauncher launcher = Substitute.For<IToolkitAutoUpdateLauncher>();
+		launcher.Launch().Returns(true);
+		ServiceProvider services = new ServiceCollection()
+			.AddSingleton(settings)
+			.AddSingleton(appUpdater)
+			.AddSingleton(knowledge)
+			.AddSingleton(toolkit)
+			.AddSingleton(launcher)
+			.BuildServiceProvider();
+
+		// Act
+		Program.RunStartupUpdateCheck(["ver"], services);
+
+		// Assert
+		launcher.Received(1).Launch();
+		toolkit.DidNotReceiveWithAnyArgs().Update(default, default, default);
+		appUpdater.DidNotReceive().UpdateInBackgroundAsync();
 	}
 
 	[Test]
@@ -65,7 +97,7 @@ public sealed class AutomaticUpdateStartupTests {
 		// Assert
 		appUpdater.DidNotReceive().UpdateInBackgroundAsync();
 		knowledge.DidNotReceive().Update(null);
-		toolkit.DidNotReceive().Update(null, null);
+		toolkit.DidNotReceiveWithAnyArgs().Update(default, default, default);
 	}
 
 	[TestCase("install-knowledge")]
@@ -112,12 +144,14 @@ public sealed class AutomaticUpdateStartupTests {
 		IMcpHostPresenceRegistry presence = Substitute.For<IMcpHostPresenceRegistry>();
 		presence.FindLiveHost().Returns(new McpHostPresenceMarker(4242, "8.1.0.120",
 			DateTimeOffset.UtcNow, "mcp-server.4242.lock"));
+		IToolkitAutoUpdateLauncher launcher = Substitute.For<IToolkitAutoUpdateLauncher>();
 		ServiceProvider services = new ServiceCollection()
 			.AddSingleton(settings)
 			.AddSingleton(appUpdater)
 			.AddSingleton(knowledge)
 			.AddSingleton(toolkit)
 			.AddSingleton(presence)
+			.AddSingleton(launcher)
 			.BuildServiceProvider();
 
 		// Act
@@ -127,7 +161,7 @@ public sealed class AutomaticUpdateStartupTests {
 		appUpdater.DidNotReceive().UpdateInBackgroundAsync();
 		settings.DidNotReceive().TryScheduleAutoupdate(AutoUpdateTarget.Clio, Arg.Any<DateTimeOffset>());
 		knowledge.Received(1).Update(null);
-		toolkit.Received(1).Update(null, null);
+		launcher.Received(1).Launch();
 	}
 
 	[Test]

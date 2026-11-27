@@ -139,6 +139,167 @@ public sealed class InstalledToolkitVersionsTests {
 		versions["copilot"].Should().Be("3.0.0", because: "one agent's failure must not hide another agent");
 	}
 
+	private const string Commit = "6b296e3929701ac438af71302681bfa96002e78e";
+	private const string CodexPayload = "plugins/cache/creatio/creatio-ai-app-development-toolkit/1.16.0";
+
+	[Test]
+	[Description("Claude's installed commit is the user-scope registry gitCommitSha, normalized to lower case.")]
+	public void ReadInstalledCommit_ShouldReturnClaudeRegistryCommit_WhenUserEntryRecordsOne() {
+		// Arrange
+		AddClaudeRegistry(new { scope = "user", installPath = AddClaudePayload(), gitCommitSha = Commit.ToUpperInvariant() });
+
+		// Act
+		string commit = _sut.ReadInstalledCommit("claude");
+
+		// Assert
+		commit.Should().Be(Commit, because: "the commit Claude recorded is what clio compares with the release commit");
+	}
+
+	[TestCase(null)]
+	[TestCase("6b296e3")]
+	[TestCase("release")]
+	[Description("A Claude entry that records no commit, or not a full commit, is unknown, never up to date.")]
+	public void ReadInstalledCommit_ShouldReturnNull_WhenClaudeCommitIsMissingOrMalformed(string recorded) {
+		// Arrange
+		AddClaudeRegistry(new { scope = "user", installPath = AddClaudePayload(), gitCommitSha = recorded });
+
+		// Act
+		string commit = _sut.ReadInstalledCommit("claude");
+
+		// Assert
+		commit.Should().BeNull(because: "only a full commit may be compared with the release commit");
+	}
+
+	[Test]
+	[Description("Claude user entries that disagree about the installed commit are unknown, never up to date.")]
+	public void ReadInstalledCommit_ShouldReturnNull_WhenClaudeRegistryIsAmbiguousOrStale() {
+		// Arrange
+		string installPath = AddClaudePayload();
+		AddClaudeRegistry(
+			new { scope = "user", installPath, gitCommitSha = Commit },
+			new { scope = "user", installPath, gitCommitSha = "1111111111111111111111111111111111111111" });
+
+		// Act
+		string commit = _sut.ReadInstalledCommit("claude");
+
+		// Assert
+		commit.Should().BeNull(because: "two different installed commits cannot both equal the release");
+	}
+
+	[Test]
+	[Description("A Claude registry entry whose payload directory is gone is not reported as an installed commit.")]
+	public void ReadInstalledCommit_ShouldReturnNull_WhenClaudePayloadIsMissing() {
+		// Arrange
+		AddClaudeRegistry(new { scope = "user", installPath = Path.Combine(Root, "gone"), gitCommitSha = Commit });
+
+		// Act
+		string commit = _sut.ReadInstalledCommit("claude");
+
+		// Assert
+		commit.Should().BeNull(because: "a removed payload must be reinstalled, not reported as up to date");
+	}
+
+	[Test]
+	[Description("Codex's installed commit follows HEAD to the loose ref file of its active cache checkout.")]
+	public void ReadInstalledCommit_ShouldResolveCodexLooseRef_WhenHeadIsSymbolic() {
+		// Arrange
+		AddCodexGitFile("HEAD", "ref: refs/heads/release\n");
+		AddCodexGitFile("refs/heads/release", Commit + "\n");
+
+		// Act
+		string commit = _sut.ReadInstalledCommit("codex");
+
+		// Assert
+		commit.Should().Be(Commit, because: "this is the layout the Codex CLI leaves in its cache");
+	}
+
+	[Test]
+	[Description("Codex's installed commit falls back to packed-refs when the ref has no loose file.")]
+	public void ReadInstalledCommit_ShouldResolveCodexPackedRef_WhenNoLooseRefExists() {
+		// Arrange
+		AddCodexGitFile("HEAD", "ref: refs/heads/release\n");
+		AddCodexGitFile("packed-refs",
+			"# pack-refs with: peeled fully-peeled sorted\n"
+			+ "1111111111111111111111111111111111111111 refs/heads/main\n"
+			+ Commit + " refs/heads/release\n");
+
+		// Act
+		string commit = _sut.ReadInstalledCommit("codex");
+
+		// Assert
+		commit.Should().Be(Commit, because: "git moves refs into packed-refs after gc");
+	}
+
+	[Test]
+	[Description("A detached Codex HEAD that holds the commit itself is read directly.")]
+	public void ReadInstalledCommit_ShouldReadDetachedCodexHead_WhenHeadIsACommit() {
+		// Arrange
+		AddCodexGitFile("HEAD", Commit + "\n");
+
+		// Act
+		string commit = _sut.ReadInstalledCommit("codex");
+
+		// Assert
+		commit.Should().Be(Commit, because: "a detached checkout records the commit in HEAD");
+	}
+
+	[TestCase("ref: refs/heads/release\n")]
+	[TestCase("6b296e3\n")]
+	[TestCase("ref: refs/../../escape\n")]
+	[TestCase("not a commit\n")]
+	[Description("Unresolvable or malformed Codex git metadata is unknown, so the agent is updated as before.")]
+	public void ReadInstalledCommit_ShouldReturnNull_WhenCodexHeadCannotBeResolved(string head) {
+		// Arrange
+		AddCodexGitFile("HEAD", head);
+
+		// Act
+		string commit = _sut.ReadInstalledCommit("codex");
+
+		// Assert
+		commit.Should().BeNull(because: "only a full, resolvable commit may stand in for 'up to date'");
+	}
+
+	[Test]
+	[Description("A Codex payload that is not a git checkout reports no installed commit.")]
+	public void ReadInstalledCommit_ShouldReturnNull_WhenCodexPayloadHasNoGitDirectory() {
+		// Arrange
+		AddManifest("codex", CodexPayload + "/.codex-plugin/plugin.json", "1.16.0");
+
+		// Act
+		string commit = _sut.ReadInstalledCommit("codex");
+
+		// Assert
+		commit.Should().BeNull(because: "a payload without git metadata cannot be compared with the release commit");
+	}
+
+	[TestCase("cursor")]
+	[TestCase("copilot")]
+	[TestCase("unknown-agent")]
+	[Description("Agents that record no installed commit always report none, so they keep updating.")]
+	public void ReadInstalledCommit_ShouldReturnNull_WhenAgentRecordsNoCommit(string agent) {
+		// Arrange / Act
+		string commit = _sut.ReadInstalledCommit(agent);
+
+		// Assert
+		commit.Should().BeNull(because: $"{agent} keeps no git metadata for its toolkit payload");
+	}
+
+	private string AddClaudePayload() {
+		string installPath = Path.Combine(Root, ".claude", "plugins", "cache", "creatio", "toolkit", "1.16.0");
+		_files.AddDirectory(installPath);
+		return installPath;
+	}
+
+	private void AddClaudeRegistry(params object[] entries) {
+		string registry = JsonSerializer.Serialize(new { plugins = new Dictionary<string, object> {
+			[ToolkitDistribution.PluginSource] = entries
+		} });
+		_files.AddFile(Path.Combine(Root, ".claude", "plugins", "installed_plugins.json"), new MockFileData(registry));
+	}
+
+	private void AddCodexGitFile(string relative, string content) =>
+		_files.AddFile(Path.Combine(Root, ".codex", CodexPayload, ".git", relative), new MockFileData(content));
+
 	private void AddManifest(string agent, string relative, string version) =>
 		_files.AddFile(Path.Combine(Root, "." + agent, relative), new MockFileData(JsonSerializer.Serialize(new {
 			name = ToolkitDistribution.PluginName, version

@@ -36,6 +36,8 @@ public static class SkillManagementPrompt {
 		 {TargetGuidance(target, "update")}
 		 {RepoGuidance(repo)}
 		 Updates every detected agent, including Claude (refreshed via `claude plugin update`).
+		 An agent that already has the latest toolkit release is reported as up to date and left
+		 untouched; pass `force: true` only when the user asks to reinstall or repair it.
 		 """;
 
 	/// <summary>

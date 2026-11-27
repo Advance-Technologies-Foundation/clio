@@ -1,7 +1,11 @@
 using System;
+using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
+using Clio.Common;
 using Clio.Common.Skills;
 using FluentAssertions;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Common.Skills;
@@ -81,5 +85,28 @@ public sealed class AgentCliRunnerTests {
 		// Assert
 		candidates.Should().ContainSingle().Which.Should().Be("codex",
 			because: "on Unix the bare name is the executable");
+	}
+
+	[Test]
+	[Description("Every agent CLI call is bounded, so a hung call cannot hold the toolkit lock indefinitely.")]
+	public void Run_ShouldBoundTheAgentCall_WithTheCallTimeout() {
+		// Arrange
+		string executable = Path.Combine(Path.GetTempPath(), "codex.exe");
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		fileSystem.ExistsFile(executable).Returns(true);
+		fileSystem.GetFullPath(executable).Returns(executable);
+		IProcessExecutor executor = Substitute.For<IProcessExecutor>();
+		ProcessExecutionOptions captured = null;
+		executor.ExecuteAndCaptureAsync(Arg.Do<ProcessExecutionOptions>(options => captured = options))
+			.Returns(Task.FromResult(new ProcessExecutionResult { Started = true, ExitCode = 0 }));
+		AgentCliRunner sut = new(executor, fileSystem);
+
+		// Act
+		AgentCliResult result = sut.Run(executable, "plugin", "list");
+
+		// Assert
+		result.Succeeded.Should().BeTrue(because: "the stubbed call exits 0");
+		captured.Timeout.Should().Be(AgentCliRunner.CallTimeout,
+			because: "an unattended background update must not wait forever on a stalled agent CLI");
 	}
 }

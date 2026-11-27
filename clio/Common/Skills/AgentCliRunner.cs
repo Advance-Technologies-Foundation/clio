@@ -10,6 +10,14 @@ namespace Clio.Common.Skills;
 /// Default <see cref="IAgentCliRunner"/> over <see cref="IProcessExecutor"/>.
 /// </summary>
 public sealed class AgentCliRunner(IProcessExecutor processExecutor, IFileSystem fileSystem) : IAgentCliRunner {
+	/// <summary>
+	/// Upper bound for one agent CLI call. A marketplace clone takes seconds; the bound exists because the
+	/// scheduled toolkit update runs unattended in a background process while holding the machine-wide
+	/// toolkit lock, so a call stuck on a network stall or an invisible prompt would otherwise block every
+	/// later toolkit operation with nothing to see.
+	/// </summary>
+	internal static readonly TimeSpan CallTimeout = TimeSpan.FromMinutes(10);
+
 	private readonly IProcessExecutor _processExecutor = processExecutor;
 	private readonly IFileSystem _fileSystem = fileSystem;
 
@@ -29,7 +37,8 @@ public sealed class AgentCliRunner(IProcessExecutor processExecutor, IFileSystem
 		ProcessExecutionResult result = _processExecutor
 			.ExecuteAndCaptureAsync(new ProcessExecutionOptions(program, arguments) {
 				ResolveProgramPath = true,
-				WorkingDirectory = Path.GetFullPath(SettingsRepository.AppSettingsFolderPath)
+				WorkingDirectory = Path.GetFullPath(SettingsRepository.AppSettingsFolderPath),
+				Timeout = CallTimeout
 			})
 			.GetAwaiter()
 			.GetResult();

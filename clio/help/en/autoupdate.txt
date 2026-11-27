@@ -26,8 +26,14 @@ DESCRIPTION
         [INF] - clio self-update deferred: MCP host pid <N> (version <X>) is running
 
     and it does NOT move "next-run", so the update runs at the next start with no
-    host resident. Knowledge and toolkit updates are never deferred. Run
-    "clio update-cli" to update manually at a moment of your choosing.
+    host resident. Knowledge and toolkit updates are never deferred by an MCP host.
+    Run "clio update-cli" to update manually at a moment of your choosing.
+
+    A due toolkit update starts "clio update-toolkit" as a detached background
+    process and does not delay the command; agents that already have the latest
+    toolkit release are left untouched. It is not started in the same run as the
+    clio self-update, which replaces the binaries the child would load; it stays
+    due and starts on the next command.
 
 OPTIONS
     --enable     Enable automatic clio updates
